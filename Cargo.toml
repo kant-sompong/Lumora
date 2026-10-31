@@ -1,0 +1,8 @@
+[package]
+name = "rust-media-library"
+version = "0.1.0"
+edition = "2024"
+description = "A native Linux desktop media library for movies, TV shows, and anime"
+license = "UNLICENSED"
+
+[dependencies]
