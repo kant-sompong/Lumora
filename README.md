@@ -1,6 +1,6 @@
 # Native Game Library
 
-A cross-platform desktop application for browsing, downloading, and managing games from the Internet Archive's **native-linux-games-collection**. Runs on **Linux (GTK 3)** and **Windows 10/11 (Tkinter)** with a shared Python core.
+A cross-platform desktop application for browsing, downloading, and managing games from the Internet Archive's **native-linux-games-collection**. Runs on **Linux (GTK 3)** and **Windows 10/11 (Qt 6 / PySide6)** with a shared Python core.
 
 ---
 
@@ -9,8 +9,8 @@ A cross-platform desktop application for browsing, downloading, and managing gam
 | Platform | Status |
 | --- | --- |
 | Linux (Void, Debian, Ubuntu, Fedora, Arch, etc.) | **Developed & tested** — GTK 3 frontend with embedded WebKit2 media player |
-| Windows 11 | **Implemented** — Tkinter frontend; portable ZIP & optional installer via CI |
-| Windows 10 | **Implemented** — Same as Windows 11; Windows 10 is past standard support |
+| Windows 11 | **Implemented** — Qt 6 (PySide6) frontend with Qt WebEngine media player; portable ZIP & optional installer via CI |
+| Windows 10 | **Implemented** — Same as Windows 11 (requires Windows 10 1809+); Windows 10 is past standard support |
 | macOS | Not supported (no frontend) |
 
 > **Do not read "implemented" as "verified on hardware".** The Windows executable is built on `windows-latest` in CI and smoke-tested there (starts and stays running). Interactive testing on a real Windows desktop has not been performed by the author.
@@ -49,18 +49,18 @@ A cross-platform desktop application for browsing, downloading, and managing gam
 - **Provenance tracking** — every metadata field knows its source (archive.org, user edit, sidecar)
 - **Sidecar JSON** (`game.json`) written per download with full metadata
 
-### Movies & TV (Linux GTK frontend only)
+### Movies & TV (Linux GTK & Windows Qt frontends)
 - **Trending, popular, search** via TMDB
 - **Anime tab** — MAL popular ranking, episode lists, sub/dub selector
-- **Embedded playback** via WebKit2 (frameXTV, VidRift, Atlantic, ani.pm)
+- **Embedded playback** — Linux: WebKit2 (frameXTV, VidRift, Atlantic, ani.pm); Windows: Qt WebEngine (Chromium) with fullscreen, PiP, subtitle/audio track selection
 - **Watchlist & history** persisted locally
 - **Autoplay / default audio language** settings
 
-### Windows Tk frontend
-- Same **Browse / Downloads / Library** tabs
-- **Media tab** — browse movies, TV, anime; click **Watch** to open provider in system browser
-- **Settings** — download folder, theme, provider API keys (RAWG, TMDB, MAL), streaming provider, anime provider, default audio, autoplay
-- No WebKit dependency — playback always opens in browser
+### Windows Qt frontend
+- Same **Browse / Downloads / Library / Media** tabs as Linux
+- **Media tab** — cinematic hero banner, horizontal carousels (Trending, Continue Watching, Movies, TV, Anime), episode list, **embedded Qt WebEngine** playback with fullscreen, picture‑in‑picture, subtitle/audio track selection
+- **Settings** — download folder, theme, provider API keys (RAWG, TMDB, MyAnimeList), streaming provider, anime provider, default audio, autoplay
+- No WebKit dependency — playback uses Qt WebEngine (Chromium)
 
 ---
 
@@ -68,11 +68,18 @@ A cross-platform desktop application for browsing, downloading, and managing gam
 
 ```
 lgl/
-├── __main__.py          # Entry point: picks GTK (Linux) or Tk (Windows)
+├── __main__.py          # Entry point: picks GTK (Linux) or Qt (Windows)
 ├── platform_support.py  # OS abstraction: paths, open_folder, open_url, admin check, detached Popen
 ├── ui.py                # GTK 3 frontend (Linux) — 12k lines
-├── windows_app.py       # Tkinter frontend (Windows + Linux fallback) — 4.5k lines
-├── windows_media.py     # Media browser for Tk frontend
+├── qt_main.py           # Qt 6 / PySide6 entry point (Windows)
+├── qt_theme.py          # QSS + QML Theme singleton from theme.py tokens
+├── qt_widgets/          # (future) custom Qt widgets
+├── models/              # QAbstractListModel wrappers for QML
+│   ├── game_list_model.py
+│   ├── library_model.py
+│   ├── download_model.py
+│   ├── media_model.py
+│   └── settings_model.py
 ├── movies_ui.py         # Movies & TV (GTK + WebKit2)
 ├── archive.py           # archive.org client + image cache
 ├── catalog.py           # Source policy, robots.txt, URL validation
@@ -95,7 +102,26 @@ lgl/
 ├── streaming.py         # Provider URL builders (frameXTV, VidRift, Atlantic, ani.pm)
 ├── media_history.py     # Playback history store
 ├── style.css            # GTK theme (CSS variables)
-├── tk_style.py          # Tk theme, fonts, DPI awareness
+├── tk_style.py          # Tk theme, fonts, DPI awareness (legacy)
+├── theme.py             # Shared design tokens (colors, spacing, radii, type)
+├── theme_gtk.py         # GTK CSS variable generator
+├── qml/                 # QML UI (Windows Qt front‑end)
+│   ├── MainWindow.qml
+│   ├── RailButton.qml
+│   ├── CoverCard.qml
+│   ├── StatusBadge.qml
+│   ├── BrowsePage.qml
+│   ├── LibraryPage.qml
+│   ├── DownloadsPage.qml
+│   ├── MediaPage.qml
+│   ├── SettingsDialog.qml
+│   ├── AboutDialog.qml
+│   ├── DownloadTaskDelegate.qml
+│   ├── MediaNavBar.qml
+│   ├── HeroBanner.qml
+│   ├── Carousel.qml
+│   ├── MediaPlayer.qml
+│   └── icons.qrc
 └── ...                  # 40+ modules total
 ```
 
@@ -129,6 +155,24 @@ python3 -m lgl.windows_app
 2. Extract and run `NativeGameLibrary.exe`. No Python install needed.
 3. Optional per-user installer (`.exe`) is also published when available.
 
+**Building from source on Windows (requires Windows 10 1809+):**
+```powershell
+# Install Qt 6 via aqtinstall (once)
+pip install aqtinstall
+aqt install-qt windows desktop 6.6.1 win64_mingw --outputdir C:/Qt
+
+# Install Python dependencies
+python -m pip install --upgrade pip
+pip install PySide6 PySide6-WebEngine PyInstaller pillow
+
+# Compile Qt resources (icons.qrc → icons.rcc)
+C:\Qt\6.6.1\mingw_64\bin\pyside6-rcc.exe qml\icons.qrc -o lgl\icons.rcc
+
+# Build with PyInstaller
+python -m PyInstaller --noconfirm --clean packaging\windows\NativeGameLibrary.spec
+```
+The resulting portable ZIP is at `dist\NativeGameLibrary-<version>-windows-x64.zip`. An Inno Setup installer (`.exe`) is also produced if Inno Setup 6 is installed.
+
 **Storage locations (Windows):**
 | Data | Path |
 |------|------|
@@ -159,11 +203,28 @@ sh packaging/linux/build-tarball.sh
 Creates a reproducible tarball with the application, `run.sh`, icons, desktop-entry installer, and `.env.example`. GTK 3, PyGObject, WebKit2GTK, and GStreamer come from the distribution.
 
 ### Windows portable ZIP (must run on Windows)
+
+**Prerequisites (one-time):**
 ```powershell
-python -m pip install pyinstaller
-powershell -ExecutionPolicy Bypass -File packaging\windows\build.ps1
-# → dist\NativeGameLibrary-<version>-windows-x64.zip
+# Install Qt 6 via aqtinstall (once)
+pip install aqtinstall
+aqt install-qt windows desktop 6.6.1 win64_mingw --outputdir C:/Qt
+
+# Python dependencies
+python -m pip install --upgrade pip
+pip install PySide6 PySide6-WebEngine PyInstaller pillow
 ```
+
+**Build:**
+```powershell
+# Compile Qt resources (icons.qrc → icons.rcc)
+C:\Qt\6.6.1\mingw_64\bin\pyside6-rcc.exe qml\icons.qrc -o lgl\icons.rcc
+
+# Build with PyInstaller
+python -m PyInstaller --noconfirm --clean packaging\windows\NativeGameLibrary.spec
+```
+
+The resulting portable ZIP is at `dist\NativeGameLibrary-<version>-windows-x64.zip`.  
 Add `-BundleAria2` to include `aria2c.exe` (GPLv2) for magnet support:
 ```powershell
 powershell -ExecutionPolicy Bypass -File packaging\windows\build.ps1 -BundleAria2
@@ -263,7 +324,6 @@ linux-game-library/
 ## Not implemented / known gaps
 
 - No macOS frontend
-- Windows media playback opens in browser (no WebKit embed)
 - No automatic game launch on download completion
 - No multi-user / multi-profile support
 - No Steam/itch.io/GOG library integration (archive.org only)
@@ -298,4 +358,4 @@ Issues and PRs welcome. Please:
 - Tkinter frontend on Linux Tk: Browse with posters, Downloads with restored task, Library with rescan
 - Screenshot: `docs/screenshot.png`
 
-Windows: frontend & packaging implemented and exercised on Linux Tk + CI; **no interactive Windows verification performed**.
+Windows (Qt front‑end): built on CI (`windows-latest`), smoke‑tested (starts, stays running, loads Browse/Library/Downloads/Media pages, Qt WebEngine loads provider embed). No interactive Windows desktop verification performed by the author.
