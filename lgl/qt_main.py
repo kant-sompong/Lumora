@@ -383,9 +383,26 @@ class Window(QMainWindow):
     def _show_menu(self) -> None:
         menu = QMenu(self)
         menu.setWindowFlags(menu.windowFlags() | Qt.FramelessWindowHint | Qt.NoDropShadowWindowHint)
+        sources = QAction("Website Sources…", self)
+        sources.triggered.connect(self.show_sources)
+        menu.addAction(sources)
+        catalog = QAction("Kryoto Catalog…", self)
+        catalog.triggered.connect(self.show_kryoto_catalog)
+        menu.addAction(catalog)
         queue = QAction("Show Download Queue", self)
         queue.triggered.connect(lambda: self.show_view("downloads"))
         menu.addAction(queue)
+        maintenance = menu.addMenu("Maintenance")
+        rescan = maintenance.addAction("Rescan library")
+        rescan.triggered.connect(self.library.rescan)
+        reload_action = maintenance.addAction("Reload collection")
+        reload_action.triggered.connect(lambda: self.browse.load(force=True))
+        cache_action = maintenance.addAction("Clear image cache")
+        cache_action.triggered.connect(self.clear_image_cache)
+        open_data = maintenance.addAction("Open data folder")
+        open_data.triggered.connect(
+            lambda: platform_support.open_folder(platform_support.data_dir())
+        )
         folder = QAction("Open download folder", self)
         folder.triggered.connect(lambda: platform_support.open_folder(self.download_dir))
         menu.addAction(folder)
@@ -397,6 +414,19 @@ class Window(QMainWindow):
         about.triggered.connect(self.show_about)
         menu.addAction(about)
         menu.exec(self.menu_btn.mapToGlobal(self.menu_btn.rect().bottomLeft()))
+
+    def show_sources(self) -> None:
+        from .qt_catalog import CatalogDialog
+
+        CatalogDialog(self).exec()
+
+    def show_kryoto_catalog(self) -> None:
+        from .qt_catalog import KRYOTO_NOTE, KRYOTO_URL, CatalogDialog
+
+        CatalogDialog(
+            self, title="Kryoto Catalog", url=KRYOTO_URL, note=KRYOTO_NOTE,
+            action="Import all",
+        ).exec()
 
     def show_settings(self, tab: str = "general") -> None:
         dialog = SettingsDialog(self._settings, self)
@@ -503,6 +533,27 @@ class Window(QMainWindow):
         toast = getattr(self, "toast", None)
         if toast is not None:
             toast.reposition()
+
+    def apply_theme(self, mode: str) -> None:
+        """Re-style the running window when Settings changes the theme."""
+        app = QApplication.instance()
+        if app is None:
+            return
+        apply_theme(app, mode)
+        for widget in app.allWidgets():
+            style = widget.style()
+            style.unpolish(widget)
+            style.polish(widget)
+            widget.update()
+
+    def clear_image_cache(self) -> None:
+        """Delete cached covers and posters; they are re-fetched on demand."""
+        import shutil
+
+        root = platform_support.cache_dir()
+        shutil.rmtree(root, ignore_errors=True)
+        root.mkdir(parents=True, exist_ok=True)
+        self.toast.show_message("Image cache cleared.")
 
     def closeEvent(self, event) -> None:  # noqa: N802
         if not self.isMaximized():

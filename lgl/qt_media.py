@@ -850,6 +850,12 @@ class MediaPage(QWidget):
         if hasattr(self, "_anime_grid"):
             for poster in self._anime_grid.cards():
                 cards.append(poster.card)
+        for name in ("_search_grid", "_list_grid", "_history_grid"):
+            grid = getattr(self, name, None)
+            if grid is not None:
+                cards.extend(poster.card for poster in grid.cards())
+        if self._detail_card is not None:
+            cards.append(self._detail_card)
         return cards
 
     def _load_image(self, url: str, key: str, apply: Callable[[QPixmap | None], None] | None) -> None:

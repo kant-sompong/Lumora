@@ -9,7 +9,7 @@ Windows version looks and behaves like the Linux one.
 
 ![Lumora](docs/screenshot.png)
 
-**Current release: 0.3.2**
+**Current release: 0.3.3**
 
 ---
 
@@ -42,6 +42,10 @@ by CI.
 - **Views** — wide cover grid or compact list; covers lazy-load as you scroll
 - **Details panel** — description, size, file list, licence, download count and
   a one-click download
+- **Website sources & catalogues** — the header menu adds any catalogue page the
+  shipped adapters can verify (archive.org, Kryoto, RAWG, JSON/HTML) and imports
+  it into the local catalogue; a Maintenance submenu rescans, reloads and clears
+  the image cache
 
 ### Local library
 - **Scan** the download folder into `library.json` with per-game manifests
@@ -208,7 +212,7 @@ distribution.
 
 `.github/workflows/release.yml` runs the test suite, builds the Windows ZIP and
 the Linux tarball on every push and pull request. Pushing a `v*` tag (for
-example `v0.3.2`) additionally publishes a GitHub release with `Lumora.zip` and
+example `v0.3.3`) additionally publishes a GitHub release with `Lumora.zip` and
 the Linux tarball attached. The tag must match `lgl.__version__`.
 
 ---
@@ -300,8 +304,6 @@ why the Windows build matches the Linux one exactly.
 - No macOS frontend
 - No built-in updater — download the new `Lumora.zip`
 - No Steam / itch.io / GOG import (archive.org only)
-- Website-source import (Kryoto catalog, ad-hoc sources) is part of the Linux
-  build only; the Windows build browses archive.org
 - No automatic game launch after a download finishes
 
 ---

@@ -100,6 +100,17 @@ def test_media_provider_picker_switches_with_the_section(app):
     page.deleteLater()
 
 
+def test_catalog_dialog_builds(app):
+    """The Website Sources / Kryoto dialogs exist and start from a URL."""
+    from lgl.qt_catalog import KRYOTO_NOTE, KRYOTO_URL, CatalogDialog
+
+    qt_main.apply_theme(app, "dark")
+    dialog = CatalogDialog(None, title="Kryoto Catalog", url=KRYOTO_URL, note=KRYOTO_NOTE)
+    assert dialog.windowTitle() == "Kryoto Catalog"
+    assert dialog.url.text() == KRYOTO_URL
+    dialog.deleteLater()
+
+
 def test_downloads_page_toggles(app, tmp_path):
     """Ctrl+D opens the Downloads page and returns to the previous one."""
     qt_main.apply_theme(app, "dark")
