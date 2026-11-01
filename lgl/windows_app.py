@@ -32,6 +32,8 @@ import tkinter as tk
 from typing import Any, Callable, Sequence
 
 from . import __version__, platform_support, tk_style
+from . import streaming
+from .windows_media import build_media_tab
 from .archive import (
     ArchiveClient,
     ArchiveFile,
@@ -325,7 +327,7 @@ class WindowsApp:
         self.status_label.pack(side="left", fill="x", expand=True)
         hint = ttk.Label(
             bar,
-            text="Ctrl+1 Browse   Ctrl+2 Downloads   Ctrl+3 Library",
+            text="Ctrl+1 Browse   Ctrl+2 Downloads   Ctrl+3 Library   Ctrl+4 Media",
             style="Status.TLabel",
             anchor="e",
         )
@@ -339,14 +341,20 @@ class WindowsApp:
         self.browse_tab = ttk.Frame(self.notebook, style="App.TFrame", padding=(0, 10, 0, 0))
         self.downloads_tab = ttk.Frame(self.notebook, style="App.TFrame", padding=(0, 10, 0, 0))
         self.library_tab = ttk.Frame(self.notebook, style="App.TFrame", padding=(0, 10, 0, 0))
+        self.media_tab = ttk.Frame(self.notebook, style="App.TFrame", padding=(0, 10, 0, 0))
         self.notebook.add(self.browse_tab, text="Browse")
         self.notebook.add(self.downloads_tab, text="Downloads")
         self.notebook.add(self.library_tab, text="Library")
+        self.notebook.add(self.media_tab, text="Media")
         self.notebook.bind("<<NotebookTabChanged>>", self._on_tab_changed)
 
         self._build_browse_tab()
         self._build_downloads_tab()
         self._build_library_tab()
+        self._build_media_tab()
+
+    def _build_media_tab(self) -> None:
+        build_media_tab(self, self.media_tab)
 
     # -- browse ------------------------------------------------------------
 
@@ -4254,7 +4262,7 @@ class WindowsApp:
 
         shortcuts = card("Keyboard shortcuts")
         shortcut_rows = (
-            ("Ctrl+1 / 2 / 3", "Switch to Browse, Downloads, or Library"),
+            ("Ctrl+1 / 2 / 3 / 4", "Switch to Browse, Downloads, Library, or Media"),
             ("Ctrl+F", "Focus the search box"),
             ("F5", "Refresh the collection, or rescan the library"),
             ("Ctrl+,", "Open Settings"),
@@ -4272,6 +4280,80 @@ class WindowsApp:
                       wraplength=self._w(380), justify="left").grid(
                 row=row, column=1, sticky="nw", pady=(0, 3)
             )
+
+        # Providers card (RAWG / TMDB / MAL API keys)
+        providers = card("Providers")
+        ttk.Label(
+            providers,
+            text="API keys are stored in the OS keyring. The plain text value is only "
+                 "kept when the keyring is unavailable.",
+            style="Small.TLabel",
+            wraplength=self._w(480),
+            justify="left",
+        ).pack(anchor="w", pady=(0, 8))
+
+        def provider_row(name: str, key: str) -> None:
+            row = ttk.Frame(providers, style="Surface.TFrame")
+            row.pack(fill="x", pady=2)
+            ttk.Label(row, text=name, style="FieldLabel.TLabel", width=14).pack(side="left")
+            var = tk.StringVar(value=self.settings.api_key(key))
+            entry = ttk.Entry(row, textvariable=var, show="•")
+            entry.pack(side="left", fill="x", expand=True, padx=(6, 6))
+            ttk.Button(
+                row, text="Save", width=8,
+                command=lambda k=key, v=var: self._save_provider_key(k, v, window)
+            ).pack(side="left")
+            ttk.Button(
+                row, text="Clear", width=8,
+                command=lambda k=key, v=var: self._clear_provider_key(k, v, window)
+            ).pack(side="left", padx=(4, 0))
+
+        provider_row("RAWG", "rawg")
+        provider_row("TMDB", "tmdb")
+        provider_row("MyAnimeList", "mal")
+
+        # Media card (streaming provider, anime provider, audio, autoplay)
+        media = card("Media")
+        ttk.Label(media, text="Streaming provider", style="FieldLabel.TLabel").pack(anchor="w")
+        streaming_provider_var = tk.StringVar(
+            value=self.settings.get("streaming_provider", streaming.DEFAULT_PROVIDER)
+        )
+        streaming_combo = ttk.Combobox(
+            media, state="readonly", textvariable=streaming_provider_var,
+            values=list(streaming.PROVIDERS),
+        )
+        streaming_combo.pack(fill="x", pady=(2, 8))
+
+        ttk.Label(media, text="Anime streaming provider", style="FieldLabel.TLabel").pack(anchor="w")
+        anime_provider_var = tk.StringVar(
+            value=self.settings.get("anime_streaming_provider", streaming.DEFAULT_ANIME_PROVIDER)
+        )
+        anime_combo = ttk.Combobox(
+            media, state="readonly", textvariable=anime_provider_var,
+            values=list(streaming.ANIME_PROVIDERS),
+        )
+        anime_combo.pack(fill="x", pady=(2, 8))
+
+        ttk.Label(media, text="Default anime audio", style="FieldLabel.TLabel").pack(anchor="w")
+        anime_lang_var = tk.StringVar(
+            value=self.settings.get("anime_language", streaming.DEFAULT_LANGUAGE)
+        )
+        lang_combo = ttk.Combobox(
+            media, state="readonly", textvariable=anime_lang_var,
+            values=list(streaming.LANGUAGES.get(
+                self.settings.get("anime_streaming_provider", streaming.DEFAULT_ANIME_PROVIDER),
+                ("sub", "dub")
+            )),
+        )
+        lang_combo.pack(fill="x", pady=(2, 8))
+
+        autoplay_var = tk.BooleanVar(
+            value=bool(self.settings.get("movie_autoplay", False))
+        )
+        ttk.Checkbutton(
+            media, text="Autoplay when opening a title",
+            variable=autoplay_var,
+        ).pack(anchor="w", pady=(4, 0))
 
         error_var = tk.StringVar(value="")
         error_label = ttk.Label(
@@ -4303,6 +4385,10 @@ class WindowsApp:
                     download_dir=str(folder),
                     notifications=bool(notifications_var.get()),
                     rescan_on_startup=bool(rescan_var.get()),
+                    streaming_provider=streaming_provider_var.get(),
+                    anime_streaming_provider=anime_provider_var.get(),
+                    anime_language=anime_lang_var.get(),
+                    movie_autoplay=bool(autoplay_var.get()),
                 )
                 self.settings.set_theme(theme_var.get())
             except ValueError as exc:
@@ -4354,6 +4440,23 @@ class WindowsApp:
 
     # -- menus and keyboard ------------------------------------------------
 
+    def _save_provider_key(self, provider: str, var: tk.StringVar, window: tk.Toplevel) -> None:
+        value = var.get().strip()
+        try:
+            self.settings.set_api_key(provider, value)
+            var.set(self.settings.api_key(provider))
+            self._status(f"{provider} API key saved.")
+        except Exception as exc:
+            self._status(f"Could not save {provider} key: {exc}", error=True)
+
+    def _clear_provider_key(self, provider: str, var: tk.StringVar, window: tk.Toplevel) -> None:
+        try:
+            self.settings.clear_api_key(provider)
+            var.set("")
+            self._status(f"{provider} API key cleared.")
+        except Exception as exc:
+            self._status(f"Could not clear {provider} key: {exc}", error=True)
+
     def _open_collection_page(self) -> None:
         if not platform_support.open_url(COLLECTION_URL):
             self._status("Could not open the collection page in a browser.", error=True)
@@ -4373,6 +4476,7 @@ class WindowsApp:
         self.root.bind("<Control-Key-1>", lambda _e: self._shortcut_tab(0))
         self.root.bind("<Control-Key-2>", lambda _e: self._shortcut_tab(1))
         self.root.bind("<Control-Key-3>", lambda _e: self._shortcut_tab(2))
+        self.root.bind("<Control-Key-4>", lambda _e: self._shortcut_tab(3))
         self.root.bind("<Control-f>", self._shortcut_search)
         self.root.bind("<Control-F>", self._shortcut_search)
         self.root.bind("<Control-comma>", lambda _e: self._shortcut_settings())
