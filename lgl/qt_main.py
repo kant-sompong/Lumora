@@ -35,11 +35,19 @@ from PySide6.QtWidgets import (
 )
 
 from . import __version__, platform_support, sorting, theme
-from .archive import ArchiveClient
+from .archive import ArchiveClient, build_download_url
+from .downloader import DownloadManager, TaskSnapshot
 from .library_store import LibraryEntry, LibraryStore
 from .qt_theme import build_stylesheet
 from .qt_archive import ArchiveView
-from .qt_widgets import THEME_STATE, CoverArt, FlowLayout, clear_layout, search_icon
+from .qt_downloads import (
+    DownloadBridge,
+    DownloadsPanel,
+    FilePickDialog,
+    downloadable_files,
+    enqueue_files,
+)
+from .qt_widgets import THEME_STATE, CoverArt, FlowLayout, Toast, clear_layout, run_async, search_icon
 from .util import human_size
 
 APP_TITLE = "Native Game Library"
@@ -431,25 +439,16 @@ class LibraryView(QWidget):
 # --------------------------------------------------------------------------
 
 
-class Placeholder(QWidget):
-    """Stand-in for views that are ported in later steps."""
-
-    def __init__(self, title: str, sub: str) -> None:
-        super().__init__()
-        col = QVBoxLayout(self)
-        col.addStretch(1)
-        for text, name in ((title, "empty-title"), (sub, "empty-sub")):
-            label = QLabel(text)
-            label.setObjectName(name)
-            label.setAlignment(Qt.AlignCenter)
-            col.addWidget(label)
-        col.addStretch(1)
-
-
 class MainWindow(QMainWindow):
     def __init__(self, store: LibraryStore | None = None,
-                 client: ArchiveClient | None = None) -> None:
+                 client: ArchiveClient | None = None,
+                 manager: DownloadManager | None = None,
+                 download_dir: Path | None = None) -> None:
         super().__init__()
+        self.client = client
+        self.manager = manager
+        self.download_dir = Path(download_dir) if download_dir else Path.home()
+        self.bridge = DownloadBridge()
         self.setWindowTitle(APP_TITLE)
         self.resize(1280, 800)
         self.setMinimumSize(900, 600)
@@ -499,7 +498,110 @@ class MainWindow(QMainWindow):
         self.stack.addWidget(self.archive)
         self.stack.addWidget(self.library)
         col.addWidget(self.stack, 1)
+
+        self.downloads: DownloadsPanel | None = None
+        if manager is not None:
+            self.downloads = DownloadsPanel(manager, lambda: self.download_dir, self._title_for)
+            self.downloads.hide()
+            self.downloads.closed.connect(self.toggle_downloads)
+            self.downloads.count_changed.connect(self._downloads_count)
+            self.bridge.changed.connect(self.downloads.schedule_refresh)
+            col.addWidget(self.downloads)
+        self.downloads_btn.setCheckable(True)
+        self.downloads_btn.clicked.connect(self.toggle_downloads)
+        self.archive.download_requested.connect(self._download_requested)
+
+        self.toast = Toast(host)
         self.show_view("Library")
+
+    # downloads -------------------------------------------------------------
+    def toggle_downloads(self) -> None:
+        if self.downloads is None:
+            self.toast.show_message("Downloads are not available.", error=True)
+            self.downloads_btn.setChecked(False)
+            return
+        show = not self.downloads.isVisible()
+        self.downloads.setVisible(show)
+        self.downloads_btn.setChecked(show)
+        if show:
+            self.downloads.refresh()
+
+    def _downloads_count(self, active: int) -> None:
+        self.downloads_btn.setText(f"↓  Downloads ({active})" if active else "↓  Downloads")
+
+    def _game(self, identifier: str):
+        return next((g for g in self.archive._games if g.identifier == identifier), None)
+
+    def _title_for(self, identifier: str) -> str:
+        game = self._game(identifier)
+        return (game.title if game else "") or identifier
+
+    def _download_requested(self, identifier: str) -> None:
+        game = self._game(identifier)
+        if self.manager is None or self.client is None or game is None:
+            self.toast.show_message("Downloads are not available.", error=True)
+            return
+        if game.is_catalog:
+            self.toast.show_message(
+                "Downloads from imported catalogs are not ported to this version yet.", error=True
+            )
+            return
+        client = self.client
+        self.toast.show_message("Looking up files…", ms=2500)
+
+        def failed(exc: object) -> None:
+            self.toast.show_message(f"Could not load this game: {exc}", error=True)
+
+        def got_item(item: object) -> None:
+            if getattr(item, "restricted", False):
+                self.toast.show_message(
+                    "This archive item is restricted; downloads are unavailable.", error=True
+                )
+                return
+            files = downloadable_files(item)  # type: ignore[arg-type]
+            if not files:
+                self.toast.show_message("No downloadable files were found.", error=True)
+                return
+            if len(files) > 1:
+                dialog = FilePickDialog(game.title or identifier, files, self)
+                if dialog.exec() != FilePickDialog.Accepted:
+                    return
+                files = dialog.chosen()
+                if not files:
+                    self.toast.show_message("No files were selected.", error=True)
+                    return
+            enqueue_files(
+                self.manager, item, files, self.download_dir,  # type: ignore[arg-type]
+                on_done=self._queued,
+                on_error=lambda exc: self.toast.show_message(f"Could not queue: {exc}", error=True),
+            )
+
+        run_async(lambda: client.fetch_item(identifier), got_item, failed)
+
+    def _queued(self, added: int, errors: list[str], note: str | None) -> None:
+        plural = "file" if added == 1 else "files"
+        if added and not errors and not note:
+            self.toast.show_message(f"Added {added} {plural} to Downloads.")
+        elif added:
+            detail = errors[0] if errors else (note or "")
+            self.toast.show_message(
+                f"Added {added} {plural}. {len(errors)} could not be added: {detail}"
+                if errors else f"Added {added} {plural}. {detail}",
+                error=True,
+            )
+        else:
+            self.toast.show_message(errors[0] if errors else "Nothing was added.", error=True)
+        if self.downloads is not None:
+            self.downloads.refresh()
+
+    def resizeEvent(self, event) -> None:  # noqa: N802
+        super().resizeEvent(event)
+        self.toast.reposition()
+
+    def closeEvent(self, event) -> None:  # noqa: N802
+        if self.manager is not None:
+            self.manager.shutdown()
+        super().closeEvent(event)
 
     def show_view(self, name: str) -> None:
         for key, btn in self.tabs.items():
@@ -525,6 +627,14 @@ def apply_theme(app: QApplication, mode: str = "system") -> str:
     return resolved
 
 
+def _resolve_task_url(snapshot: TaskSnapshot) -> str | None:
+    """Fresh URL for a restored task (the manager asks when it resumes one)."""
+    try:
+        return build_download_url(snapshot.identifier, snapshot.filename)
+    except Exception:  # noqa: BLE001 - an unusable name just means "no URL"
+        return None
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     app = QApplication(list(argv if argv is not None else sys.argv))
     app.setApplicationName(APP_TITLE)
@@ -535,7 +645,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     download_dir = Path(settings.download_dir or platform_support.default_download_dir())
     store = LibraryStore(platform_support.data_dir() / "library.json", download_dir)
     client = ArchiveClient(cache_root=platform_support.cache_dir())
-    window = MainWindow(store, client)
+    bridge_holder: dict[str, DownloadBridge] = {}
+    manager = DownloadManager(
+        observer=lambda: bridge_holder["b"].notify() if "b" in bridge_holder else None,
+        queue_path=platform_support.data_dir() / "downloads.json",
+        url_resolver=_resolve_task_url,
+        timeout=float(settings.network_timeout),
+        retry_limit=settings.download_retries,
+    )
+    window = MainWindow(store, client, manager, download_dir)
+    bridge_holder["b"] = window.bridge
     window.library.set_entries(store.entries())
     window.archive.load()
     window.show()

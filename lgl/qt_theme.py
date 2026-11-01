@@ -151,10 +151,27 @@ QLabel#kv-warn {{ color: {c['warning']}; }}
 QLabel#kv-ok {{ color: {c['success']}; }}
 QLabel#detail-note {{ color: {c['muted']}; font-size: {small}px; }}
 
+/* ---- downloads drawer ------------------------------------------------------ */
+QFrame#downloads {{ background: {c['surface']}; border-top: 1px solid {alpha(fg, 0.08)}; }}
+QFrame#dl-head {{ background: transparent; border-bottom: 1px solid {alpha(fg, 0.06)}; }}
+QFrame#dl-row {{ background: transparent; border-bottom: 1px solid {alpha(fg, 0.05)}; }}
+QLabel#dl-name {{ font-weight: 600; }}
+QLabel#dl-game {{ color: {c['muted']}; font-size: {small}px; }}
+QLabel#dl-detail {{ color: {c['muted']}; font-size: {small}px; }}
+QFrame#dl-row[state="failed"] QLabel#dl-detail {{ color: {c['danger']}; }}
+QFrame#dl-row[state="completed"] QLabel#dl-detail {{ color: {c['success']}; }}
+QProgressBar#dl-bar {{ background: {alpha(fg, 0.10)}; border: none; border-radius: 3px; }}
+QProgressBar#dl-bar::chunk {{ background: {c['accent']}; border-radius: 3px; }}
+QFrame#dl-row[state="failed"] QProgressBar#dl-bar::chunk {{ background: {c['danger']}; }}
+QFrame#dl-row[state="paused"] QProgressBar#dl-bar::chunk,
+QFrame#dl-row[state="cancelled"] QProgressBar#dl-bar::chunk {{ background: {alpha(fg, 0.35)}; }}
+QPushButton#small {{ padding: 3px 10px; }}
+
 /* ---- toast + empty state --------------------------------------------------- */
 QFrame#toast {{
     background: {c['raised']}; border: 1px solid {c['divider']}; border-radius: {lg}px;
 }}
+QFrame#toast[error="true"] {{ border-color: {alpha(c['danger'], 0.6)}; }}
 QLabel#empty-title {{ font-size: {title}px; font-weight: 600; }}
 QLabel#empty-sub {{ color: {c['muted']}; }}
 QLabel#page-title {{ font-size: {page}px; font-weight: 700; }}

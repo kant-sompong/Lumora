@@ -5,9 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Callable
 
-from PySide6.QtCore import QObject, QPoint, QRect, QRunnable, QSize, Qt, QThreadPool, Signal
+from PySide6.QtCore import QObject, QPoint, QRect, QRunnable, QSize, Qt, QThreadPool, QTimer, Signal
 from PySide6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPen, QPixmap
-from PySide6.QtWidgets import QLayout, QLayoutItem, QWidget
+from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QLayout, QLayoutItem, QWidget
 
 
 class _Signals(QObject):
@@ -189,3 +189,43 @@ class CoverArt(QWidget):
                 (self.height() - scaled.height()) // 2,
                 scaled,
             )
+
+
+class Toast(QFrame):
+    """A short message pinned to the bottom centre of its parent window.
+
+    Mirrors the GTK app's toast: it fades out on its own, never takes focus
+    and a newer message simply replaces the one on screen.
+    """
+
+    def __init__(self, parent: QWidget) -> None:
+        super().__init__(parent)
+        self.setObjectName("toast")
+        self.setAttribute(Qt.WA_TransparentForMouseEvents)
+        row = QHBoxLayout(self)
+        row.setContentsMargins(16, 10, 16, 10)
+        self._label = QLabel()
+        self._label.setWordWrap(True)
+        row.addWidget(self._label)
+        self._timer = QTimer(self)
+        self._timer.setSingleShot(True)
+        self._timer.timeout.connect(self.hide)
+        self.hide()
+
+    def show_message(self, text: str, error: bool = False, ms: int = 4500) -> None:
+        self._label.setText(text)
+        self.setProperty("error", "true" if error else "false")
+        self.style().unpolish(self)
+        self.style().polish(self)
+        self.setMaximumWidth(max(240, min(560, self.parentWidget().width() - 48)))
+        self.adjustSize()
+        self.reposition()
+        self.show()
+        self.raise_()
+        self._timer.start(ms)
+
+    def reposition(self) -> None:
+        parent = self.parentWidget()
+        if parent is None:
+            return
+        self.move((parent.width() - self.width()) // 2, parent.height() - self.height() - 28)
