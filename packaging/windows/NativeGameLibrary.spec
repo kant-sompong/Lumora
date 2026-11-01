@@ -25,6 +25,15 @@ binaries = []
 if ARIA2.exists():
     binaries.append((str(ARIA2), "."))
 
+import sysconfig
+
+# Get tkinter path from the running Python
+TKINTER_PATH = Path(sysconfig.get_path("stdlib")) / "tkinter"
+
+# TCL/TK library paths (needed for runtime)
+TCL_PATH = Path(sysconfig.get_path("stdlib")).parent / "tcl" / "tcl8.6"
+TK_PATH = Path(sysconfig.get_path("stdlib")).parent / "tcl" / "tk8.6"
+
 datas = [
     (str(PROJECT_ROOT / "lgl" / "style.css"), "lgl"),
     (str(PROJECT_ROOT / "README.md"), "."),
@@ -32,6 +41,16 @@ datas = [
 ]
 if ARIA2_LICENSE.exists():
     datas.append((str(ARIA2_LICENSE), "."))
+
+# Force include tkinter pure Python modules
+if TKINTER_PATH.exists():
+    datas.append((str(TKINTER_PATH), "tkinter"))
+
+# Force include TCL/TK library files (init.tcl, etc.)
+if TCL_PATH.exists():
+    datas.append((str(TCL_PATH), "tcl/tcl8.6"))
+if TK_PATH.exists():
+    datas.append((str(TK_PATH), "tcl/tk8.6"))
 
 a = Analysis(
     [str(SPEC_ROOT / "launcher.py")],
@@ -59,9 +78,16 @@ a = Analysis(
         "tkinter.ttk",
         "tkinter.filedialog",
         "tkinter.messagebox",
+        "tkinter.colorchooser",
+        "tkinter.font",
+        "tkinter.scrolledtext",
+        "tkinter.simpledialog",
+        "tkinter.dnd",
+        "_tkinter",
         "PIL.Image",
         "PIL.ImageTk",
     ],
+    collect_all=["tkinter"],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
