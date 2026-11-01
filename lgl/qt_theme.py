@@ -289,6 +289,22 @@ QPushButton#popoverAction {{
 }}
 QPushButton#popoverAction:hover {{ background: {alpha(fg, 0.08)}; }}
 
+/* ---- media episode selector ------------------------------------------- */
+QFrame#episodeRow {{
+    background: {alpha(fg, 0.035)};
+    border: 1px solid {alpha(fg, 0.07)};
+    border-radius: {md}px;
+}}
+QFrame#episodeRow:hover {{
+    background: {alpha(fg, 0.075)};
+    border-color: {alpha(fg, 0.16)};
+}}
+QLabel#episodeNumber {{ color: {c['muted']}; font-weight: 700; }}
+QLabel#episodeTitle {{ font-weight: 600; }}
+QLabel#episodeMeta {{ color: {c['faint']}; font-size: {small}px; }}
+QLabel#episodePlay {{ color: {c['accent']}; font-size: {body}px; }}
+QComboBox#seasonPicker {{ padding: 6px 10px; }}
+
 /* ---- toast ------------------------------------------------------------ */
 QFrame#toast {{
     background: {c['raised']}; border: 1px solid {c['divider']}; border-radius: {lg}px;

@@ -41,6 +41,7 @@ from .qt_widgets import (
     ScrollRow,
     SectionTitle,
     Toast,
+    clear_layout,
     label,
     pixmap_from_bytes,
     cached_image_bytes,
@@ -53,8 +54,7 @@ from .util import human_size  # noqa: F401 - kept for a stable import surface
 WATCHLIST_KEY = "movie_watchlist"
 NAV_ITEMS = (
     ("home", "Home"), ("movies", "Movies"), ("tv", "TV Shows"),
-    ("anime", "Anime"), ("search", "Search"), ("list", "My List"),
-    ("history", "History"),
+    ("anime", "Anime"), ("list", "My List"), ("history", "History"),
 )
 
 
@@ -373,6 +373,46 @@ class HeroPanel(HeroBanner):
 # --------------------------------------------------------------------------
 # playback
 # --------------------------------------------------------------------------
+
+
+class EpisodeRow(QFrame):
+    """One episode in the season list: number, title, air date, play hint."""
+
+    clicked = Signal()
+
+    def __init__(self, number: int, title: str, air_date: str = "") -> None:
+        super().__init__()
+        self.setObjectName("episodeRow")
+        self.setCursor(Qt.PointingHandCursor)
+        self.setAttribute(Qt.WA_Hover, True)
+        row = QHBoxLayout(self)
+        row.setContentsMargins(14, 9, 14, 9)
+        row.setSpacing(12)
+
+        badge = QLabel(f"{int(number):02d}" if number else "—")
+        badge.setObjectName("episodeNumber")
+        badge.setFixedWidth(28)
+        row.addWidget(badge, 0, Qt.AlignVCenter)
+
+        text = QVBoxLayout()
+        text.setSpacing(2)
+        name = ElideLabel(title or "Episode")
+        name.setObjectName("episodeTitle")
+        text.addWidget(name)
+        if air_date:
+            meta = QLabel(str(air_date))
+            meta.setObjectName("episodeMeta")
+            text.addWidget(meta)
+        row.addLayout(text, 1)
+
+        play = QLabel("▶")
+        play.setObjectName("episodePlay")
+        row.addWidget(play, 0, Qt.AlignVCenter)
+
+    def mouseReleaseEvent(self, event) -> None:  # noqa: N802
+        if event.button() == Qt.LeftButton and self.rect().contains(event.position().toPoint()):
+            self.clicked.emit()
+        super().mouseReleaseEvent(event)
 
 
 class PlayerDialog(QDialog):
@@ -719,10 +759,23 @@ class MediaPage(QWidget):
         column.addWidget(self.detail_info)
         self.episode_head = SectionTitle("Episodes")
         column.addWidget(self.episode_head)
+        picker = QHBoxLayout()
+        picker.setSpacing(8)
+        self.season_label = label("Season", "detailNote")
+        picker.addWidget(self.season_label)
+        self.season_combo = QComboBox()
+        self.season_combo.setObjectName("seasonPicker")
+        self.season_combo.setMinimumWidth(220)
+        self.season_combo.setCursor(Qt.PointingHandCursor)
+        self.season_combo.setVisible(False)
+        self.season_combo.currentIndexChanged.connect(self._season_changed)
+        picker.addWidget(self.season_combo)
+        picker.addStretch(1)
+        column.addLayout(picker)
         self.episode_host = QWidget()
         self.episode_column = QVBoxLayout(self.episode_host)
         self.episode_column.setContentsMargins(0, 0, 0, 0)
-        self.episode_column.setSpacing(4)
+        self.episode_column.setSpacing(6)
         column.addWidget(self.episode_host)
         column.addStretch(1)
 
@@ -1039,18 +1092,17 @@ class MediaPage(QWidget):
         self._load_episodes(card)
 
     def _load_episodes(self, card: Card) -> None:
-        while self.episode_column.count():
-            item = self.episode_column.takeAt(0)
-            widget = item.widget() if item else None
-            if widget is not None:
-                widget.deleteLater()
+        clear_layout(self.episode_column)
         client = getattr(self, "_tmdb", None)
         if card.kind != "tv" or card.tmdb_id == 0 or client is None:
             self.episode_head.setVisible(False)
             self.episode_host.setVisible(False)
+            self.season_label.setVisible(False)
+            self.season_combo.setVisible(False)
             return
         self.episode_head.setVisible(True)
         self.episode_host.setVisible(True)
+        self.season_label.setVisible(True)
         self.episode_head.title.setText("Episodes")
         self.episode_head.count.setText("loading…")
 
@@ -1058,54 +1110,62 @@ class MediaPage(QWidget):
             return client.details("tv", card.tmdb_id)
 
         def done(result: object) -> None:
-            seasons = list(getattr(result, "seasons", ()) or ())
+            seasons = [
+                season for season in (getattr(result, "seasons", ()) or ())
+                if int(getattr(season, "number", 0) or 0) > 0
+            ]
             self.episode_head.count.setText(f"{len(seasons)} seasons")
+            self.season_combo.blockSignals(True)
+            self.season_combo.clear()
+            for season in seasons:
+                number = int(getattr(season, "number", 0) or 0)
+                self.season_combo.addItem(
+                    f"Season {number} · {getattr(season, 'episode_count', 0)} episodes",
+                    number,
+                )
+            self.season_combo.setVisible(bool(seasons))
             if not seasons:
+                self.season_combo.blockSignals(False)
                 self.episode_column.addWidget(label("No episodes listed.", "mediaNote"))
                 return
-            for season in seasons[:6]:
-                button = QPushButton(
-                    f"Season {getattr(season, 'number', '?')} · "
-                    f"{getattr(season, 'episode_count', 0)} episodes"
-                )
-                button.setObjectName("mediaNav")
-                button.setCursor(Qt.PointingHandCursor)
-                button.clicked.connect(
-                    lambda _=False, s=season, c=card: self._open_season(c, s)
-                )
-                self.episode_column.addWidget(button)
+            self.season_combo.setCurrentIndex(0)
+            self.season_combo.blockSignals(False)
+            self._show_season(card, int(self.season_combo.itemData(0)))
 
-        run_async(work, done, lambda _exc: None)
+        run_async(work, done, lambda exc: self._note_error(exc))
 
-    def _open_season(self, card: Card, season: object) -> None:
+    def _season_changed(self, _index: int) -> None:
+        card = getattr(self, "_detail_card", None)
+        number = self.season_combo.currentData()
+        if card is None or number is None:
+            return
+        self._show_season(card, int(number))
+
+    def _show_season(self, card: Card, number: int) -> None:
         client = getattr(self, "_tmdb", None)
-        number = int(getattr(season, "number", 1) or 1)
         if client is None:
             return
-        window = self.window()
-        toast = getattr(window, "toast", None)
-        if isinstance(toast, Toast):
-            toast.show_message(f"Loading season {number}…", ms=2000)
+        clear_layout(self.episode_column)
+        self.episode_head.count.setText(f"Season {number} · loading…")
 
         def work() -> object:
             return client.season(card.tmdb_id, number)
 
         def done(result: object) -> None:
-            while self.episode_column.count():
-                item = self.episode_column.takeAt(0)
-                widget = item.widget() if item else None
-                if widget is not None:
-                    widget.deleteLater()
+            clear_layout(self.episode_column)
             episodes = list(getattr(result, "episodes", ()) or ())
             self.episode_head.count.setText(f"Season {number} · {len(episodes)} episodes")
+            if not episodes:
+                self.episode_column.addWidget(label("No episodes listed.", "mediaNote"))
+                return
             for episode in episodes[:40]:
-                row = QPushButton(
-                    f"{getattr(episode, 'number', '?')}. {getattr(episode, 'title', 'Episode')}"
+                row = EpisodeRow(
+                    int(getattr(episode, "number", 0) or 0),
+                    str(getattr(episode, "title", "Episode") or "Episode"),
+                    str(getattr(episode, "air_date", "") or ""),
                 )
-                row.setObjectName("mediaNav")
-                row.setCursor(Qt.PointingHandCursor)
                 row.clicked.connect(
-                    lambda _=False, e=episode, c=card, s=number: self._play_tmdb(c, s, e)
+                    lambda e=episode, s=number, c=card: self._play_tmdb(c, s, e)
                 )
                 self.episode_column.addWidget(row)
 

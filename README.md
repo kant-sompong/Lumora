@@ -9,7 +9,7 @@ Windows version looks and behaves like the Linux one.
 
 ![Lumora](docs/screenshot.png)
 
-**Current release: 0.3.5**
+**Current release: 0.3.6**
 
 ---
 
@@ -212,7 +212,7 @@ distribution.
 
 `.github/workflows/release.yml` runs the test suite, builds the Windows ZIP and
 the Linux tarball on every push and pull request. Pushing a `v*` tag (for
-example `v0.3.5`) additionally publishes a GitHub release with `Lumora-Windows-x64.zip` and
+example `v0.3.6`) additionally publishes a GitHub release with `Lumora-Windows-x64.zip` and
 the Linux tarball attached. The tag must match `lgl.__version__`.
 
 ---

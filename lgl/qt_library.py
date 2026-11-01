@@ -518,6 +518,7 @@ class LibraryDetail(QFrame):
             (("Edit details…", "edit"),),
             (("Verify integrity", "verify"), ("☆ Favorite", "favorite")),
             (("Review && launch…", "launch"),),
+            (("Remove from library", "remove"),),
         ):
             line = QHBoxLayout()
             line.setSpacing(8)
@@ -1197,6 +1198,31 @@ class LibraryPage(QWidget):
             self._verify(entry)
         elif action == "launch":
             self._launch(entry)
+        elif action == "remove":
+            self._remove(entry)
+
+    def _remove(self, entry: LibraryEntry) -> None:
+        """Forget one library entry; the folder and its files are left alone."""
+        if self.store is None:
+            return
+        name = entry.title or entry.identifier
+        answer = QMessageBox.question(
+            self,
+            "Remove from library",
+            f"Remove “{name}” from the library?\n\n"
+            "Only the library index changes — the folder and its files stay on disk.",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if answer != QMessageBox.Yes:
+            return
+        self.store.remove(entry.identifier)
+        self._entries = self.store.entries()
+        self._selected = ""
+        self.detail.hide()
+        self.refresh()
+        self.changed.emit()
+        self._toast(f"Removed {name} from the library.")
 
     def _edit(self, entry: LibraryEntry) -> None:
         dialog = EditDetailsDialog(entry, self)

@@ -123,6 +123,32 @@ def test_search_results_receive_their_posters(app):
     page.deleteLater()
 
 
+def test_media_episode_picker_and_nav(app):
+    """Search is opened by typing, and episodes use a season picker."""
+    from lgl.qt_media import NAV_ITEMS, EpisodeRow, MediaPage
+
+    assert all(key != "search" for key, _text in NAV_ITEMS)
+    qt_main.apply_theme(app, "dark")
+    page = MediaPage(None)
+    assert page.season_combo is not None
+    assert page.season_combo.isVisible() is False
+    row = EpisodeRow(2, "Radio Killed the Video Star", "2024-01-20")
+    assert row.objectName() == "episodeRow"
+    page.deleteLater()
+
+
+def test_library_offers_remove_from_library(app):
+    from PySide6.QtWidgets import QPushButton
+
+    from lgl.qt_library import LibraryPage
+
+    qt_main.apply_theme(app, "dark")
+    page = LibraryPage(None)
+    labels = [button.text() for button in page.detail.findChildren(QPushButton)]
+    assert any("Remove from library" in text for text in labels)
+    page.deleteLater()
+
+
 def test_catalog_dialog_builds(app):
     """The Website Sources / Kryoto dialogs exist and start from a URL."""
     from lgl.qt_catalog import KRYOTO_NOTE, KRYOTO_URL, CatalogDialog
