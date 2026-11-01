@@ -118,7 +118,7 @@ def _install_hint() -> str:
     if os.name == "nt":
         return (
             "The built-in torrent engine could not be loaded. Reinstall the "
-            "application, or put aria2c.exe next to NativeGameLibrary.exe and "
+            "application, or put aria2c.exe next to Lumora.exe and "
             "set its path in Settings."
         )
     if sys.platform == "darwin":

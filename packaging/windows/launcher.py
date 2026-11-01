@@ -10,7 +10,7 @@ import sys
 
 
 def main() -> int:
-    from lgl.windows_app import main as app_main
+    from lgl.__main__ import main as app_main
 
     return int(app_main() or 0)
 

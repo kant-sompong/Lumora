@@ -36,7 +36,7 @@ cat > "$ENTRY" <<EOF
 [Desktop Entry]
 Type=Application
 Version=1.0
-Name=Native Game Library
+Name=Lumora
 GenericName=Game Library
 Comment=Browse and download Linux games from the Internet Archive
 Exec="$SAFE_ROOT/run.sh"

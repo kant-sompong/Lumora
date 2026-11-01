@@ -3,7 +3,7 @@
 #
 #   sh packaging/linux/build-tarball.sh
 #
-# Produces dist/NativeGameLibrary-<version>-linux-<arch>.tar.gz containing the
+# Produces dist/Lumora-<version>-linux-<arch>.tar.gz containing the
 # application, run.sh, icons, the desktop-entry installer, .env.example and the
 # README.  PyGObject, GTK 3 and (for Movies & TV playback) WebKit2GTK come from
 # the distribution, as documented in the README.
@@ -20,7 +20,7 @@ PYTHON=${PYTHON:-python3}
 
 VERSION=$("$PYTHON" -c 'import lgl; print(lgl.__version__)')
 ARCH=$(uname -m)
-NAME="NativeGameLibrary-$VERSION-linux-$ARCH"
+NAME="Lumora-$VERSION-linux-$ARCH"
 STAGE="build/$NAME"
 
 rm -rf "$STAGE"

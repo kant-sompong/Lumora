@@ -1,0 +1,101 @@
+name: Build and release
+
+# Every push to main and every pull request runs the tests and builds both
+# packages, so a broken spec is found before a release.  Pushing a v* tag
+# (for example v0.2.6) additionally publishes a GitHub release with the
+# Windows zip and the Linux tarball attached.
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Tests (Windows, real Qt)
+    runs-on: windows-latest
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install PySide6-Essentials pillow pytest
+      - name: Tag matches lgl.__version__
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          $v = python -c "import lgl; print(lgl.__version__)"
+          if ("v$v" -ne "${{ github.ref_name }}") {
+            throw "Tag ${{ github.ref_name }} does not match lgl.__version__ $v"
+          }
+      - name: Run tests
+        run: python -m pytest tests -q
+
+  windows:
+    name: Windows portable zip
+    needs: test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install PySide6-Essentials pillow pyinstaller
+      - name: Build with PyInstaller
+        run: python -m PyInstaller --noconfirm --clean packaging/windows/Lumora.spec
+      - name: Smoke test the built exe (must still be running after 10 s)
+        run: |
+          $p = Start-Process -FilePath "dist\Lumora\Lumora.exe" -PassThru
+          Start-Sleep -Seconds 10
+          if ($p.HasExited) { throw "Lumora.exe exited early with code $($p.ExitCode)" }
+          Stop-Process -Id $p.Id -Force
+      - name: Zip
+        run: |
+          $v = python -c "import lgl; print(lgl.__version__)"
+          Compress-Archive -Path dist\Lumora -DestinationPath "dist\Lumora-$v-windows-x64.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-zip
+          path: dist/Lumora-*-windows-x64.zip
+
+  linux:
+    name: Linux tarball
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build tarball
+        run: sh packaging/linux/build-tarball.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-tarball
+          path: dist/Lumora-*-linux-*.tar.gz
+
+  publish:
+    name: Publish release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [windows, linux]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: assets
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: assets/*
+          generate_release_notes: true

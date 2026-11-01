@@ -41,7 +41,7 @@ _AUTO = object()
 
 
 def _log(message: str) -> None:
-    print(f"Native Game Library: {message}", file=sys.stderr)
+    print(f"Lumora: {message}", file=sys.stderr)
 
 
 def _to_hex(colour: Any) -> str:

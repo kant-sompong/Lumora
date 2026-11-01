@@ -1,4 +1,4 @@
-"""Qt 6 (PySide6) frontend for Native Game Library - the Windows UI.
+"""Qt 6 (PySide6) frontend for Lumora - the Windows UI.
 
 It mirrors the GTK frontend (``ui.py``): the same header bar with centred
 Archive / Library tabs, the same toolbar, poster-grid tiles and right-hand
@@ -50,7 +50,7 @@ from .qt_downloads import (
 from .qt_widgets import THEME_STATE, CoverArt, FlowLayout, Toast, clear_layout, run_async, search_icon
 from .util import human_size
 
-APP_TITLE = "Native Game Library"
+APP_TITLE = "Lumora"
 TILE_W = 222
 COVER_H = 180
 

@@ -1,4 +1,4 @@
-"""Native Tkinter frontend for Native Game Library.
+"""Native Tkinter frontend for Lumora.
 
 A second, native-feeling frontend over the same platform-neutral core used by
 the GTK application.  It targets Windows 10/11 (bundled with PyInstaller) but
@@ -79,7 +79,7 @@ from .util import (
     short,
 )
 
-APP_TITLE = "Native Game Library"
+APP_TITLE = "Lumora"
 COLLECTION_URL = "https://archive.org/details/native-linux-games-collection"
 
 try:  # Pillow is optional; the frozen Windows build excludes it on purpose.
@@ -310,7 +310,7 @@ class WindowsApp:
         help_menu = tk.Menu(menubar, tearoff=False)
         help_menu.add_command(label="Open collection on archive.org", underline=0,
                               command=self._open_collection_page)
-        help_menu.add_command(label="About Native Game Library", underline=0,
+        help_menu.add_command(label="About Lumora", underline=0,
                               command=self._show_about)
         menubar.add_cascade(label="Help", underline=0, menu=help_menu)
         self.root.configure(menu=menubar)
@@ -4463,8 +4463,8 @@ class WindowsApp:
 
     def _show_about(self) -> None:
         messagebox.showinfo(
-            "About Native Game Library",
-            f"Native Game Library {__version__}\n\n"
+            "About Lumora",
+            f"Lumora {__version__}\n\n"
             "Browse the public Internet Archive collection "
             "native-linux-games-collection, download files to your own folder, "
             "and review them before anything is launched.\n\n"

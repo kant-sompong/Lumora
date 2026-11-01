@@ -6431,7 +6431,7 @@ class MainWindow(Gtk.ApplicationWindow):
 
         menu.append(Gtk.SeparatorMenuItem())
         add_item("Settings…", lambda: self.show_settings())
-        add_item("About Native Game Library", self.show_about)
+        add_item("About Lumora", self.show_about)
         menu.show_all()
 
         button = Gtk.MenuButton()

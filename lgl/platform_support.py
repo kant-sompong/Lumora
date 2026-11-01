@@ -236,7 +236,7 @@ def notify(title: str, message: str, *, error: bool = False) -> bool:
     """
     if IS_WINDOWS or IS_MACOS:
         return False
-    command = ["notify-send", "--app-name=Native Game Library"]
+    command = ["notify-send", "--app-name=Lumora"]
     if error:
         command.append("--urgency=critical")
     command.extend([title, message])

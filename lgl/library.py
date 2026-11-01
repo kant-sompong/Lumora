@@ -81,7 +81,7 @@ def write_manifest(folder: Path, item: Any) -> Path:
         "rights": getattr(item, "rights", ""),
         "subjects": getattr(item, "subjects", []),
         "source_url": getattr(item, "download_url", ""),
-        "managed_by": "Native Game Library",
+        "managed_by": "Lumora",
     }
     path = folder / MANIFEST_NAME
     atomic_write_json(path, manifest)

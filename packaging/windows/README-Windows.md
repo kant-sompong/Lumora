@@ -1,6 +1,6 @@
-# Native Game Library — Windows README
+# Lumora — Windows README
 
-This is the Windows portable build of Native Game Library.
+This is the Windows portable build of Lumora.
 
 ## Requirements
 - Windows 10 (version 1809 or later) or Windows 11
@@ -8,7 +8,7 @@ This is the Windows portable build of Native Game Library.
 
 ## Running
 1. Extract the ZIP archive to a folder of your choice.
-2. Run `NativeGameLibrary.exe`.
+2. Run `Lumora.exe`.
 
 ## Data locations
 | Data | Path |
@@ -17,6 +17,8 @@ This is the Windows portable build of Native Game Library.
 | Library index | `%LOCALAPPDATA%\NativeGameLibrary\library.json` |
 | Download queue | `%LOCALAPPDATA%\NativeGameLibrary\downloads.json` |
 | Cache | `%LOCALAPPDATA%\NativeGameLibrary\Cache\` |
+
+The app was renamed to Lumora in 0.2.6, but it keeps using the `NativeGameLibrary` folders above so existing settings and libraries carry over.
 | Downloads | User-chosen folder (Settings → Download folder) |
 
 ## Features

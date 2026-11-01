@@ -1,4 +1,4 @@
-# Native Game Library
+# Lumora
 
 A cross-platform desktop application for browsing, downloading, and managing games from the Internet Archive's **native-linux-games-collection**. Runs on **Linux (GTK 3)** and **Windows 10/11 (Qt 6 / PySide6)** with a shared Python core.
 
@@ -151,27 +151,19 @@ python3 -m lgl.windows_app
 
 ### Windows
 
-1. Download `NativeGameLibrary-<version>-windows-x64.zip` from [Releases](https://github.com/kant-sompong/Lumora/releases) or CI artifacts.
-2. Extract and run `NativeGameLibrary.exe`. No Python install needed.
+1. Download `Lumora-<version>-windows-x64.zip` from [Releases](https://github.com/kant-sompong/Lumora/releases) or CI artifacts.
+2. Extract and run `Lumora.exe`. No Python install needed.
 3. Optional per-user installer (`.exe`) is also published when available.
 
-**Building from source on Windows (requires Windows 10 1809+):**
+**Building from source on Windows (requires Windows 10 1809+ and Python 3.10+):**
 ```powershell
-# Install Qt 6 via aqtinstall (once)
-pip install aqtinstall
-aqt install-qt windows desktop 6.6.1 win64_mingw --outputdir C:/Qt
-
-# Install Python dependencies
 python -m pip install --upgrade pip
-pip install PySide6 PySide6-WebEngine PyInstaller pillow
+pip install PySide6-Essentials pyinstaller pillow
 
-# Compile Qt resources (icons.qrc → icons.rcc)
-C:\Qt\6.6.1\mingw_64\bin\pyside6-rcc.exe qml\icons.qrc -o lgl\icons.rcc
-
-# Build with PyInstaller
-python -m PyInstaller --noconfirm --clean packaging\windows\NativeGameLibrary.spec
+python -m PyInstaller --noconfirm --clean packaging\windows\Lumora.spec
+Compress-Archive -Path dist\Lumora -DestinationPath dist\Lumora-<version>-windows-x64.zip
 ```
-The resulting portable ZIP is at `dist\NativeGameLibrary-<version>-windows-x64.zip`. An Inno Setup installer (`.exe`) is also produced if Inno Setup 6 is installed.
+The portable app is the `dist\Lumora` folder (run `Lumora.exe`). Pushing a `v*` tag makes GitHub Actions (`.github/workflows/release.yml`) do exactly this on a Windows runner and attach the zip, plus the Linux tarball, to the release.
 
 **Storage locations (Windows):**
 | Data | Path |
@@ -180,6 +172,8 @@ The resulting portable ZIP is at `dist\NativeGameLibrary-<version>-windows-x64.z
 | Library index | `%LOCALAPPDATA%\NativeGameLibrary\library.json` |
 | Download queue | `%LOCALAPPDATA%\NativeGameLibrary\downloads.json` |
 | Cache | `%LOCALAPPDATA%\NativeGameLibrary\Cache\` |
+
+The app was renamed to Lumora in 0.2.6, but it keeps using the `NativeGameLibrary` folders above so existing settings and libraries carry over.
 | Downloads | User-chosen folder (Settings → Download folder) |
 
 ### Linux storage locations
@@ -198,38 +192,21 @@ The resulting portable ZIP is at `dist\NativeGameLibrary-<version>-windows-x64.z
 ### Linux portable tarball
 ```sh
 sh packaging/linux/build-tarball.sh
-# → dist/NativeGameLibrary-<version>-linux-<arch>.tar.gz
+# → dist/Lumora-<version>-linux-<arch>.tar.gz
 ```
 Creates a reproducible tarball with the application, `run.sh`, icons, desktop-entry installer, and `.env.example`. GTK 3, PyGObject, WebKit2GTK, and GStreamer come from the distribution.
 
 ### Windows portable ZIP (must run on Windows)
 
-**Prerequisites (one-time):**
 ```powershell
-# Install Qt 6 via aqtinstall (once)
-pip install aqtinstall
-aqt install-qt windows desktop 6.6.1 win64_mingw --outputdir C:/Qt
-
-# Python dependencies
 python -m pip install --upgrade pip
-pip install PySide6 PySide6-WebEngine PyInstaller pillow
+pip install PySide6-Essentials pyinstaller pillow
+python -m PyInstaller --noconfirm --clean packaging\windows\Lumora.spec
+Compress-Archive -Path dist\Lumora -DestinationPath dist\Lumora-<version>-windows-x64.zip
 ```
 
-**Build:**
-```powershell
-# Compile Qt resources (icons.qrc → icons.rcc)
-C:\Qt\6.6.1\mingw_64\bin\pyside6-rcc.exe qml\icons.qrc -o lgl\icons.rcc
+The release workflow builds this automatically for every `v*` tag.
 
-# Build with PyInstaller
-python -m PyInstaller --noconfirm --clean packaging\windows\NativeGameLibrary.spec
-```
-
-The resulting portable ZIP is at `dist\NativeGameLibrary-<version>-windows-x64.zip`.  
-Add `-BundleAria2` to include `aria2c.exe` (GPLv2) for magnet support:
-```powershell
-powershell -ExecutionPolicy Bypass -File packaging\windows\build.ps1 -BundleAria2
-```
-An Inno Setup installer (`.exe`) is also produced if Inno Setup 6 is installed.
 
 ---
 
@@ -298,7 +275,7 @@ linux-game-library/
 │   ├── linux/build-tarball.sh   # Portable Linux tarball
 │   └── windows/
 │       ├── build.ps1            # PyInstaller + optional Inno Setup
-│       ├── NativeGameLibrary.spec
+│       ├── Lumora.spec
 │       ├── installer.iss
 │       ├── launcher.py
 │       └── README-Windows.md

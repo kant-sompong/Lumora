@@ -4,9 +4,9 @@
 Built on a real Windows runner (GitHub Actions ``windows-latest``); a binary
 cross-built on Linux is not a supported or tested artifact.
 
-    pyinstaller --noconfirm packaging/windows/NativeGameLibrary.spec
+    pyinstaller --noconfirm packaging/windows/Lumora.spec
 
-Output: ``dist/NativeGameLibrary/NativeGameLibrary.exe`` (one directory).
+Output: ``dist/Lumora/Lumora.exe`` (one directory).
 The directory is what gets zipped into the portable distribution, because
 one-file builds are slower to start and are more often quarantined by
 Defender's heuristics.
@@ -58,7 +58,16 @@ a = Analysis(
     binaries=binaries,
     datas=datas,
     hiddenimports=[
+        "lgl.__main__",
         "lgl.windows_app",
+        "lgl.qt_main",
+        "lgl.qt_theme",
+        "lgl.qt_widgets",
+        "lgl.qt_archive",
+        "lgl.qt_downloads",
+        "PySide6.QtCore",
+        "PySide6.QtGui",
+        "PySide6.QtWidgets",
         "lgl.platform_support",
         "lgl.settings",
         "lgl.archive",
@@ -91,7 +100,16 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=["pytest", "numpy", "PySide6", "PyQt6", "gi"],
+    # The Qt UI only needs QtCore/QtGui/QtWidgets; leaving the rest out keeps
+    # the portable folder from growing by hundreds of megabytes.
+    excludes=[
+        "pytest", "numpy", "PyQt6", "gi",
+        "PySide6.QtWebEngineCore", "PySide6.QtWebEngineWidgets", "PySide6.QtWebEngineQuick",
+        "PySide6.QtQml", "PySide6.QtQuick", "PySide6.QtQuickWidgets", "PySide6.QtQuick3D",
+        "PySide6.Qt3DCore", "PySide6.Qt3DRender", "PySide6.QtMultimedia", "PySide6.QtCharts",
+        "PySide6.QtDataVisualization", "PySide6.QtPdf", "PySide6.QtDesigner", "PySide6.QtSql",
+        "PySide6.QtTest", "PySide6.QtBluetooth", "PySide6.QtNfc", "PySide6.QtSensors",
+    ],
     noarchive=False,
 )
 
@@ -102,7 +120,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name="NativeGameLibrary",
+    name="Lumora",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -123,5 +141,5 @@ coll = COLLECT(
     strip=False,
     upx=False,
     upx_exclude=[],
-    name="NativeGameLibrary",
+    name="Lumora",
 )
