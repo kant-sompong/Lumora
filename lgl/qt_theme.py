@@ -4,12 +4,16 @@ The GTK frontend turns the palette into ``@define-color`` lines and keeps all
 literal colours out of ``style.css``.  This module does the same job for Qt:
 it renders one QSS string from the same dictionaries, so the Windows frontend
 cannot drift away from the Linux one in colour, spacing or radii.
+
+The class names below (``rail``, ``page-title``, ``filter-row``…) mirror the
+CSS classes used by the GTK build, so a change to one is easy to mirror in the
+other.
 """
 
 from __future__ import annotations
 
 from . import theme
-from .theme import RADIUS, SPACE, TYPE
+from .theme import RADIUS, TYPE
 
 
 def alpha(color: str, opacity: float) -> str:
@@ -42,33 +46,47 @@ def build_stylesheet(resolved: str) -> str:
     font-size: {body}px;
     color: {fg};
 }}
-QMainWindow, QDialog, QWidget#root {{ background: {c['bg']}; }}
+QMainWindow, QDialog, QWidget#appRoot, QWidget#pageBody {{ background: {c['bg']}; }}
 QWidget {{ background: transparent; }}
 QToolTip {{
     background: {c['raised']}; color: {fg};
     border: 1px solid {c['divider']}; border-radius: {sm}px; padding: 4px 8px;
 }}
 
-/* ---- header bar (window chrome row) ---------------------------------- */
-QFrame#headerbar {{
-    background: {c['surface']};
-    border-bottom: 1px solid {alpha(fg, 0.08)};
+/* ---- window header -------------------------------------------------- */
+QFrame#headerBar {{
+    background: {c['bg']};
+    border-bottom: 1px solid {alpha(fg, 0.05)};
 }}
-QPushButton#viewtab {{
-    background: transparent; border: none; border-radius: {md}px;
-    padding: 6px 22px; color: {c['muted']}; font-weight: 500;
+QFrame#searchPill {{
+    background: {alpha(fg, 0.045)};
+    border: 1px solid {alpha(fg, 0.07)};
+    border-radius: 20px;
 }}
-QPushButton#viewtab:hover {{ background: {alpha(fg, 0.05)}; color: {fg}; }}
-QPushButton#viewtab:checked {{ background: {alpha(fg, 0.10)}; color: {fg}; }}
+QFrame#searchPill:focus-within {{
+    border: 1px solid {alpha(c['accent'], 0.85)};
+    background: {alpha(fg, 0.02)};
+}}
+QLineEdit#searchField {{
+    background: transparent; border: none; padding: 0;
+    color: {fg}; selection-background-color: {alpha(c['accent'], 0.45)};
+}}
+QLabel#keyHint {{ color: {c['faint']}; font-size: {small}px; }}
 
-/* ---- buttons / inputs -------------------------------------------------- */
+QAbstractButton#iconButton {{
+    background: transparent; border: none; border-radius: {md}px;
+}}
+QAbstractButton#iconButton:hover {{ background: {alpha(fg, 0.07)}; }}
+QAbstractButton#iconButton:pressed {{ background: {alpha(fg, 0.12)}; }}
+QAbstractButton#iconButton:disabled {{ background: transparent; }}
+
+/* ---- buttons ------------------------------------------------------- */
 QPushButton, QToolButton {{
     background: {c['raised']}; border: 1px solid {alpha(fg, 0.12)};
     border-radius: {md}px; padding: 6px 14px; color: {fg};
 }}
 QPushButton:hover, QToolButton:hover {{ background: {c['hover']}; }}
 QPushButton:pressed, QToolButton:pressed {{ background: {alpha(fg, 0.14)}; }}
-QPushButton:checked {{ background: {alpha(c['accent'], 0.18)}; border-color: {alpha(c['accent'], 0.5)}; }}
 QPushButton:disabled, QToolButton:disabled {{ color: {c['faint']}; background: {alpha(fg, 0.03)}; }}
 QPushButton#flat, QToolButton#flat {{ background: transparent; border: none; }}
 QPushButton#flat:hover, QToolButton#flat:hover {{ background: {alpha(fg, 0.07)}; }}
@@ -76,14 +94,35 @@ QPushButton#suggested {{
     background: {c['accent_fill']}; color: {c['on_accent']}; border: none; font-weight: 600;
 }}
 QPushButton#suggested:hover {{ background: {c['accent_fill_hover']}; }}
+QPushButton#suggested:disabled {{ background: {alpha(fg, 0.10)}; color: {c['faint']}; }}
+QPushButton#quiet {{
+    background: transparent; border: 1px solid {alpha(fg, 0.14)}; color: {fg};
+}}
+QPushButton#quiet:hover {{ background: {alpha(fg, 0.06)}; }}
+QPushButton#small {{ padding: 3px 10px; }}
+QPushButton#pill {{
+    background: transparent; border: 1px solid {alpha(fg, 0.10)};
+    border-radius: 14px; padding: 5px 14px; color: {c['muted']};
+}}
+QPushButton#pill:hover {{ background: {alpha(fg, 0.06)}; color: {fg}; }}
+QPushButton#pill:checked {{
+    background: {alpha(fg, 0.10)}; border-color: transparent; color: {fg};
+}}
 QToolButton::menu-indicator {{ image: none; width: 0; }}
 
-QLineEdit, QComboBox {{
+/* ---- inputs -------------------------------------------------------- */
+QLineEdit, QComboBox, QSpinBox {{
     background: {c['surface']}; border: 1px solid {alpha(fg, 0.14)};
-    border-radius: {md}px; padding: 7px 10px; selection-background-color: {alpha(c['accent'], 0.45)};
+    border-radius: {md}px; padding: 7px 10px;
+    selection-background-color: {alpha(c['accent'], 0.45)};
 }}
-QLineEdit:focus, QComboBox:focus {{ border: 1px solid {c['accent']}; }}
-QComboBox::drop-down {{ border: none; width: 26px; }}
+QLineEdit:focus, QComboBox:focus, QSpinBox:focus {{ border: 1px solid {c['accent']}; }}
+QLineEdit#librarySearch {{
+    background: {alpha(fg, 0.05)}; border: 1px solid {alpha(fg, 0.08)};
+    border-radius: 20px; padding: 9px 16px 9px 38px;
+}}
+QLineEdit#librarySearch:focus {{ border: 1px solid {c['accent']}; }}
+QComboBox::drop-down {{ border: none; width: 24px; }}
 QComboBox QAbstractItemView {{
     background: {c['raised']}; border: 1px solid {c['divider']};
     selection-background-color: {alpha(c['accent'], 0.25)}; outline: none; padding: 4px;
@@ -95,9 +134,27 @@ QMenu {{
 }}
 QMenu::item {{ padding: 7px 22px 7px 14px; border-radius: {sm}px; }}
 QMenu::item:selected {{ background: {alpha(fg, 0.08)}; }}
+QMenu::item:disabled {{ color: {c['faint']}; }}
 QMenu::separator {{ height: 1px; background: {c['divider']}; margin: 5px 8px; }}
+QMenu::indicator {{ width: 14px; height: 14px; }}
 
-/* ---- scroll bars: thin overlay style ---------------------------------- */
+QCheckBox, QRadioButton {{ color: {fg}; spacing: 8px; }}
+QCheckBox::indicator {{
+    width: 15px; height: 15px; border-radius: 4px;
+    border: 1px solid {alpha(fg, 0.28)}; background: transparent;
+}}
+QCheckBox::indicator:checked {{
+    background: {c['accent_fill']}; border-color: {c['accent_fill']};
+}}
+QRadioButton::indicator {{
+    width: 15px; height: 15px; border-radius: 8px;
+    border: 1px solid {alpha(fg, 0.28)}; background: transparent;
+}}
+QRadioButton::indicator:checked {{
+    border: 4px solid {c['accent_fill']}; background: {c['bg']};
+}}
+
+/* ---- scroll bars: thin overlay style -------------------------------- */
 QScrollArea {{ border: none; background: transparent; }}
 QScrollBar:vertical {{ background: transparent; width: 10px; margin: 2px; }}
 QScrollBar::handle:vertical {{ background: {alpha(fg, 0.22)}; border-radius: 3px; min-height: 36px; }}
@@ -107,75 +164,201 @@ QScrollBar::handle:horizontal {{ background: {alpha(fg, 0.22)}; border-radius: 3
 QScrollBar::add-line, QScrollBar::sub-line {{ width: 0; height: 0; }}
 QScrollBar::add-page, QScrollBar::sub-page {{ background: transparent; }}
 
-/* ---- library / archive toolbar ---------------------------------------- */
-QFrame#toolbar {{ background: transparent; }}
-QLabel#usage {{ color: {alpha(fg, 0.46)}; font-size: {small}px; }}
-QFrame#metabar {{ border-bottom: 1px solid {alpha(fg, 0.05)}; }}
-
-/* ---- tiles ----------------------------------------------------------------- */
-QFrame#tile {{ background: transparent; border-radius: {md}px; }}
-QFrame#tile[hover="true"] {{ background: {alpha(fg, 0.035)}; }}
-QFrame#tile[selected="true"] {{ background: {alpha(c['accent'], 0.10)}; }}
-QLabel#tile-title {{ font-weight: 600; font-size: {body - 1}px; color: {alpha(fg, 0.92)}; }}
-QLabel#tile-meta {{ font-size: {small}px; color: {alpha(fg, 0.48)}; }}
-QLabel#tile-compat {{ font-size: {small}px; color: {alpha(fg, 0.38)}; }}
-QToolButton#favorite-star {{
-    background: {alpha(c['bg'], 0.55)}; border: none; border-radius: 11px;
-    padding: 0; color: {alpha(fg, 0.38)};
-}}
-QToolButton#favorite-star:hover {{ background: {alpha(c['bg'], 0.90)}; }}
-QToolButton#favorite-star:checked {{ color: {c['favorite']}; }}
-
-/* ---- archive filter column ------------------------------------------------ */
-QFrame#filters {{ background: {c['surface']}; border-right: 1px solid {alpha(fg, 0.08)}; }}
-QLabel#filter-head {{
+/* ---- page furniture ------------------------------------------------- */
+QLabel#pageTitle {{ font-size: {page}px; font-weight: 700; }}
+QLabel#pageCount {{ color: {c['muted']}; font-size: {body}px; }}
+QLabel#pageSub {{ color: {c['muted']}; font-size: {body}px; }}
+QLabel#sectionTitle {{ font-size: {title}px; font-weight: 700; }}
+QLabel#sectionCount {{ color: {c['muted']}; font-size: {small}px; font-weight: 400; }}
+QLabel#sectionNote {{ color: {c['faint']}; font-size: {small}px; }}
+QLabel#eyebrow {{
     color: {c['faint']}; font-size: {small - 1}px; font-weight: 700; letter-spacing: 0.6px;
 }}
-QPushButton#chip {{
+QLabel#statLine {{ color: {alpha(fg, 0.46)}; font-size: {small}px; }}
+QLabel#emptyTitle {{ font-size: {title}px; font-weight: 600; }}
+QLabel#emptySub {{ color: {c['muted']}; }}
+QLabel#emptyHint {{ color: {c['faint']}; font-size: {small}px; }}
+
+/* ---- browse: filter column ------------------------------------------ */
+QFrame#filters {{ background: {c['bg']}; border-right: 1px solid {alpha(fg, 0.06)}; }}
+QLabel#filterGroup {{
+    color: {c['faint']}; font-size: {small - 1}px; font-weight: 700; letter-spacing: 0.5px;
+}}
+QPushButton#filterRow {{
     background: transparent; border: none; border-radius: {sm}px;
-    padding: 6px 10px; text-align: left; color: {c['muted']};
+    padding: 4px 6px; text-align: left; color: {alpha(fg, 0.86)};
 }}
-QPushButton#chip:hover {{ background: {alpha(fg, 0.06)}; color: {fg}; }}
-QPushButton#chip:checked {{ background: {alpha(c['accent'], 0.16)}; color: {c['accent_text']}; font-weight: 600; }}
+QPushButton#filterRow:hover {{ background: {alpha(fg, 0.05)}; }}
+QPushButton#filterRow:checked {{ color: {fg}; }}
+QPushButton#segment {{
+    background: transparent; border: 1px solid {alpha(fg, 0.12)};
+    border-radius: {sm}px; padding: 3px 8px; color: {c['muted']}; font-size: {small}px;
+}}
+QPushButton#segment:hover {{ background: {alpha(fg, 0.06)}; color: {fg}; }}
+QPushButton#segment:checked {{
+    background: {alpha(fg, 0.10)}; border-color: {alpha(fg, 0.18)}; color: {fg};
+}}
+QPushButton#radioPill {{
+    background: transparent; border: 1px solid {alpha(fg, 0.12)};
+    border-radius: {sm}px; padding: 5px 10px; color: {c['muted']}; text-align: center;
+}}
+QPushButton#radioPill:hover {{ background: {alpha(fg, 0.05)}; color: {fg}; }}
+QPushButton#radioPill:checked {{
+    background: {alpha(fg, 0.09)}; border-color: {alpha(fg, 0.16)}; color: {fg};
+}}
+QPushButton#resetLink {{
+    background: transparent; border: none; color: {c['muted']}; text-align: center;
+    padding: 5px 4px;
+}}
+QPushButton#resetLink:hover {{ color: {fg}; }}
 
-/* ---- detail panel ---------------------------------------------------------- */
+/* ---- sort cluster / view toggle ------------------------------------- */
+QPushButton#sortPill {{
+    background: {c['raised']}; border: 1px solid {alpha(fg, 0.10)};
+    border-radius: {md}px; padding: 5px 34px 5px 14px; color: {fg};
+}}
+QPushButton#sortPill:hover {{ background: {c['hover']}; }}
+QPushButton#sortDirection, QAbstractButton#viewToggle {{
+    background: {c['raised']}; border: 1px solid {alpha(fg, 0.10)};
+    border-radius: {md}px;
+}}
+QPushButton#sortDirection:hover, QAbstractButton#viewToggle:hover {{ background: {c['hover']}; }}
+QAbstractButton#viewToggle:checked {{
+    background: {alpha(c['accent'], 0.18)}; border-color: {alpha(c['accent'], 0.4)};
+}}
+
+/* ---- cover cards / list rows ---------------------------------------- */
+QFrame#coverCard {{ background: transparent; border-radius: {md}px; }}
+QFrame#coverCard[hover="true"] {{ background: {alpha(fg, 0.035)}; }}
+QFrame#coverCard[selected="true"] {{ background: {alpha(c['accent'], 0.10)}; }}
+QLabel#coverTitle {{ font-weight: 600; font-size: {body}px; color: {alpha(fg, 0.94)}; }}
+QLabel#coverMeta {{ font-size: {small + 1}px; color: {alpha(fg, 0.5)}; }}
+QFrame#listRow {{ border-bottom: 1px solid {alpha(fg, 0.05)}; background: transparent; }}
+QFrame#listRow:hover {{ background: {alpha(fg, 0.035)}; }}
+QFrame#listRow[selected="true"] {{ background: {alpha(c['accent'], 0.10)}; }}
+QLabel#listTitle {{ font-weight: 600; font-size: {body + 1}px; }}
+QLabel#listMeta {{ color: {alpha(fg, 0.46)}; font-size: {small + 1}px; }}
+
+/* ---- detail panel ---------------------------------------------------- */
 QFrame#detail {{ background: {c['surface']}; border-left: 1px solid {alpha(fg, 0.08)}; }}
-QLabel#detail-eyebrow {{
+QLabel#detailEyebrow {{
     color: {c['faint']}; font-size: {small - 1}px; font-weight: 700; letter-spacing: 0.6px;
 }}
-QLabel#detail-title {{ font-size: {title + 2}px; font-weight: 700; }}
-QLabel#detail-sub {{ color: {c['muted']}; }}
-QLabel#kv-key {{ color: {c['faint']}; font-size: {small - 1}px; font-weight: 700; }}
-QLabel#kv-val {{ color: {fg}; }}
-QLabel#kv-warn {{ color: {c['warning']}; }}
-QLabel#kv-ok {{ color: {c['success']}; }}
-QLabel#detail-note {{ color: {c['muted']}; font-size: {small}px; }}
+QLabel#detailTitle {{ font-size: {title + 3}px; font-weight: 700; }}
+QLabel#detailSub {{ color: {c['muted']}; }}
+QLabel#kvKey {{
+    color: {c['faint']}; font-size: {small - 1}px; font-weight: 700; letter-spacing: 0.4px;
+}}
+QLabel#kvVal {{ color: {fg}; }}
+QLabel#kvWarn {{ color: {c['warning']}; }}
+QLabel#kvOk {{ color: {c['success']}; }}
+QLabel#detailNote {{ color: {c['muted']}; font-size: {small + 1}px; }}
+QLabel#detailSection {{ font-weight: 700; font-size: {body}px; }}
+QFrame#kvLine {{ background: transparent; }}
+QFrame#detailDivider {{ background: {alpha(fg, 0.07)}; }}
 
-/* ---- downloads drawer ------------------------------------------------------ */
-QFrame#downloads {{ background: {c['surface']}; border-top: 1px solid {alpha(fg, 0.08)}; }}
-QFrame#dl-head {{ background: transparent; border-bottom: 1px solid {alpha(fg, 0.06)}; }}
-QFrame#dl-row {{ background: transparent; border-bottom: 1px solid {alpha(fg, 0.05)}; }}
-QLabel#dl-name {{ font-weight: 600; }}
-QLabel#dl-game {{ color: {c['muted']}; font-size: {small}px; }}
-QLabel#dl-detail {{ color: {c['muted']}; font-size: {small}px; }}
-QFrame#dl-row[state="failed"] QLabel#dl-detail {{ color: {c['danger']}; }}
-QFrame#dl-row[state="completed"] QLabel#dl-detail {{ color: {c['success']}; }}
-QProgressBar#dl-bar {{ background: {alpha(fg, 0.10)}; border: none; border-radius: 3px; }}
-QProgressBar#dl-bar::chunk {{ background: {c['accent']}; border-radius: 3px; }}
-QFrame#dl-row[state="failed"] QProgressBar#dl-bar::chunk {{ background: {c['danger']}; }}
-QFrame#dl-row[state="paused"] QProgressBar#dl-bar::chunk,
-QFrame#dl-row[state="cancelled"] QProgressBar#dl-bar::chunk {{ background: {alpha(fg, 0.35)}; }}
-QPushButton#small {{ padding: 3px 10px; }}
+/* ---- downloads ------------------------------------------------------- */
+QFrame#dlRow {{ background: transparent; border-bottom: 1px solid {alpha(fg, 0.05)}; }}
+QLabel#dlName {{ font-weight: 600; }}
+QLabel#dlGame {{ color: {c['muted']}; font-size: {small}px; }}
+QLabel#dlDetail {{ color: {c['muted']}; font-size: {small}px; }}
+QFrame#dlRow[state="failed"] QLabel#dlDetail {{ color: {c['danger']}; }}
+QFrame#dlRow[state="completed"] QLabel#dlDetail {{ color: {c['success']}; }}
+QProgressBar#dlBar {{ background: {alpha(fg, 0.10)}; border: none; border-radius: 3px; }}
+QProgressBar#dlBar::chunk {{ background: {c['accent']}; border-radius: 3px; }}
+QFrame#dlRow[state="failed"] QProgressBar#dlBar::chunk {{ background: {c['danger']}; }}
+QFrame#dlRow[state="paused"] QProgressBar#dlBar::chunk,
+QFrame#dlRow[state="cancelled"] QProgressBar#dlBar::chunk {{ background: {alpha(fg, 0.35)}; }}
+QFrame#dlFoot {{ background: {c['surface']}; border-top: 1px solid {alpha(fg, 0.08)}; }}
 
-/* ---- toast + empty state --------------------------------------------------- */
+/* ---- popovers / menus built as widgets -------------------------------- */
+QFrame#popover {{
+    background: {c['raised']}; border: 1px solid {c['divider']};
+    border-radius: {md}px;
+}}
+QLabel#popoverTitle {{ color: {c['muted']}; font-size: {small}px; }}
+QPushButton#popoverRow {{
+    background: transparent; border: none; border-radius: {sm}px;
+    padding: 7px 10px; text-align: left;
+}}
+QPushButton#popoverRow:hover {{ background: {alpha(fg, 0.08)}; }}
+QPushButton#popoverRow:checked {{ background: {alpha(c['accent'], 0.18)}; }}
+QPushButton#popoverAction {{
+    background: transparent; border: none; border-radius: {sm}px;
+    padding: 8px 10px; text-align: left; font-weight: 600;
+}}
+QPushButton#popoverAction:hover {{ background: {alpha(fg, 0.08)}; }}
+
+/* ---- toast ------------------------------------------------------------ */
 QFrame#toast {{
     background: {c['raised']}; border: 1px solid {c['divider']}; border-radius: {lg}px;
 }}
 QFrame#toast[error="true"] {{ border-color: {alpha(c['danger'], 0.6)}; }}
-QLabel#empty-title {{ font-size: {title}px; font-weight: 600; }}
-QLabel#empty-sub {{ color: {c['muted']}; }}
-QLabel#page-title {{ font-size: {page}px; font-weight: 700; }}
+
+/* ---- dialogs ---------------------------------------------------------- */
+QDialog#sheet {{ background: {c['bg']}; }}
+QFrame#sheetHeader {{
+    background: {c['surface']}; border-bottom: 1px solid {alpha(fg, 0.07)};
+}}
+QPushButton#sheetTab {{
+    background: transparent; border: none; border-radius: {sm}px;
+    padding: 6px 14px; color: {c['muted']};
+}}
+QPushButton#sheetTab:hover {{ background: {alpha(fg, 0.05)}; color: {fg}; }}
+QPushButton#sheetTab:checked {{
+    background: {alpha(fg, 0.12)}; color: {fg};
+}}
+QLabel#settLabel {{ font-weight: 600; }}
+QLabel#settDesc {{ color: {c['muted']}; font-size: {small + 1}px; }}
+QLabel#settPath {{ color: {c['muted']}; font-size: {small + 1}px; }}
+QFrame#settDivider {{ background: {alpha(fg, 0.06)}; }}
+
+/* ---- media ------------------------------------------------------------ */
+QFrame#mediaTopBar {{ background: {c['bg']}; }}
+QLabel#mediaBrand {{ font-size: {body + 1}px; font-weight: 700; }}
+QPushButton#mediaNav {{
+    background: transparent; border: none; padding: 5px 12px;
+    color: {c['muted']}; border-radius: {sm}px;
+}}
+QPushButton#mediaNav:hover {{ color: {fg}; }}
+QPushButton#mediaNav:checked {{ color: {fg}; font-weight: 600; }}
+QPushButton#heroAction {{
+    background: transparent; border: none; color: {alpha(fg, 0.82)};
+    padding: 8px 14px; font-weight: 600;
+}}
+QPushButton#heroAction:hover {{ color: {fg}; background: {alpha(fg, 0.08)}; border-radius: {md}px; }}
+QPushButton#heroPlay {{
+    background: {c['accent_fill']}; color: {c['on_accent']}; border: none;
+    border-radius: {md}px; padding: 9px 22px; font-weight: 600;
+}}
+QPushButton#heroPlay:hover {{ background: {c['accent_fill_hover']}; }}
+QLabel#heroKind {{
+    color: {alpha(fg, 0.8)}; font-size: {small}px; font-weight: 700; letter-spacing: 1.2px;
+}}
+QLabel#heroTitle {{ font-size: 34px; font-weight: 800; }}
+QLabel#heroMeta {{ color: {alpha(fg, 0.78)}; }}
+QLabel#heroOverview {{ color: {alpha(fg, 0.8)}; font-size: {body + 1}px; }}
+QLabel#posterTitle {{ font-weight: 600; font-size: {body}px; }}
+QLabel#posterMeta {{ color: {alpha(fg, 0.46)}; font-size: {small + 1}px; }}
+QPushButton#posterCard {{ background: transparent; border: none; padding: 0; }}
+QPushButton#posterCard:hover {{ background: {alpha(fg, 0.04)}; border-radius: {md}px; }}
+QPushButton#carouselArrow {{
+    background: {alpha(c['bg'], 0.72)}; border: 1px solid {alpha(fg, 0.12)};
+    border-radius: 16px; padding: 0;
+}}
+QPushButton#carouselArrow:hover {{ background: {c['raised']}; }}
+QLabel#mediaNote {{ color: {c['muted']}; font-size: {body}px; }}
+
+/* ---- misc -------------------------------------------------------------- */
+QFrame#metabar {{ background: {alpha(fg, 0.05)}; }}
+QLabel#statusBar {{ color: {alpha(fg, 0.34)}; font-size: {small}px; }}
+QToolButton#flat::menu-indicator, QPushButton#kebab::menu-indicator {{ image: none; width: 0; }}
+QPushButton#kebab {{
+    background: {c['raised']}; border: 1px solid {alpha(fg, 0.10)};
+    border-radius: {md}px; padding: 0;
+}}
+QPushButton#kebab:hover {{ background: {c['hover']}; }}
 """
 
 
-__all__ = ["alpha", "build_stylesheet", "font_family", "SPACE"]
+__all__ = ["alpha", "build_stylesheet", "font_family"]

@@ -72,14 +72,18 @@ def test_window_builds_and_switches_views(app, tmp_path, mode):
     window.close()
 
 
-def test_downloads_drawer_toggles(app, tmp_path):
+def test_downloads_page_toggles(app, tmp_path):
+    """Ctrl+D opens the Downloads page and returns to the previous one."""
     qt_main.apply_theme(app, "dark")
     window, _ = make_window(tmp_path)
     window.show()
+    window.show_view("Library")
     window.toggle_downloads()
     assert window.downloads.isVisible()
+    assert window.stack.currentWidget() is window.downloads
     window.toggle_downloads()
     assert not window.downloads.isVisible()
+    assert window.stack.currentWidget() is window.library
     window.close()
 
 

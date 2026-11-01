@@ -1,12 +1,13 @@
-"""Qt 6 (PySide6) frontend for Lumora - the Windows UI.
+"""Qt 6 (PySide6) frontend for Lumora — the Windows UI.
 
-It mirrors the GTK frontend (``ui.py``): the same header bar with centred
-Archive / Library tabs, the same toolbar, poster-grid tiles and right-hand
-detail panel.  All colours, radii and type sizes come from ``theme.py`` through
-``qt_theme`` so the two frontends stay in step.
+This mirrors the GTK frontend (``ui.py``): the same icon rail, the same header
+with back/forward, a centred search field and a menu, and the same four
+destinations (Browse, Library, Downloads, Media) plus Settings and About.
+Colours, radii and type sizes come from ``theme.py`` through ``qt_theme``, and
+the section layouts mirror the GTK pages so the two builds feel identical.
 
-Only the platform-neutral core is used for data (``LibraryStore``, ``sorting``,
-``platform_support``); nothing here imports GTK.
+Only the platform-neutral core is used for data (``ArchiveClient``,
+``LibraryStore``, ``DownloadManager``, ``settings``); nothing here imports GTK.
 """
 
 from __future__ import annotations
@@ -15,11 +16,10 @@ import sys
 from pathlib import Path
 from typing import Sequence
 
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QColor
+from PySide6.QtCore import QEvent, QObject, Qt, QTimer
+from PySide6.QtGui import QAction, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
-    QComboBox,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -27,510 +27,408 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMenu,
     QPushButton,
-    QScrollArea,
     QStackedWidget,
-    QToolButton,
     QVBoxLayout,
     QWidget,
 )
 
-from . import __version__, platform_support, sorting, theme
+from . import __version__, platform_support, theme
 from .archive import ArchiveClient, build_download_url
 from .downloader import DownloadManager, TaskSnapshot
-from .library_store import LibraryEntry, LibraryStore
-from .qt_theme import build_stylesheet
-from .qt_archive import ArchiveView
+from .library_store import LibraryStore
+from .qt_browse import BrowsePage
 from .qt_downloads import (
     DownloadBridge,
-    DownloadsPanel,
+    DownloadsPage,
     FilePickDialog,
     downloadable_files,
     enqueue_files,
 )
-from .qt_widgets import THEME_STATE, CoverArt, FlowLayout, Toast, clear_layout, run_async, search_icon
-from .util import human_size
+from .qt_icons import icon
+from .qt_library import LibraryPage
+from .qt_media import MediaPage
+from .qt_settings import AboutDialog, SettingsDialog
+from .qt_theme import build_stylesheet
+from .qt_widgets import (
+    IconButton,
+    RailButton,
+    Toast,
+    clear_layout,
+    color,
+    run_async,
+    set_theme,
+)
+from .settings import Settings
 
 APP_TITLE = "Lumora"
-TILE_W = 222
-COVER_H = 180
+RAIL_WIDTH = 72
+HEADER_HEIGHT = 64
 
 
-# --------------------------------------------------------------------------
-# small building blocks
-# --------------------------------------------------------------------------
+class Window(QMainWindow):
+    """The main window: rail + header + one page per destination."""
 
-
-class Tile(QFrame):
-    """One library game: cover, title, size/year line, compatibility line."""
-
-    clicked = Signal(str)
-    favorite_toggled = Signal(str)
-
-    def __init__(self, entry: LibraryEntry) -> None:
-        super().__init__()
-        self.setObjectName("tile")
-        self.identifier = entry.identifier
-        self.setFixedWidth(TILE_W + 16)
-        self.setCursor(Qt.PointingHandCursor)
-        self.setAttribute(Qt.WA_Hover, True)
-        self.setProperty("hover", False)
-        self.setProperty("selected", False)
-
-        col = QVBoxLayout(self)
-        col.setContentsMargins(8, 8, 8, 8)
-        col.setSpacing(2)
-
-        self.cover = CoverArt(TILE_W, COVER_H)
-        self.cover.set_image(entry.cover_path)
-        col.addWidget(self.cover)
-
-        self.star = QToolButton(self.cover)
-        self.star.setObjectName("favorite-star")
-        self.star.setCheckable(True)
-        self.star.setChecked(entry.favorite)
-        self.star.setText("★" if entry.favorite else "☆")
-        self.star.setFixedSize(22, 22)
-        self.star.move(TILE_W - 28, 6)
-        self.star.setVisible(entry.favorite)
-        self.star.toggled.connect(
-            lambda on: self.star.setText("★" if on else "☆")
-        )
-        self.star.clicked.connect(lambda: self.favorite_toggled.emit(self.identifier))
-
-        title = QLabel(entry.title or entry.identifier)
-        title.setObjectName("tile-title")
-        title.setWordWrap(True)
-        title.setContentsMargins(2, 7, 0, 0)
-        col.addWidget(title)
-
-        bits = [b for b in (entry.year, human_size(entry.size) if entry.size else "") if b]
-        meta = QLabel(" · ".join(bits) or "—")
-        meta.setObjectName("tile-meta")
-        meta.setContentsMargins(2, 0, 0, 0)
-        col.addWidget(meta)
-
-        if entry.compatibility:
-            compat = QLabel(entry.compatibility)
-            compat.setObjectName("tile-compat")
-            compat.setContentsMargins(2, 0, 0, 0)
-            col.addWidget(compat)
-        col.addStretch(1)
-
-    def set_selected(self, on: bool) -> None:
-        self._flag("selected", on)
-
-    def _flag(self, name: str, on: bool) -> None:
-        self.setProperty(name, on)
-        self.style().unpolish(self)
-        self.style().polish(self)
-
-    def enterEvent(self, event) -> None:  # noqa: N802
-        self._flag("hover", True)
-        self.star.setVisible(True)
-        super().enterEvent(event)
-
-    def leaveEvent(self, event) -> None:  # noqa: N802
-        self._flag("hover", False)
-        if not (self.star.isChecked() or self.property("selected")):
-            self.star.setVisible(False)
-        super().leaveEvent(event)
-
-    def mousePressEvent(self, event) -> None:  # noqa: N802
-        if event.button() == Qt.LeftButton:
-            self.clicked.emit(self.identifier)
-        super().mousePressEvent(event)
-
-
-# --------------------------------------------------------------------------
-# detail panel
-# --------------------------------------------------------------------------
-
-
-class DetailPanel(QFrame):
-    """Right-hand "Selected game" panel."""
-
-    closed = Signal()
-    action = Signal(str, str)  # (action name, identifier)
-
-    ROWS = (
-        ("STATUS", "status"),
-        ("COMPATIBILITY", "compatibility"),
-        ("SIZE", "size"),
-        ("FILES", "files"),
-        ("INTEGRITY", "integrity"),
-    )
-    ABOUT = (
-        ("DEVELOPER", "developer"),
-        ("PUBLISHER", "publisher"),
-        ("RELEASED", "release_date"),
-        ("VERSION", "version"),
-        ("GENRES", "genres"),
-        ("PLATFORMS", "platforms"),
-        ("SOURCE", "metadata_provider"),
-    )
-
-    def __init__(self) -> None:
-        super().__init__()
-        self.setObjectName("detail")
-        self.setFixedWidth(460)
-        self._identifier = ""
-        self._vals: dict[str, QLabel] = {}
-
-        outer = QVBoxLayout(self)
-        outer.setContentsMargins(0, 0, 0, 0)
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        outer.addWidget(scroll)
-
-        body = QWidget()
-        scroll.setWidget(body)
-        col = QVBoxLayout(body)
-        col.setContentsMargins(18, 18, 18, 18)
-        col.setSpacing(6)
-
-        head = QHBoxLayout()
-        eyebrow = QLabel("SELECTED GAME")
-        eyebrow.setObjectName("detail-eyebrow")
-        head.addWidget(eyebrow)
-        head.addStretch(1)
-        close = QToolButton()
-        close.setObjectName("flat")
-        close.setText("✕")
-        close.clicked.connect(self.closed.emit)
-        head.addWidget(close)
-        col.addLayout(head)
-
-        self.title = QLabel()
-        self.title.setObjectName("detail-title")
-        self.title.setWordWrap(True)
-        self.title.setContentsMargins(0, 8, 0, 0)
-        col.addWidget(self.title)
-        self.sub = QLabel()
-        self.sub.setObjectName("detail-sub")
-        col.addWidget(self.sub)
-        col.addSpacing(10)
-
-        for label, key in self.ROWS:
-            col.addLayout(self._row(label, key))
-        col.addSpacing(8)
-        about = QLabel("ABOUT")
-        about.setObjectName("kv-key")
-        col.addWidget(about)
-        for label, key in self.ABOUT:
-            col.addLayout(self._row(label, key))
-
-        self.note = QLabel()
-        self.note.setObjectName("detail-note")
-        self.note.setWordWrap(True)
-        self.note.setContentsMargins(0, 8, 0, 0)
-        col.addWidget(self.note)
-        col.addSpacing(10)
-
-        grid_rows = (
-            (("Open folder", "open_folder"), ("Show files", "show_files")),
-            (("Edit details…", "edit"),),
-            (("Verify integrity", "verify"), ("☆ Favorite", "favorite")),
-            (("Review && launch…", "launch"),),
-        )
-        for row in grid_rows:
-            line = QHBoxLayout()
-            line.setSpacing(8)
-            for text, name in row:
-                btn = QPushButton(text)
-                if name == "launch":
-                    btn.setObjectName("suggested")
-                btn.clicked.connect(lambda _=False, n=name: self.action.emit(n, self._identifier))
-                line.addWidget(btn)
-            col.addLayout(line)
-        col.addStretch(1)
-
-    def _row(self, label: str, key: str) -> QHBoxLayout:
-        line = QHBoxLayout()
-        k = QLabel(label)
-        k.setObjectName("kv-key")
-        k.setFixedWidth(96)
-        v = QLabel("—")
-        v.setObjectName("kv-val")
-        v.setWordWrap(True)
-        line.addWidget(k, 0, Qt.AlignTop)
-        line.addWidget(v, 1)
-        self._vals[key] = v
-        return line
-
-    def show_entry(self, entry: LibraryEntry) -> None:
-        self._identifier = entry.identifier
-        self.title.setText(entry.title or entry.identifier)
-        who = " · ".join(b for b in (entry.creator, entry.year) if b)
-        self.sub.setText(who or "No creator or year recorded")
-
-        def put(key: str, text: str, kind: str = "kv-val") -> None:
-            label = self._vals[key]
-            label.setText(text or "—")
-            label.setObjectName(kind)
-            label.style().unpolish(label)
-            label.style().polish(label)
-
-        put("status", (entry.status or "").replace("_", " ").title())
-        put("compatibility", entry.compatibility)
-        put("size", human_size(entry.size) if entry.size else "")
-        put("files", f"{entry.file_count} files" if entry.file_count else "")
-        put("integrity", entry.integrity or "No published checksum",
-            "kv-val" if entry.integrity else "kv-warn")
-        for _label, key in self.ABOUT:
-            value = getattr(entry, key, "")
-            if isinstance(value, (tuple, list)):
-                value = ", ".join(value)
-            put(key, str(value or ""))
-        self.note.setText(
-            "" if entry.description
-            else "No extra metadata yet. Use “Edit details…” to add some; "
-            "catalog refreshes never overwrite fields you typed yourself."
-        )
-
-
-# --------------------------------------------------------------------------
-# library view
-# --------------------------------------------------------------------------
-
-
-class LibraryView(QWidget):
-    """Toolbar + poster grid + optional detail panel."""
-
-    def __init__(self, store: LibraryStore | None = None) -> None:
-        super().__init__()
-        self.store = store
-        self._entries: list[LibraryEntry] = []
-        self._tiles: dict[str, Tile] = {}
-        self._selected = ""
-
-        root = QHBoxLayout(self)
-        root.setContentsMargins(0, 0, 0, 0)
-        root.setSpacing(0)
-
-        left = QVBoxLayout()
-        left.setSpacing(0)
-        root.addLayout(left, 1)
-
-        bar = QFrame()
-        bar.setObjectName("toolbar")
-        row = QHBoxLayout(bar)
-        row.setContentsMargins(12, 8, 12, 4)
-        row.setSpacing(8)
-        self.search = QLineEdit()
-        self.search.setPlaceholderText("Search library")
-        self.search.addAction(search_icon(QColor(THEME_STATE["muted"])), QLineEdit.LeadingPosition)
-        self.search.textChanged.connect(self.refresh)
-        row.addWidget(self.search, 1)
-        self.view_toggle = QPushButton("☰")
-        self.view_toggle.setToolTip("Grid / list")
-        row.addWidget(self.view_toggle)
-        self.filters = QPushButton("Filters")
-        row.addWidget(self.filters)
-        self.sort = QComboBox()
-        for key, spec in sorting.SORTS.items():
-            if key != "relevance":
-                self.sort.addItem(f"Sort: {spec.label}", key)
-        self.sort.setCurrentIndex(self.sort.findData("name"))
-        self.sort.currentIndexChanged.connect(self.refresh)
-        self.sort.setMinimumWidth(180)
-        row.addWidget(self.sort)
-        rescan = QPushButton("↻")
-        rescan.setToolTip("Rescan library")
-        rescan.clicked.connect(self.rescan)
-        row.addWidget(rescan)
-        more = QToolButton()
-        more.setText("⋮")
-        more.setPopupMode(QToolButton.InstantPopup)
-        menu = QMenu(more)
-        menu.addAction("Find duplicates…")
-        menu.addAction("Export library…")
-        menu.addAction("Import library…")
-        more.setMenu(menu)
-        row.addWidget(more)
-        left.addWidget(bar)
-
-        self.usage = QLabel()
-        self.usage.setObjectName("usage")
-        self.usage.setContentsMargins(26, 0, 0, 6)
-        left.addWidget(self.usage)
-        line = QFrame()
-        line.setObjectName("metabar")
-        line.setFixedHeight(1)
-        left.addWidget(line)
-
-        self.scroll = QScrollArea()
-        self.scroll.setWidgetResizable(True)
-        self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.grid_host = QWidget()
-        self.flow = FlowLayout(self.grid_host, spacing=8)
-        self.flow.setContentsMargins(10, 16, 10, 24)
-        self.scroll.setWidget(self.grid_host)
-        left.addWidget(self.scroll, 1)
-
-        self.empty = QLabel("No games yet\nDownload something from the Archive to see it here.")
-        self.empty.setObjectName("empty-sub")
-        self.empty.setAlignment(Qt.AlignCenter)
-        left.addWidget(self.empty, 1)
-
-        self.detail = DetailPanel()
-        self.detail.hide()
-        self.detail.closed.connect(self.clear_selection)
-        root.addWidget(self.detail)
-
-    # data ------------------------------------------------------------------
-    def set_entries(self, entries: Sequence[LibraryEntry]) -> None:
-        self._entries = list(entries)
-        self.refresh()
-
-    def rescan(self) -> None:
-        if self.store is not None:
-            self.set_entries(self.store.entries())
-
-    def refresh(self) -> None:
-        query = self.search.text().strip().lower()
-        shown = [
-            e for e in self._entries
-            if not query or query in (e.title or "").lower() or query in e.identifier.lower()
-        ]
-        shown = sorting.sort_entries(shown, self.sort.currentData() or "name")
-        clear_layout(self.flow)
-        self._tiles.clear()
-        for entry in shown:
-            tile = Tile(entry)
-            tile.clicked.connect(self.select)
-            tile.favorite_toggled.connect(self._toggle_favorite)
-            self._tiles[entry.identifier] = tile
-            self.flow.addWidget(tile)
-        total = sum(e.size for e in self._entries)
-        self.usage.setText(
-            f"{len(shown)} shown · {len(self._entries)} games · {human_size(total)}"
-        )
-        self.scroll.setVisible(bool(shown))
-        self.empty.setVisible(not shown)
-        if self._selected in self._tiles:
-            self._tiles[self._selected].set_selected(True)
-
-    # selection -------------------------------------------------------------
-    def select(self, identifier: str) -> None:
-        if self._selected in self._tiles:
-            self._tiles[self._selected].set_selected(False)
-        self._selected = identifier
-        if identifier in self._tiles:
-            self._tiles[identifier].set_selected(True)
-        entry = next((e for e in self._entries if e.identifier == identifier), None)
-        if entry:
-            self.detail.show_entry(entry)
-            self.detail.show()
-
-    def clear_selection(self) -> None:
-        if self._selected in self._tiles:
-            self._tiles[self._selected].set_selected(False)
-        self._selected = ""
-        self.detail.hide()
-
-    def _toggle_favorite(self, identifier: str) -> None:
-        if self.store is not None:
-            self.store.toggle_favorite(identifier)
-
-
-# --------------------------------------------------------------------------
-# main window
-# --------------------------------------------------------------------------
-
-
-class MainWindow(QMainWindow):
     def __init__(self, store: LibraryStore | None = None,
                  client: ArchiveClient | None = None,
                  manager: DownloadManager | None = None,
-                 download_dir: Path | None = None) -> None:
+                 download_dir: Path | None = None,
+                 settings: Settings | None = None) -> None:
         super().__init__()
+        self._settings = settings or Settings()
         self.client = client
         self.manager = manager
-        self.download_dir = Path(download_dir) if download_dir else Path.home()
+        self.download_dir = Path(download_dir) if download_dir else platform_support.default_download_dir()
         self.bridge = DownloadBridge()
+        self._history: list[str] = []
+        self._history_index = -1
         self.setWindowTitle(APP_TITLE)
-        self.resize(1280, 800)
-        self.setMinimumSize(900, 600)
+        width, height = self._settings.window_size
+        self.resize(width, height)
+        self.setMinimumSize(980, 640)
+        if self._settings.maximized:
+            self.showMaximized()
 
-        host = QWidget()
-        host.setObjectName("root")
-        self.setCentralWidget(host)
-        col = QVBoxLayout(host)
-        col.setContentsMargins(0, 0, 0, 0)
-        col.setSpacing(0)
+        root = QWidget()
+        root.setObjectName("appRoot")
+        self.setCentralWidget(root)
+        shell = QHBoxLayout(root)
+        shell.setContentsMargins(0, 0, 0, 0)
+        shell.setSpacing(0)
 
-        header = QFrame()
-        header.setObjectName("headerbar")
-        header.setFixedHeight(48)
-        h = QHBoxLayout(header)
-        h.setContentsMargins(12, 0, 12, 0)
-        h.addStretch(1)
-        self.tabs: dict[str, QPushButton] = {}
-        for name in ("Archive", "Library"):
-            btn = QPushButton(name)
-            btn.setObjectName("viewtab")
-            btn.setCheckable(True)
-            btn.setCursor(Qt.PointingHandCursor)
-            btn.clicked.connect(lambda _=False, n=name: self.show_view(n))
-            self.tabs[name] = btn
-            h.addWidget(btn)
-        h.addStretch(1)
-        refresh = QToolButton()
-        refresh.setObjectName("flat")
-        refresh.setText("↻")
-        h.addWidget(refresh)
-        self.downloads_btn = QPushButton("↓  Downloads")
-        h.addWidget(self.downloads_btn)
-        menu_btn = QToolButton()
-        menu_btn.setText("☰")
-        menu_btn.setPopupMode(QToolButton.InstantPopup)
-        menu = QMenu(menu_btn)
-        for text in ("Settings", "Keyboard shortcuts", f"About {APP_TITLE} {__version__}"):
-            menu.addAction(text)
-        menu_btn.setMenu(menu)
-        h.addWidget(menu_btn)
-        col.addWidget(header)
+        shell.addWidget(self._build_rail())
+
+        body = QWidget()
+        body.setObjectName("pageBody")
+        column = QVBoxLayout(body)
+        column.setContentsMargins(0, 0, 0, 0)
+        column.setSpacing(0)
+        column.addWidget(self._build_header())
 
         self.stack = QStackedWidget()
-        self.library = LibraryView(store)
-        self.archive = ArchiveView(client)
-        self.stack.addWidget(self.archive)
-        self.stack.addWidget(self.library)
-        col.addWidget(self.stack, 1)
+        column.addWidget(self.stack, 1)
+        shell.addWidget(body, 1)
 
-        self.downloads: DownloadsPanel | None = None
+        self.browse = BrowsePage(client, cache_root=platform_support.cache_dir())
+        self.browse.download_requested.connect(self._download_requested)
+        self.browse.count_changed.connect(self._browse_count_changed)
+        self.stack.addWidget(self.browse)
+
+        self.library = LibraryPage(store, self._settings, client, self.download_dir)
+        self.stack.addWidget(self.library)
+
+        self.downloads: DownloadsPage | None = None
         if manager is not None:
-            self.downloads = DownloadsPanel(manager, lambda: self.download_dir, self._title_for)
-            self.downloads.hide()
-            self.downloads.closed.connect(self.toggle_downloads)
+            self.torrents = self._torrent_manager()
+            self.downloads = DownloadsPage(
+                manager, lambda: self.download_dir, self._title_for,
+                torrents=self.torrents,
+            )
             self.downloads.count_changed.connect(self._downloads_count)
             self.bridge.changed.connect(self.downloads.schedule_refresh)
-            col.addWidget(self.downloads)
-        self.downloads_btn.setCheckable(True)
-        self.downloads_btn.clicked.connect(self.toggle_downloads)
-        self.archive.download_requested.connect(self._download_requested)
+            self.stack.addWidget(self.downloads)
 
-        self.toast = Toast(host)
+        self.media = MediaPage(self._settings, platform_support.cache_dir())
+        self.media.configure_requested.connect(lambda: self.show_settings("providers"))
+        self.stack.addWidget(self.media)
+
+        self.toast = Toast(root)
+        self._install_shortcuts()
         self.show_view("Library")
+        self._sync_rail()
+        if store is not None:
+            self.library.set_entries(store.entries())
+        if self._settings.get("rescan_on_startup", True) and store is not None:
+            QTimer.singleShot(400, self.library.rescan)
+        QTimer.singleShot(250, lambda: self.browse.load())
 
-    # downloads -------------------------------------------------------------
-    def toggle_downloads(self) -> None:
-        if self.downloads is None:
+    # construction ---------------------------------------------------------
+    def _torrent_manager(self):
+        """The magnet queue, owned by the window like the download queue."""
+        try:
+            from .torrent import TorrentManager
+
+            return TorrentManager(
+                platform_support.data_dir() / "torrents.json",
+                self.download_dir,
+                engine_path=self._settings.torrent_client,
+            )
+        except Exception:  # noqa: BLE001 - the strip simply stays hidden
+            return None
+
+    def _build_rail(self) -> QWidget:
+        rail = QWidget()
+        rail.setObjectName("rail")
+        rail.setFixedWidth(RAIL_WIDTH)
+        column = QVBoxLayout(rail)
+        column.setContentsMargins(4, 10, 4, 10)
+        column.setSpacing(2)
+        self.rail_buttons: dict[str, RailButton] = {}
+        for key, icon_name, text, tip in (
+            ("browse", "grid", "Browse", "Browse the collection (Ctrl+1)"),
+            ("library", "library", "Library", "Your downloaded games (Ctrl+2)"),
+            ("downloads", "downloads", "Downloads", "The download queue (Ctrl+3)"),
+            ("media", "media", "Media", "Movies & TV (Ctrl+4)"),
+        ):
+            button = RailButton(key, icon_name, text, tip)
+            button.clicked.connect(lambda k=key: self.show_view(k))
+            column.addWidget(button, 0, Qt.AlignHCenter)
+            self.rail_buttons[key] = button
+        column.addStretch(1)
+        for key, icon_name, text, tip, callback in (
+            ("settings", "settings", "Settings", "Settings (Ctrl+,)", self.show_settings),
+            ("about", "about", "About", "About this application", self.show_about),
+        ):
+            button = RailButton(key, icon_name, text, tip)
+            button.clicked.connect(callback)
+            column.addWidget(button, 0, Qt.AlignHCenter)
+            self.rail_buttons[key] = button
+        return rail
+
+    def _build_header(self) -> QWidget:
+        header = QFrame()
+        header.setObjectName("headerBar")
+        header.setFixedHeight(HEADER_HEIGHT)
+        row = QHBoxLayout(header)
+        row.setContentsMargins(12, 0, 14, 0)
+        row.setSpacing(6)
+
+        self.back_btn = IconButton("back", "Back", 17, 34)
+        self.back_btn.clicked.connect(self.go_back)
+        self.back_btn.setEnabled(False)
+        row.addWidget(self.back_btn)
+        self.forward_btn = IconButton("forward", "Forward", 17, 34)
+        self.forward_btn.clicked.connect(self.go_forward)
+        self.forward_btn.setEnabled(False)
+        row.addWidget(self.forward_btn)
+        row.addStretch(1)
+
+        pill = QFrame()
+        pill.setObjectName("searchPill")
+        pill.setFixedHeight(40)
+        pill.setMinimumWidth(360)
+        pill.setMaximumWidth(520)
+        pill_row = QHBoxLayout(pill)
+        pill_row.setContentsMargins(14, 0, 12, 0)
+        pill_row.setSpacing(8)
+        magnifier = QLabel()
+        magnifier.setPixmap(
+            icon("search", 15, color("faint"), 1.7).pixmap(15, 15)
+        )
+        pill_row.addWidget(magnifier)
+        self.search_field = QLineEdit()
+        self.search_field.setObjectName("searchField")
+        self.search_field.setPlaceholderText("Search games")
+        self.search_field.textChanged.connect(self._on_search_changed)
+        pill_row.addWidget(self.search_field, 1)
+        hint = QLabel("Ctrl K")
+        hint.setObjectName("keyHint")
+        pill_row.addWidget(hint)
+        row.addWidget(pill, 0)
+        row.addStretch(1)
+
+        self.menu_btn = IconButton("menu", "Menu", 18, 34)
+        self.menu_btn.clicked.connect(self._show_menu)
+        row.addWidget(self.menu_btn)
+        self.refresh_btn = IconButton("refresh", "Refresh (reload collection, rescan library)", 17, 34)
+        self.refresh_btn.clicked.connect(self.refresh_all)
+        row.addWidget(self.refresh_btn)
+        return header
+
+    def _install_shortcuts(self) -> None:
+        for keys, callback in (
+            ("Ctrl+1", lambda: self.show_view("browse")),
+            ("Ctrl+2", lambda: self.show_view("library")),
+            ("Ctrl+3", lambda: self.show_view("downloads")),
+            ("Ctrl+4", lambda: self.show_view("media")),
+            ("Ctrl+F", self.focus_search),
+            ("Ctrl+K", self.focus_search),
+            ("Ctrl+R", self.refresh_all),
+            ("F5", self.refresh_all),
+            ("Ctrl+,", lambda: self.show_settings()),
+        ):
+            shortcut = QShortcut(QKeySequence(keys), self)
+            shortcut.activated.connect(callback)
+
+    # navigation -----------------------------------------------------------
+    VIEW_TITLES = {
+        "browse": "Browse", "library": "Library",
+        "downloads": "Downloads", "media": "Movies & TV",
+    }
+
+    def show_view(self, name: str) -> None:
+        aliases = {
+            "Archive": "browse", "Browse": "browse", "browse": "browse",
+            "Library": "library", "library": "library",
+            "Downloads": "downloads", "downloads": "downloads",
+            "Media": "media", "media": "media",
+        }
+        key = aliases.get(str(name), "browse")
+        if key == "downloads" and self.downloads is None:
             self.toast.show_message("Downloads are not available.", error=True)
-            self.downloads_btn.setChecked(False)
             return
-        show = not self.downloads.isVisible()
-        self.downloads.setVisible(show)
-        self.downloads_btn.setChecked(show)
-        if show:
-            self.downloads.refresh()
+        page = {
+            "browse": self.browse,
+            "library": self.library,
+            "downloads": self.downloads,
+            "media": self.media,
+        }[key]
+        self.stack.setCurrentWidget(page)  # type: ignore[arg-type]
+        self.browse.detail.hide() if key != "browse" else None
+        self._remember(key)
+        self._current = key
+        self._sync_rail()
+        self._sync_search_field(key)
+        if key == "browse":
+            self.browse.load()
+        elif key == "media":
+            self.media.show_section(self.media._section)
+            QTimer.singleShot(0, self.media.reload) if not self.media._loaded else None
+
+    def _remember(self, key: str) -> None:
+        if self._history_index >= 0 and self._history[self._history_index] == key:
+            return
+        self._history = self._history[: self._history_index + 1] + [key]
+        self._history_index = len(self._history) - 1
+        self._update_history_buttons()
+
+    def go_back(self) -> None:
+        if self._current == "browse" and self.browse.detail.isVisible():
+            self.browse.clear_selection()
+            return
+        if self._history_index <= 0:
+            return
+        self._history_index -= 1
+        self._apply_history(self._history[self._history_index])
+
+    def go_forward(self) -> None:
+        if self._history_index >= len(self._history) - 1:
+            return
+        self._history_index += 1
+        self._apply_history(self._history[self._history_index])
+
+    def _apply_history(self, key: str) -> None:
+        page = {
+            "browse": self.browse, "library": self.library,
+            "downloads": self.downloads, "media": self.media,
+        }.get(key)
+        if page is None:
+            return
+        self.stack.setCurrentWidget(page)
+        self._current = key
+        self._sync_rail()
+        self._sync_search_field(key)
+        self._update_history_buttons()
+
+    def _update_history_buttons(self) -> None:
+        self.back_btn.setEnabled(self._history_index > 0)
+        self.forward_btn.setEnabled(self._history_index < len(self._history) - 1)
+
+    def _sync_rail(self) -> None:
+        current = getattr(self, "_current", "library")
+        for key, button in self.rail_buttons.items():
+            button.set_active(key == current)
+
+    def _browse_count_changed(self, total: int) -> None:
+        """Keep the header placeholder in step with the collection size."""
+        self._browse_total = total
+        if getattr(self, "_current", "library") == "browse":
+            self.search_field.setPlaceholderText(self._browse_placeholder())
+
+    def _browse_placeholder(self) -> str:
+        total = getattr(self, "_browse_total", 0)
+        return f"Search {total:,} games" if total else "Search games"
+
+    def _sync_search_field(self, key: str) -> None:
+        if key == "browse":
+            self.search_field.setPlaceholderText(self._browse_placeholder())
+            self.search_field.setEnabled(True)
+        elif key == "library":
+            self.search_field.setPlaceholderText("Search library")
+            self.search_field.setEnabled(True)
+        elif key == "media":
+            self.search_field.setPlaceholderText("Search movies, TV, anime…")
+            self.search_field.setEnabled(True)
+        else:
+            self.search_field.setPlaceholderText("Search")
+            self.search_field.setEnabled(False)
+
+    def focus_search(self) -> None:
+        self.search_field.setFocus()
+        self.search_field.selectAll()
+
+    def _on_search_changed(self, text: str) -> None:
+        current = getattr(self, "_current", "library")
+        if current == "browse":
+            self.browse.refresh()
+        elif current == "library":
+            self.library.search.setText(text)
+        elif current == "media":
+            self.media.search.setText(text)
+
+    def refresh_all(self) -> None:
+        try:
+            self.library.rescan()
+        except Exception:  # noqa: BLE001 - a failed rescan must not stop a reload
+            pass
+        try:
+            self.browse.load(force=True)
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            self.media.reload()
+        except Exception:  # noqa: BLE001
+            pass
+
+    # menu / dialogs -------------------------------------------------------
+    def _show_menu(self) -> None:
+        menu = QMenu(self)
+        menu.setWindowFlags(menu.windowFlags() | Qt.FramelessWindowHint | Qt.NoDropShadowWindowHint)
+        queue = QAction("Show Download Queue", self)
+        queue.triggered.connect(lambda: self.show_view("downloads"))
+        menu.addAction(queue)
+        folder = QAction("Open download folder", self)
+        folder.triggered.connect(lambda: platform_support.open_folder(self.download_dir))
+        menu.addAction(folder)
+        menu.addSeparator()
+        settings = QAction("Settings…", self)
+        settings.triggered.connect(self.show_settings)
+        menu.addAction(settings)
+        about = QAction(f"About {APP_TITLE}", self)
+        about.triggered.connect(self.show_about)
+        menu.addAction(about)
+        menu.exec(self.menu_btn.mapToGlobal(self.menu_btn.rect().bottomLeft()))
+
+    def show_settings(self, tab: str = "general") -> None:
+        dialog = SettingsDialog(self._settings, self)
+        dialog.show_tab(tab)
+        dialog.exec()
+
+    def show_about(self) -> None:
+        AboutDialog(self).exec()
+
+    def download_dir_changed(self, path: Path) -> None:
+        self.download_dir = Path(path)
+        self.library.download_dir = Path(path)
+        self.library.rescan()
+
+    # downloads ------------------------------------------------------------
+    def toggle_downloads(self) -> None:
+        """Ctrl+D: open the download queue, or go back where you were."""
+        if self.downloads is None:
+            return
+        if getattr(self, "_current", "library") == "downloads":
+            self.show_view(getattr(self, "_previous_view", "library"))
+        else:
+            self._previous_view = getattr(self, "_current", "library")
+            self.show_view("downloads")
 
     def _downloads_count(self, active: int) -> None:
-        self.downloads_btn.setText(f"↓  Downloads ({active})" if active else "↓  Downloads")
+        button = self.rail_buttons.get("downloads")
+        if button is not None:
+            button.set_badge(active)
 
     def _game(self, identifier: str):
-        return next((g for g in self.archive._games if g.identifier == identifier), None)
+        return self.browse.game(identifier)
 
     def _title_for(self, identifier: str) -> str:
         game = self._game(identifier)
@@ -543,7 +441,8 @@ class MainWindow(QMainWindow):
             return
         if game.is_catalog:
             self.toast.show_message(
-                "Downloads from imported catalogs are not ported to this version yet.", error=True
+                "Downloads from imported catalogs are not available in this build yet.",
+                error=True,
             )
             return
         client = self.client
@@ -573,7 +472,9 @@ class MainWindow(QMainWindow):
             enqueue_files(
                 self.manager, item, files, self.download_dir,  # type: ignore[arg-type]
                 on_done=self._queued,
-                on_error=lambda exc: self.toast.show_message(f"Could not queue: {exc}", error=True),
+                on_error=lambda exc: self.toast.show_message(
+                    f"Could not queue: {exc}", error=True
+                ),
             )
 
         run_async(lambda: client.fetch_item(identifier), got_item, failed)
@@ -594,19 +495,18 @@ class MainWindow(QMainWindow):
         if self.downloads is not None:
             self.downloads.refresh()
 
+    # lifecycle ------------------------------------------------------------
     def resizeEvent(self, event) -> None:  # noqa: N802
         super().resizeEvent(event)
         self.toast.reposition()
 
     def closeEvent(self, event) -> None:  # noqa: N802
+        if not self.isMaximized():
+            self._settings.set_window_size(self.width(), self.height())
+        self._settings.set_maximized(self.isMaximized())
         if self.manager is not None:
             self.manager.shutdown()
         super().closeEvent(event)
-
-    def show_view(self, name: str) -> None:
-        for key, btn in self.tabs.items():
-            btn.setChecked(key == name)
-        self.stack.setCurrentIndex(0 if name == "Archive" else 1)
 
 
 # --------------------------------------------------------------------------
@@ -621,9 +521,20 @@ def resolved_theme(app: QApplication, mode: str = "system") -> str:
 
 def apply_theme(app: QApplication, mode: str = "system") -> str:
     resolved = resolved_theme(app, mode)
-    THEME_STATE["muted"] = theme.palette(resolved)["muted"]
+    set_theme(resolved)
     app.setStyle("Fusion")
     app.setStyleSheet(build_stylesheet(resolved))
+    palette = app.palette()
+    from PySide6.QtGui import QColor
+
+    colours = theme.palette(resolved)
+    palette.setColor(palette.ColorRole.Window, QColor(colours["bg"]))
+    palette.setColor(palette.ColorRole.WindowText, QColor(colours["text"]))
+    palette.setColor(palette.ColorRole.Base, QColor(colours["surface"]))
+    palette.setColor(palette.ColorRole.Text, QColor(colours["text"]))
+    palette.setColor(palette.ColorRole.Highlight, QColor(colours["accent_fill"]))
+    palette.setColor(palette.ColorRole.HighlightedText, QColor(colours["on_accent"]))
+    app.setPalette(palette)
     return resolved
 
 
@@ -635,16 +546,13 @@ def _resolve_task_url(snapshot: TaskSnapshot) -> str | None:
         return None
 
 
-def main(argv: Sequence[str] | None = None) -> int:
-    app = QApplication(list(argv if argv is not None else sys.argv))
-    app.setApplicationName(APP_TITLE)
-    from .settings import Settings
-
-    settings = Settings()
-    apply_theme(app, settings.theme)
-    download_dir = Path(settings.download_dir or platform_support.default_download_dir())
+def build_window(settings: Settings, download_dir: Path | None = None) -> Window:
+    """Create the window and every long-lived object it needs."""
+    download_dir = Path(download_dir or settings.download_dir
+                        or platform_support.default_download_dir())
     store = LibraryStore(platform_support.data_dir() / "library.json", download_dir)
-    client = ArchiveClient(cache_root=platform_support.cache_dir())
+    client = ArchiveClient(cache_root=platform_support.cache_dir(),
+                           timeout=float(settings.network_timeout))
     bridge_holder: dict[str, DownloadBridge] = {}
     manager = DownloadManager(
         observer=lambda: bridge_holder["b"].notify() if "b" in bridge_holder else None,
@@ -653,12 +561,25 @@ def main(argv: Sequence[str] | None = None) -> int:
         timeout=float(settings.network_timeout),
         retry_limit=settings.download_retries,
     )
-    window = MainWindow(store, client, manager, download_dir)
+    window = Window(store, client, manager, download_dir, settings)
     bridge_holder["b"] = window.bridge
-    window.library.set_entries(store.entries())
-    window.archive.load()
+    return window
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    app = QApplication(list(argv if argv is not None else sys.argv))
+    app.setApplicationName(APP_TITLE)
+    app.setApplicationDisplayName(APP_TITLE)
+    platform_support.ensure_app_dirs()
+    settings = Settings()
+    apply_theme(app, settings.theme)
+    window = build_window(settings)
     window.show()
     return app.exec()
+
+
+#: The old name is kept so existing callers and tests keep working.
+MainWindow = Window
 
 
 if __name__ == "__main__":

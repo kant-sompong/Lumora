@@ -1,4 +1,4 @@
-"""Downloads drawer for the Qt frontend.
+"""Downloads page for the Qt frontend.
 
 The download manager runs on its own worker thread and calls an observer from
 there; ``DownloadBridge`` turns that call into a Qt signal so the UI is only
@@ -31,7 +31,7 @@ from . import platform_support
 from .archive import ArchiveFile, ArchiveItem
 from .downloader import DownloadManager, DownloadStatus, TaskSnapshot
 from .library import game_folder, write_manifest
-from .qt_widgets import clear_layout, run_async
+from .qt_widgets import EmptyState, Toast, clear_layout, label, run_async
 from .util import AppError, check_download_dir, human_eta, human_size, human_speed
 
 #: Row refreshes closer together than this are merged into one.
@@ -132,25 +132,28 @@ class DownloadRow(QFrame):
     """One download: name, game title, progress bar, status line, buttons."""
 
     action = Signal(str, str)  # task id, action name
+    clicked = Signal(str)
 
     def __init__(self, snap: TaskSnapshot, game_title: str) -> None:
         super().__init__()
-        self.setObjectName("dl-row")
+        self.setObjectName("dlRow")
+        self.setCursor(Qt.PointingHandCursor)
         self.task_id = snap.id
         self._actions: list[str] = []
+        self._selected = False
 
         col = QVBoxLayout(self)
-        col.setContentsMargins(14, 10, 14, 10)
-        col.setSpacing(4)
+        col.setContentsMargins(20, 12, 20, 12)
+        col.setSpacing(5)
 
         top = QHBoxLayout()
         top.setSpacing(8)
         names = QVBoxLayout()
-        names.setSpacing(0)
+        names.setSpacing(1)
         self.name = QLabel()
-        self.name.setObjectName("dl-name")
+        self.name.setObjectName("dlName")
         self.game = QLabel()
-        self.game.setObjectName("dl-game")
+        self.game.setObjectName("dlGame")
         names.addWidget(self.name)
         names.addWidget(self.game)
         top.addLayout(names, 1)
@@ -160,17 +163,21 @@ class DownloadRow(QFrame):
         col.addLayout(top)
 
         self.bar = QProgressBar()
-        self.bar.setObjectName("dl-bar")
+        self.bar.setObjectName("dlBar")
         self.bar.setTextVisible(False)
-        self.bar.setFixedHeight(6)
+        self.bar.setFixedHeight(5)
         self.bar.setRange(0, 1000)
         col.addWidget(self.bar)
 
         self.detail = QLabel()
-        self.detail.setObjectName("dl-detail")
+        self.detail.setObjectName("dlDetail")
         col.addWidget(self.detail)
 
         self.update_from(snap, game_title)
+
+    def set_selected(self, on: bool) -> None:
+        self._selected = on
+        self.setStyleSheet("QFrame#dlRow { background: rgba(59, 130, 246, 0.08); }" if on else "")
 
     def update_from(self, snap: TaskSnapshot, game_title: str) -> None:
         self.name.setText(Path(snap.filename).name)
@@ -202,14 +209,43 @@ class DownloadRow(QFrame):
             clear_layout(self.buttons)
             for name in actions:
                 btn = QPushButton(_ACTION_LABELS[name])
-                btn.setObjectName("flat" if name in ("remove", "open") else "small")
+                btn.setObjectName("small" if name != "open" else "quiet")
                 btn.setCursor(Qt.PointingHandCursor)
                 btn.clicked.connect(lambda _=False, n=name: self.action.emit(self.task_id, n))
                 self.buttons.addWidget(btn)
 
+    def mouseReleaseEvent(self, event) -> None:  # noqa: N802
+        if event.button() == Qt.LeftButton:
+            self.clicked.emit(self.task_id)
+        super().mouseReleaseEvent(event)
 
-class DownloadsPanel(QFrame):
-    """The drawer under the main view: every queued, running and finished download."""
+
+class TorrentRow(QFrame):
+    """One magnet download in the bottom strip."""
+
+    def __init__(self, title: str, status: str, fraction: float, detail: str) -> None:
+        super().__init__()
+        self.setObjectName("dlRow")
+        column = QVBoxLayout(self)
+        column.setContentsMargins(20, 8, 20, 8)
+        column.setSpacing(3)
+        top = QHBoxLayout()
+        name = label(title, "dlName")
+        top.addWidget(name, 1)
+        top.addWidget(label(status, "dlDetail"))
+        column.addLayout(top)
+        bar = QProgressBar()
+        bar.setObjectName("dlBar")
+        bar.setTextVisible(False)
+        bar.setFixedHeight(4)
+        bar.setRange(0, 1000)
+        bar.setValue(int(max(0.0, min(1.0, fraction)) * 1000))
+        column.addWidget(bar)
+        column.addWidget(label(detail, "dlDetail"))
+
+
+class DownloadsPage(QWidget):
+    """Downloads as a destination page, with the torrent strip at the bottom."""
 
     closed = Signal()
     count_changed = Signal(int)
@@ -219,67 +255,123 @@ class DownloadsPanel(QFrame):
         manager: DownloadManager,
         download_dir: Callable[[], Path],
         title_for: Callable[[str], str],
+        torrents: object | None = None,
+        cover_for: Callable[[str], str] | None = None,
     ) -> None:
         super().__init__()
-        self.setObjectName("downloads")
-        self.setFixedHeight(300)
         self._manager = manager
         self._download_dir = download_dir
         self._title_for = title_for
+        self._torrents = torrents
         self._rows: dict[str, DownloadRow] = {}
         self._last_active = -1
+        self._selected = ""
 
-        col = QVBoxLayout(self)
-        col.setContentsMargins(0, 0, 0, 0)
-        col.setSpacing(0)
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
 
-        head = QFrame()
-        head.setObjectName("dl-head")
-        h = QHBoxLayout(head)
-        h.setContentsMargins(16, 10, 12, 10)
-        heading = QVBoxLayout()
-        heading.setSpacing(0)
-        title = QLabel("Downloads")
-        title.setObjectName("page-title")
-        sub = QLabel("One download runs at a time. Queued and paused items are kept between sessions.")
-        sub.setObjectName("detail-note")
-        heading.addWidget(title)
-        heading.addWidget(sub)
-        h.addLayout(heading, 1)
-        folder = QPushButton("Open folder")
-        folder.clicked.connect(self._open_folder)
-        clear = QPushButton("Clear finished")
-        clear.clicked.connect(self._clear_finished)
-        close = QPushButton("✕")
-        close.setObjectName("flat")
-        close.setToolTip("Hide downloads")
-        close.clicked.connect(self.closed.emit)
-        for w in (folder, clear, close):
-            h.addWidget(w)
-        col.addWidget(head)
+        header = QWidget()
+        head = QHBoxLayout(header)
+        head.setContentsMargins(24, 16, 24, 12)
+        head.setSpacing(6)
+        head.addWidget(label("DOWNLOADS", "eyebrow"))
+        head.addStretch(1)
+        for text, tip, callback in (
+            ("Pause", "Pause the selected download (or every running one)", lambda: self._bulk("pause")),
+            ("Cancel", "Cancel the selected download (or every active one)", lambda: self._bulk("cancel")),
+            ("Retry", "Retry the selected download (or every failed one)", lambda: self._bulk("retry")),
+            ("Remove", "Remove the selected download from the queue", lambda: self._bulk("remove")),
+            ("Clear finished", "Remove every finished download from the queue", self._clear_finished),
+        ):
+            btn = QPushButton(text)
+            btn.setObjectName("small")
+            btn.setToolTip(tip)
+            btn.setCursor(Qt.PointingHandCursor)
+            btn.clicked.connect(lambda _=False, c=callback: c())
+            head.addWidget(btn)
+        self.refresh_btn = QPushButton("⌄")
+        self.refresh_btn.setObjectName("small")
+        self.refresh_btn.setToolTip("Refresh the queue")
+        self.refresh_btn.clicked.connect(self.refresh)
+        head.addWidget(self.refresh_btn)
+        root.addWidget(header)
 
-        self.empty = QLabel("No downloads yet. Pick a game in Archive and press Download.")
-        self.empty.setObjectName("empty-sub")
-        self.empty.setAlignment(Qt.AlignCenter)
-        col.addWidget(self.empty, 1)
+        line = QFrame()
+        line.setObjectName("metabar")
+        line.setFixedHeight(1)
+        root.addWidget(line)
 
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
         self.scroll.setFrameShape(QFrame.NoFrame)
         self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.scroll.setVisible(False)
         host = QWidget()
         self.rows_layout = QVBoxLayout(host)
         self.rows_layout.setContentsMargins(0, 0, 0, 0)
         self.rows_layout.setSpacing(0)
         self.rows_layout.addStretch(1)
         self.scroll.setWidget(host)
-        col.addWidget(self.scroll, 1)
+        root.addWidget(self.scroll, 1)
+
+        self.empty = EmptyState(
+            "downloads", "No downloads yet",
+            "Select a game and add files to see them here.",
+        )
+        root.addWidget(self.empty, 1)
+
+        # Torrents -----------------------------------------------------------------
+        self.torrent_host = QFrame()
+        self.torrent_host.setObjectName("dlFoot")
+        torrent_column = QVBoxLayout(self.torrent_host)
+        torrent_column.setContentsMargins(0, 0, 0, 0)
+        torrent_column.setSpacing(0)
+        strip = QWidget()
+        strip_row = QHBoxLayout(strip)
+        strip_row.setContentsMargins(24, 8, 24, 8)
+        strip_row.setSpacing(8)
+        strip_row.addWidget(label("TORRENTS", "eyebrow"))
+        self.torrent_engine = label("", "statLine")
+        strip_row.addWidget(self.torrent_engine)
+        strip_row.addStretch(1)
+        for text in ("Clear finished", "Remove", "Pause", "Start"):
+            btn = QPushButton(text)
+            btn.setObjectName("small")
+            btn.setCursor(Qt.PointingHandCursor)
+            btn.clicked.connect(lambda _=False, action=text.lower(): self._torrent_action(action))
+            strip_row.addWidget(btn)
+        torrent_column.addWidget(strip)
+        self.torrent_empty = label(
+            "No torrent downloads.\nMagnet downloads appear here while a torrent engine runs.",
+            "emptySub",
+        )
+        self.torrent_empty.setAlignment(Qt.AlignCenter)
+        self.torrent_empty.setContentsMargins(0, 10, 0, 12)
+        torrent_column.addWidget(self.torrent_empty)
+        self.torrent_rows_host = QWidget()
+        self.torrent_rows = QVBoxLayout(self.torrent_rows_host)
+        self.torrent_rows.setContentsMargins(0, 0, 0, 0)
+        self.torrent_rows.setSpacing(0)
+        self.torrent_rows_host.hide()
+        torrent_column.addWidget(self.torrent_rows_host)
+        root.addWidget(self.torrent_host)
+        self.torrent_host.setVisible(torrents is not None)
 
         self._timer = QTimer(self)
         self._timer.setSingleShot(True)
         self._timer.setInterval(REFRESH_MS)
         self._timer.timeout.connect(self.refresh)
+        self._torrent_timer = QTimer(self)
+        self._torrent_timer.setInterval(2000)
+        self._torrent_timer.timeout.connect(self._poll_torrents)
+        if torrents is not None:
+            self._torrent_timer.start()
         self.refresh()
+
+    def _poll_torrents(self) -> None:
+        if self.isVisible():
+            self._refresh_torrents()
 
     # refreshing ----------------------------------------------------------
     def schedule_refresh(self) -> None:
@@ -296,10 +388,12 @@ class DownloadsPanel(QFrame):
             if row is None:
                 row = DownloadRow(snap, title)
                 row.action.connect(self._on_action)
+                row.clicked.connect(self._select)
                 self._rows[snap.id] = row
                 self.rows_layout.insertWidget(index, row)
             else:
                 row.update_from(snap, title)
+            row.set_selected(snap.id == self._selected)
         for task_id in [t for t in self._rows if t not in seen]:
             row = self._rows.pop(task_id)
             row.hide()
@@ -311,6 +405,35 @@ class DownloadsPanel(QFrame):
         if active != self._last_active:
             self._last_active = active
             self.count_changed.emit(active)
+        self._refresh_torrents()
+
+    def _refresh_torrents(self) -> None:
+        if self._torrents is None:
+            return
+        try:
+            info = self._torrents.engine_status()
+            self.torrent_engine.setText(f"{getattr(info, 'label', 'Built-in torrent engine')}")
+        except Exception:  # noqa: BLE001 - the strip is informational
+            self.torrent_engine.setText("Built-in torrent engine")
+        clear_layout(self.torrent_rows)
+        try:
+            tasks = self._torrents.tasks()
+        except Exception:  # noqa: BLE001
+            tasks = []
+        self.torrent_rows_host.setVisible(bool(tasks))
+        self.torrent_empty.setVisible(not tasks)
+        for task in tasks:
+            detail = f"{human_size(task.completed)} of {human_size(task.total)}" if task.total else ""
+            if task.speed:
+                detail += f" · {human_speed(task.speed)}"
+            self.torrent_rows.addWidget(
+                TorrentRow(task.title or task.infohash[:12], task.status, task.fraction, detail)
+            )
+
+    def _select(self, task_id: str) -> None:
+        self._selected = "" if self._selected == task_id else task_id
+        for identifier, row in self._rows.items():
+            row.set_selected(identifier == self._selected)
 
     # actions -------------------------------------------------------------
     def _on_action(self, task_id: str, action: str) -> None:
@@ -331,12 +454,61 @@ class DownloadsPanel(QFrame):
                 platform_support.open_folder(snap.folder)
         self.refresh()
 
-    def _open_folder(self) -> None:
-        platform_support.open_folder(self._download_dir())
+    def _bulk(self, action: str) -> None:
+        snaps = {snap.id: snap for snap in self._manager.snapshots()}
+        targets = [self._selected] if self._selected in snaps else list(snaps)
+        eligible = {
+            "pause": {DownloadStatus.RUNNING},
+            "cancel": {DownloadStatus.RUNNING, DownloadStatus.PAUSED, DownloadStatus.QUEUED},
+            "retry": {DownloadStatus.FAILED, DownloadStatus.CANCELLED},
+            "remove": set(DownloadStatus),
+        }[action]
+        for task_id in targets:
+            snap = snaps[task_id]
+            if snap.status not in eligible:
+                continue
+            if action == "pause":
+                self._manager.pause(task_id)
+            elif action == "cancel":
+                self._manager.cancel(task_id)
+            elif action == "retry":
+                self._manager.retry(task_id)
+            elif action == "remove":
+                self._manager.remove(task_id)
+                self._selected = ""
+        self.refresh()
 
     def _clear_finished(self) -> None:
         self._manager.clear_finished()
         self.refresh()
+
+    def _torrent_action(self, action: str) -> None:
+        if self._torrents is None:
+            return
+        try:
+            if action == "clear finished":
+                self._torrents.clear_finished()
+            elif action == "pause":
+                for task in self._torrents.tasks():
+                    if not task.finished:
+                        self._torrents.pause(task.task_id)
+            elif action == "start":
+                for task in self._torrents.tasks():
+                    if not task.finished:
+                        self._torrents.resume(task.task_id)
+            elif action == "remove":
+                for task in self._torrents.tasks():
+                    if task.finished:
+                        self._torrents.remove(task.task_id)
+        except Exception as exc:  # noqa: BLE001 - reported, never crashes the page
+            window = self.window()
+            toast = getattr(window, "toast", None)
+            if isinstance(toast, Toast):
+                toast.show_message(f"Torrent action failed: {exc}", error=True)
+        self._refresh_torrents()
+
+    def _open_folder(self) -> None:
+        platform_support.open_folder(self._download_dir())
 
 
 class FilePickDialog(QDialog):
@@ -344,19 +516,17 @@ class FilePickDialog(QDialog):
 
     def __init__(self, title: str, files: Sequence[ArchiveFile], parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self.setObjectName("sheet")
         self.setWindowTitle("Choose files to download")
         self.setMinimumSize(520, 420)
         self._files = list(files)
         col = QVBoxLayout(self)
         col.setContentsMargins(20, 18, 20, 16)
         col.setSpacing(10)
-        head = QLabel(title)
-        head.setObjectName("detail-title")
-        head.setWordWrap(True)
-        note = QLabel("Game files are ticked. Tick the extras only if you want them.")
-        note.setObjectName("detail-note")
+        head = label(title, "pageTitle", wrap=True)
         col.addWidget(head)
-        col.addWidget(note)
+        col.addWidget(label("Game files are ticked. Tick the extras only if you want them.",
+                            "detailNote"))
 
         self.list = QListWidget()
         preselected = {f.name for f in default_selection(self._files)}
@@ -430,3 +600,18 @@ def enqueue_files(
         on_done(added, errors, note)
 
     run_async(work, done, on_error)
+
+
+__all__ = [
+    "DownloadBridge",
+    "DownloadRow",
+    "DownloadsPage",
+    "FilePickDialog",
+    "TorrentRow",
+    "actions_for",
+    "active_count",
+    "default_selection",
+    "detail_text",
+    "downloadable_files",
+    "enqueue_files",
+]

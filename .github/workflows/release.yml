@@ -2,7 +2,7 @@ name: Build and release
 
 # Every push to main and every pull request runs the tests and builds both
 # packages, so a broken spec is found before a release.  Pushing a v* tag
-# (for example v0.2.6) additionally publishes a GitHub release with the
+# (for example v0.3.0) additionally publishes a GitHub release with the
 # Windows zip and the Linux tarball attached.
 
 on:
@@ -63,12 +63,11 @@ jobs:
           Stop-Process -Id $p.Id -Force
       - name: Zip
         run: |
-          $v = python -c "import lgl; print(lgl.__version__)"
-          Compress-Archive -Path dist\Lumora -DestinationPath "dist\Lumora-$v-windows-x64.zip"
+          Compress-Archive -Path dist\Lumora -DestinationPath "dist\Lumora.zip"
       - uses: actions/upload-artifact@v4
         with:
-          name: windows-zip
-          path: dist/Lumora-*-windows-x64.zip
+          name: Lumora
+          path: dist/Lumora.zip
 
   linux:
     name: Linux tarball

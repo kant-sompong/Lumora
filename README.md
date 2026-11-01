@@ -1,6 +1,15 @@
 # Lumora
 
-A cross-platform desktop application for browsing, downloading, and managing games from the Internet Archive's **native-linux-games-collection**. Runs on **Linux (GTK 3)** and **Windows 10/11 (Qt 6 / PySide6)** with a shared Python core.
+A cross-platform desktop app for browsing, downloading and playing games from
+the Internet Archive, with a Movies & TV section for everything else.
+
+One shared Python core, two native frontends: **GTK 3 on Linux** and
+**Qt 6 / PySide6 on Windows**. Both builds use the same theme tokens, so the
+Windows version looks and behaves like the Linux one.
+
+![Lumora](docs/screenshot.png)
+
+**Current release: 0.3.0**
 
 ---
 
@@ -8,59 +17,210 @@ A cross-platform desktop application for browsing, downloading, and managing gam
 
 | Platform | Status |
 | --- | --- |
-| Linux (Void, Debian, Ubuntu, Fedora, Arch, etc.) | **Developed & tested** — GTK 3 frontend with embedded WebKit2 media player |
-| Windows 11 | **Implemented** — Qt 6 (PySide6) frontend with Qt WebEngine media player; portable ZIP & optional installer via CI |
-| Windows 10 | **Implemented** — Same as Windows 11 (requires Windows 10 1809+); Windows 10 is past standard support |
+| Linux (Void, Debian, Ubuntu, Fedora, Arch, …) | **Developed & tested** — GTK 3 frontend, WebKit2 playback |
+| Windows 11 | **Implemented** — Qt 6 (PySide6) frontend, portable build |
+| Windows 10 (1809+) | **Implemented** — same build as Windows 11 |
 | macOS | Not supported (no frontend) |
 
-> **Do not read "implemented" as "verified on hardware".** The Windows executable is built on `windows-latest` in CI and smoke-tested there (starts and stays running). Interactive testing on a real Windows desktop has not been performed by the author.
+The Windows build is compiled and smoke-tested on GitHub Actions
+(`windows-latest`): the executable starts, stays running and loads every page.
+Interactive testing on a physical Windows desktop is still done by users, not
+by CI.
 
 ---
 
 ## Features
 
-### Game library & discovery
-- **Collection index** from archive.org `advancedsearch.php` (≈ 471 items), cached for 6 hours with stale-cache fallback
-- **Search** by title, identifier, year, creator, subject
-- **Details** from archive.org metadata: title, creator, date, subjects, license, description, file list with sizes
-- **Filters** by genre, size range, release year, license, file format
-- **Sort** by title, date, size, creator, year (asc/desc)
-- **Views**: cover grid or compact list
+### Browse the collection
+- **Internet Archive index** from `advancedsearch.php` (≈ 471 items), cached for
+  six hours with a stale-cache fallback when offline
+- **Search** by title, identifier, year, creator or subject
+- **Filters** — genre, size range, release year, licence, file format, with live
+  counts per genre and a one-click reset
+- **Sort** by title, year, size, downloads, creator or genre, ascending or
+  descending
+- **Views** — wide cover grid or compact list; covers lazy-load as you scroll
+- **Details panel** — description, size, file list, licence, download count and
+  a one-click download
 
-### Local library management
-- **Scan** download folder → builds `library.json` index with manifests
-- **Favorites**, status badges (installed / downloaded / incomplete / missing)
-- **Duplicate finder** (by name + size)
-- **Integrity verification** against archive.org checksums (MD5, SHA1, SHA256)
-- **Export / import** library index as JSON
-- **Per-game notes & magnet links** stored in `library.json`
+### Local library
+- **Scan** the download folder into `library.json` with per-game manifests
+- **Favourites**, status badges (downloaded / installed / incomplete / missing)
+- **Metadata** — developer, publisher, release date, genres, platforms, notes,
+  with provenance so catalogue refreshes never overwrite what you typed
+- **Compatibility** — best-effort platform detection from the files on disk
+- **Integrity verification** against published archive.org checksums
+  (MD5 / SHA1 / SHA256)
+- **Duplicate finder**, library export/import, and "forget missing entries"
+- **Reviewed launch** — you pick the executable, the path is confined to the
+  download folder, and nothing is ever started as root
 
 ### Downloads
-- **Persistent queue** (`downloads.json`) — survives restart, supports pause/resume/cancel/retry
-- **Parallel segmented downloads** with Range requests, automatic resume on reconnect
-- **Disk-space preflight** before starting
-- **Atomic rename** on completion (`.part` → final name)
-- **External download manager hand-off** (JDownloader 2, AB Download Manager) for difficult mirrors
-- **Magnet link support** via built-in BitTorrent engine (no external client required) or optional `aria2c`
+- **Persistent queue** (`downloads.json`) that survives restarts —
+  pause, resume, cancel, retry, remove, clear finished
+- **Segmented HTTP downloads** with Range requests and automatic resume
+- **Disk-space preflight**, atomic `.part` → final rename, retry limits
+- **Torrent strip** — magnet links through the built-in BitTorrent engine, or an
+  external client such as `aria2c` when you configure one
 
-### Metadata & artwork
-- **Automatic artwork sync** from archive.org screenshots / covers
-- **Manual artwork matching** when auto-detection is uncertain
-- **Provenance tracking** — every metadata field knows its source (archive.org, user edit, sidecar)
-- **Sidecar JSON** (`game.json`) written per download with full metadata
+### Movies & TV
+- **Home** with a cinematic hero, Continue Watching and Trending carousels
+- **Movies**, **TV Shows** and **Anime** sections, plus **Search**, **My List**
+  and **History**
+- **TMDB** metadata; **MyAnimeList** ranking for anime; anime titles that only
+  exist in ani.pm are searchable too
+- **Playback** through the configured streaming provider — Qt WebEngine (Chromium)
+  on Windows, WebKit2GTK on Linux, with fullscreen, picture-in-picture and
+  subtitle/audio-track selection. Without the optional WebEngine module the
+  provider page opens in your default browser.
 
-### Movies & TV (Linux GTK & Windows Qt frontends)
-- **Trending, popular, search** via TMDB
-- **Anime tab** — MAL popular ranking, episode lists, sub/dub selector
-- **Embedded playback** — Linux: WebKit2 (frameXTV, VidRift, Atlantic, ani.pm); Windows: Qt WebEngine (Chromium) with fullscreen, PiP, subtitle/audio track selection
-- **Watchlist & history** persisted locally
-- **Autoplay / default audio language** settings
+### Settings
+- **General** — download folder, desktop notifications, rescan on startup,
+  retry count, network timeout, aria2c path, light/dark/system theme
+- **Locations** — where the settings, data and downloads live
+- **Providers** — RAWG, TMDB and MyAnimeList keys with save-and-test
+- **Media** — streaming provider, anime provider, default audio, autoplay
+- **Shortcuts** — the full keyboard reference
 
-### Windows Qt frontend
-- Same **Browse / Downloads / Library / Media** tabs as Linux
-- **Media tab** — cinematic hero banner, horizontal carousels (Trending, Continue Watching, Movies, TV, Anime), episode list, **embedded Qt WebEngine** playback with fullscreen, picture‑in‑picture, subtitle/audio track selection
-- **Settings** — download folder, theme, provider API keys (RAWG, TMDB, MyAnimeList), streaming provider, anime provider, default audio, autoplay
-- No WebKit dependency — playback uses Qt WebEngine (Chromium)
+---
+
+## Install
+
+### Windows (portable, no Python needed)
+
+1. Download **`Lumora.zip`** from the
+   [Releases](https://github.com/kant-sompong/Lumora/releases) page.
+2. Extract it anywhere — the ZIP contains a single `Lumora` folder.
+3. Run `Lumora.exe` inside that folder.
+
+**Requirements:** Windows 10 (1809 or later) or Windows 11, 64-bit. Nothing
+else has to be installed; Qt, Python and Pillow are bundled.
+
+The first run asks nothing: the download folder defaults to
+`%USERPROFILE%\Downloads\Lumora` (change it in Settings → General), and Movies
+& TV waits for a free TMDB key.
+
+> The executable is unsigned, so SmartScreen may show a warning — choose
+> *More info → Run anyway*. An antivirus may also flag the PyInstaller
+> bootloader; that is a known false positive.
+
+### Linux (from source)
+
+**Requirements:** Python 3.10+, GTK 3 with PyGObject, gdk-pixbuf, `xdg-utils`.
+WebKit2GTK and GStreamer are needed for embedded Movies & TV playback.
+
+| Distribution | Install |
+| --- | --- |
+| Void Linux | `sudo xbps-install -Su python3 gtk+3 python3-gobject python3-cairo gdk-pixbuf xdg-utils` |
+| Debian / Ubuntu | `sudo apt install python3 python3-gi python3-gi-cairo gir1.2-gtk-3.0 xdg-utils` |
+| Fedora | `sudo dnf install python3 python3-gobject gtk3 xdg-utils` |
+| Arch | `sudo pacman -S python python-gobject gtk3 xdg-utils` |
+
+Optional: `webkit2gtk` (or `webkit2gtk-4.1`) plus `gstreamer` plugins for
+embedded playback.
+
+```sh
+git clone https://github.com/kant-sompong/Lumora.git
+cd Lumora
+./run.sh              # or: python3 -m lgl
+```
+
+A Tk fallback (`python3 -m lgl.windows_app`) still starts on machines without
+GTK, but it is the legacy interface and does not have the full feature set.
+
+### Optional: provider API keys
+
+| Provider | Used for | Where to get it |
+| --- | --- | --- |
+| TMDB | Movies & TV titles, posters, backdrops | <https://www.themoviedb.org/settings/api> |
+| RAWG | Extra game metadata and covers | <https://rawg.io/apidocs> |
+| MyAnimeList | Anime titles and rankings (Client ID only) | <https://myanimelist.net/apiconfig> |
+
+Add them in **Settings → Providers**. Keys live in the OS keyring
+(libsecret on Linux, Credential Manager on Windows) and fall back to an
+owner-only `config.json`; they are never written to the catalogue, logs or error
+messages. A key can also be supplied through `.env` (`TMDB_API_KEY=…`, see
+`.env.example`).
+
+### Where data is stored
+
+| Data | Linux | Windows |
+| --- | --- | --- |
+| Settings | `$XDG_CONFIG_HOME/linux-game-library/config.json` | `%APPDATA%\NativeGameLibrary\config.json` |
+| Library index | `$XDG_DATA_HOME/linux-game-library/library.json` | `%LOCALAPPDATA%\NativeGameLibrary\library.json` |
+| Download queue | `$XDG_DATA_HOME/linux-game-library/downloads.json` | `%LOCALAPPDATA%\NativeGameLibrary\downloads.json` |
+| Cache | `$XDG_CACHE_HOME/linux-game-library/` | `%LOCALAPPDATA%\NativeGameLibrary\Cache\` |
+| Downloads | Your chosen folder | Your chosen folder |
+
+The `NativeGameLibrary` folder names are kept on Windows on purpose: the app was
+renamed to Lumora in 0.2.6 and existing settings, libraries and queues carry
+over without any migration step.
+
+---
+
+## Keyboard shortcuts
+
+| Shortcut | Action |
+| --- | --- |
+| `Ctrl+1` | Browse |
+| `Ctrl+2` | Library |
+| `Ctrl+3` | Downloads |
+| `Ctrl+4` | Media |
+| `Ctrl+F` / `Ctrl+K` | Focus the search field |
+| `Ctrl+R` / `F5` | Reload the collection, rescan the library |
+| `Ctrl+,` | Settings |
+| `Escape` | Dismiss a notice or clear the search |
+
+---
+
+## Build from source
+
+### Windows portable `Lumora.zip`
+
+Requires Windows 10/11 and Python 3.10+ (CI uses 3.12).
+
+```powershell
+python -m pip install --upgrade pip
+pip install PySide6-Essentials pillow pyinstaller
+
+python -m PyInstaller --noconfirm --clean packaging\windows\Lumora.spec
+Compress-Archive -Path dist\Lumora -DestinationPath dist\Lumora.zip
+```
+
+The portable application is `dist\Lumora\Lumora.exe`; the ZIP keeps that folder
+as its single top-level entry.
+
+### Linux portable tarball
+
+```sh
+sh packaging/linux/build-tarball.sh
+# → dist/Lumora-<version>-linux-<arch>.tar.gz
+```
+
+The tarball ships the application, `run.sh`, icons, the desktop-entry installer
+and `.env.example`; GTK, PyGObject, WebKit2GTK and GStreamer come from your
+distribution.
+
+### CI
+
+`.github/workflows/release.yml` runs the test suite, builds the Windows ZIP and
+the Linux tarball on every push and pull request. Pushing a `v*` tag (for
+example `v0.3.0`) additionally publishes a GitHub release with `Lumora.zip` and
+the Linux tarball attached. The tag must match `lgl.__version__`.
+
+---
+
+## Tests
+
+```sh
+python -m pytest tests -q
+```
+
+The suite covers the Qt frontend headlessly (`QT_QPA_PLATFORM=offscreen`):
+window construction, navigation, Browse filtering/sorting/rendering, the library
+grid and detail panel, the download queue rows and dialogs. The archive,
+library, download and metadata modules are exercised through those UI tests, so
+a broken core shows up without a display.
 
 ---
 
@@ -68,271 +228,82 @@ A cross-platform desktop application for browsing, downloading, and managing gam
 
 ```
 lgl/
-├── __main__.py          # Entry point: picks GTK (Linux) or Qt (Windows)
-├── platform_support.py  # OS abstraction: paths, open_folder, open_url, admin check, detached Popen
-├── ui.py                # GTK 3 frontend (Linux) — 12k lines
-├── qt_main.py           # Qt 6 / PySide6 entry point (Windows)
-├── qt_theme.py          # QSS + QML Theme singleton from theme.py tokens
-├── qt_widgets/          # (future) custom Qt widgets
-├── models/              # QAbstractListModel wrappers for QML
-│   ├── game_list_model.py
-│   ├── library_model.py
-│   ├── download_model.py
-│   ├── media_model.py
-│   └── settings_model.py
-├── movies_ui.py         # Movies & TV (GTK + WebKit2)
-├── archive.py           # archive.org client + image cache
-├── catalog.py           # Source policy, robots.txt, URL validation
-├── sources.py           # Adapter framework (archive.org, FreeToGame, etc.)
-├── catalog_store.py     # Imported catalogs, magnets, mirrors
-├── importer.py          # Resumable paged catalog importer
-├── downloader.py        # Persistent queue, Range resume, parallel segments
-├── library.py           # Folder layout, manifest, local scan
-├── library_store.py     # Library index, favorites, duplicates, export/import
-├── metadata.py          # Normalized metadata + provenance merges
-├── magnet.py            # Magnet URI parsing & validation
+├── __main__.py          # Entry point: Qt on Windows, GTK on Linux, Tk fallback
+├── ui.py                # GTK 3 frontend (Linux)
+├── theme_gtk.py         # GTK CSS variables from theme.py
+├── qt_main.py           # Qt 6 window: rail, header, pages, menu
+├── qt_theme.py          # QSS generated from the same design tokens
+├── qt_widgets.py        # Shared Qt widgets (cover art, pills, toasts, popovers)
+├── qt_browse.py         # Browse: filters, grid/list, detail panel
+├── qt_archive.py        # Archive filtering, sorting and formatting helpers
+├── qt_library.py        # Library grid, filters and metadata editor
+├── qt_downloads.py      # Download queue and torrent strip
+├── qt_media.py          # Movies & TV: hero, carousels, search, player
+├── qt_icons.py          # Vector icons drawn with QPainter
+├── qt_settings.py       # Settings and About dialogs
+├── theme.py             # Shared design tokens (colours, spacing, radii, type)
+├── archive.py           # archive.org client, metadata and image cache
+├── downloader.py        # Persistent queue, Range resume, segmented transfers
+├── library.py           # Folder layout, manifests, local scan
+├── library_store.py     # Library index, favourites, duplicates, export/import
+├── metadata.py          # Normalised metadata with provenance
 ├── integrity.py         # Checksum verification
-├── compatibility.py     # Platform/format heuristics
+├── compatibility.py     # Platform / format heuristics
 ├── launch.py            # Reviewed launch (no shell, no root)
-├── torrent.py           # Built-in BitTorrent + optional aria2c RPC
+├── torrent.py           # Magnet queue + built-in BitTorrent engine
 ├── bittorrent.py        # Native engine implementation
-├── settings.py          # Preferences + OS keyring for API keys
-├── tmdb.py              # TMDB v3 client
-├── mal.py               # MyAnimeList client (Client-ID only)
-├── streaming.py         # Provider URL builders (frameXTV, VidRift, Atlantic, ani.pm)
-├── media_history.py     # Playback history store
-├── style.css            # GTK theme (CSS variables)
-├── tk_style.py          # Tk theme, fonts, DPI awareness (legacy)
-├── theme.py             # Shared design tokens (colors, spacing, radii, type)
-├── theme_gtk.py         # GTK CSS variable generator
-├── qml/                 # QML UI (Windows Qt front‑end)
-│   ├── MainWindow.qml
-│   ├── RailButton.qml
-│   ├── CoverCard.qml
-│   ├── StatusBadge.qml
-│   ├── BrowsePage.qml
-│   ├── LibraryPage.qml
-│   ├── DownloadsPage.qml
-│   ├── MediaPage.qml
-│   ├── SettingsDialog.qml
-│   ├── AboutDialog.qml
-│   ├── DownloadTaskDelegate.qml
-│   ├── MediaNavBar.qml
-│   ├── HeroBanner.qml
-│   ├── Carousel.qml
-│   ├── MediaPlayer.qml
-│   └── icons.qrc
-└── ...                  # 40+ modules total
+├── tmdb.py / mal.py     # Metadata clients
+├── streaming.py         # Provider URL builders
+├── media_history.py     # Watch history and continue watching
+├── settings.py          # Preferences and keyring-backed API keys
+├── platform_support.py  # Paths, folders, URLs, free space, detached Popen
+└── movies_ui.py         # GTK Movies & TV widgets
 ```
 
----
-
-## Install & run
-
-### Linux (from source)
-
-**Runtime dependencies (Void Linux):**
-```sh
-sudo xbps-install -Su python3 gtk+3 python3-gobject python3-cairo gdk-pixbuf xdg-utils
-```
-Debian/Ubuntu: `python3-gi python3-gi-cairo gir1.2-gtk-3.0`  
-Fedora: `python3-gobject gtk3`
-
-**Run:**
-```sh
-cd ~/Apps/linux-game-library
-./run.sh            # or: python3 -m lgl
-```
-
-**Tk fallback** (if GTK unavailable):
-```sh
-python3 -m lgl.windows_app
-```
-
-### Windows
-
-1. Download `Lumora-<version>-windows-x64.zip` from [Releases](https://github.com/kant-sompong/Lumora/releases) or CI artifacts.
-2. Extract and run `Lumora.exe`. No Python install needed.
-3. Optional per-user installer (`.exe`) is also published when available.
-
-**Building from source on Windows (requires Windows 10 1809+ and Python 3.10+):**
-```powershell
-python -m pip install --upgrade pip
-pip install PySide6-Essentials pyinstaller pillow
-
-python -m PyInstaller --noconfirm --clean packaging\windows\Lumora.spec
-Compress-Archive -Path dist\Lumora -DestinationPath dist\Lumora-<version>-windows-x64.zip
-```
-The portable app is the `dist\Lumora` folder (run `Lumora.exe`). Pushing a `v*` tag makes GitHub Actions (`.github/workflows/release.yml`) do exactly this on a Windows runner and attach the zip, plus the Linux tarball, to the release.
-
-**Storage locations (Windows):**
-| Data | Path |
-|------|------|
-| Settings | `%APPDATA%\NativeGameLibrary\config.json` |
-| Library index | `%LOCALAPPDATA%\NativeGameLibrary\library.json` |
-| Download queue | `%LOCALAPPDATA%\NativeGameLibrary\downloads.json` |
-| Cache | `%LOCALAPPDATA%\NativeGameLibrary\Cache\` |
-
-The app was renamed to Lumora in 0.2.6, but it keeps using the `NativeGameLibrary` folders above so existing settings and libraries carry over.
-| Downloads | User-chosen folder (Settings → Download folder) |
-
-### Linux storage locations
-| Data | Path |
-|------|------|
-| Settings | `$XDG_CONFIG_HOME/linux-game-library/config.json` (`~/.config/...`) |
-| Library index | `$XDG_DATA_HOME/linux-game-library/library.json` (`~/.local/share/...`) |
-| Download queue | `$XDG_DATA_HOME/linux-game-library/downloads.json` |
-| Cache | `$XDG_CACHE_HOME/linux-game-library/` (`~/.cache/...`) |
-| Downloads | User-chosen folder (Settings → Download folder) |
-
----
-
-## Building packages
-
-### Linux portable tarball
-```sh
-sh packaging/linux/build-tarball.sh
-# → dist/Lumora-<version>-linux-<arch>.tar.gz
-```
-Creates a reproducible tarball with the application, `run.sh`, icons, desktop-entry installer, and `.env.example`. GTK 3, PyGObject, WebKit2GTK, and GStreamer come from the distribution.
-
-### Windows portable ZIP (must run on Windows)
-
-```powershell
-python -m pip install --upgrade pip
-pip install PySide6-Essentials pyinstaller pillow
-python -m PyInstaller --noconfirm --clean packaging\windows\Lumora.spec
-Compress-Archive -Path dist\Lumora -DestinationPath dist\Lumora-<version>-windows-x64.zip
-```
-
-The release workflow builds this automatically for every `v*` tag.
-
-
----
-
-## Configuration
-
-**Provider API keys** (Settings → Providers on GTK, Settings → Providers card on Tk):
-- **RAWG** — game metadata & covers
-- **TMDB** — movies/TV metadata, posters, backdrops
-- **MyAnimeList** — anime metadata (Client-ID only, no OAuth)
-
-Keys are stored in the OS keyring (libsecret on Linux, Credential Manager on Windows). If the keyring is unavailable, they fall back to the owner-only config file (`config.json`, mode 0600).
-
-**Streaming providers** (Settings → Media):
-| Provider | Movies/TV | Anime | Notes |
-|----------|-----------|-------|-------|
-| frameXTV | ✓ | ✗ | TMDB ID |
-| VidRift | ✓ | ✓ (via TMDB) | TMDB ID, `?dub=1` for dub |
-| Atlantic | ✓ | ✗ | TMDB ID |
-| ani.pm | ✗ | ✓ | AniList or MAL ID, no key required |
-
----
-
-## Tests
-
-```sh
-python3 -m unittest discover -s tests -v
-```
-**1063 tests** covering:
-- Archive parsing & caching
-- Artwork selection & caching
-- Download queue persistence & recovery
-- Range validation & resume
-- Duplicate prevention & retry limits
-- URL refresh & host validation
-- Library scanning, favorites, genre filtering, sorting, export/import
-- Schema v1 → v2 migration
-- Metadata normalization & provenance
-- Magnet parsing & validation
-- Torrent engine discovery & native engine
-- Platform support (paths, admin, execute bits, pwrite fallback)
-- UI widget tests (GTK, headless)
+Frontend and core are kept apart on purpose: `qt_*.py` never imports GTK and
+`ui.py` never imports Qt, so the two builds share every data path but none of
+the widgets. Colours, radii and type sizes come from `theme.py` in both, which is
+why the Windows build matches the Linux one exactly.
 
 ---
 
 ## Safety & limits
 
-- **No auto-execution** — every launch goes through a review dialog
-- **No root/elevated launches** — refused explicitly
-- **Path confinement** — all launches confined to the chosen download folder
-- **HTTPS only** — provider URLs validated against allow-listed hosts
-- **No secrets in logs** — API keys redacted everywhere
-- **Unsigned Windows binary** — SmartScreen may warn (expected for PyInstaller)
-- **Single-threaded downloads** — one connection at a time to be polite to archive.org
-
----
-
-## Project structure
-
-```
-linux-game-library/
-├── run.sh                       # Linux launcher
-├── README.md
-├── .github/workflows/build.yml  # CI: tests + Linux/Windows artifacts
-├── packaging/
-│   ├── install-desktop.sh       # Per-user Linux .desktop entry
-│   ├── linux/build-tarball.sh   # Portable Linux tarball
-│   └── windows/
-│       ├── build.ps1            # PyInstaller + optional Inno Setup
-│       ├── Lumora.spec
-│       ├── installer.iss
-│       ├── launcher.py
-│       └── README-Windows.md
-├── lgl/                         # Application package (see Architecture)
-├── tests/                       # 1063 unit/integration tests
-└── docs/screenshot.png
-```
+- **Nothing runs automatically** — every launch passes through a review dialog
+- **No elevated launches** — root/administrator starts are refused
+- **Path confinement** — launches stay inside the chosen download folder
+- **HTTPS and host allow-lists** for provider URLs
+- **No secrets in logs** — API keys are redacted everywhere
+- **One connection at a time** to archive.org by default, to stay polite
 
 ---
 
 ## Troubleshooting
 
-| Symptom | Check |
+| Symptom | Fix |
 | --- | --- |
-| `ImportError: cannot import name ... from gi.repository` | Install `gtk+3` + `python3-gobject`; Tk fallback also works |
-| Blank window / no display | Ensure `WAYLAND_DISPLAY` or `DISPLAY` is set; try `GDK_BACKEND=wayland ./run.sh` |
-| "Could not reach archive.org" | Test `curl -I https://archive.org/metadata/native-linux-games-collection`; stale cache is used when available |
-| HTTP 429 / slow metadata | Wait and press **Refresh**; concurrency limited to 1 download |
-| Windows SmartScreen warning | Expected for unsigned PyInstaller build; click "More info → Run anyway" |
+| `ImportError: cannot import name … from gi.repository` | Install GTK 3 + PyGObject, or use the Tk fallback |
+| Blank window on Linux | Check `DISPLAY` / `WAYLAND_DISPLAY`; try `GDK_BACKEND=wayland ./run.sh` |
+| "Could not reach archive.org" | Test `curl -I https://archive.org/metadata/native-linux-games-collection` — a stale cache is used when available |
+| HTTP 429 / slow metadata | Wait and press **Refresh**; concurrency is limited to one download |
+| Media tab shows a setup card | Add a free TMDB key in Settings → Providers |
+| Empty Media playback on Windows | The bundled build omits Qt WebEngine; the provider page opens in your browser instead |
+| SmartScreen warning | Unsigned PyInstaller build — *More info → Run anyway* |
 
 ---
 
-## Not implemented / known gaps
+## Known gaps
 
 - No macOS frontend
-- No automatic game launch on download completion
-- No multi-user / multi-profile support
-- No Steam/itch.io/GOG library integration (archive.org only)
-- No built-in updater (re-download new release)
+- No built-in updater — download the new `Lumora.zip`
+- No Steam / itch.io / GOG import (archive.org only)
+- Website-source import (Kryoto catalog, ad-hoc sources) is part of the Linux
+  build only; the Windows build browses archive.org
+- No automatic game launch after a download finishes
 
 ---
 
 ## License
 
-MIT License — see `LICENSE` (to be added).  
-Third-party components: aria2 (GPLv2, bundled only with `-BundleAria2`), PyInstaller bootloader (GPLv2 with runtime exception).
-
----
-
-## Contributing
-
-Issues and PRs welcome. Please:
-- Describe bugs with reproduction steps
-- Include relevant logs (redact API keys)
-- Run `python3 -m unittest discover -s tests -q` before submitting
-
----
-
-## Verified during development (on Void Linux / Wayland)
-
-- Offline suite: **1063 tests pass**
-- Live archive.org collection fetch (471 items)
-- Live metadata & poster fetch with disk cache
-- Real file download with progress, speed, ETA, atomic rename, `game.json`
-- GTK browser & Library view under Wayland: cover grid, status badges, search, favorites, stats
-- Queue restoration across restart (paused task recovered, nothing auto-started)
-- Tkinter frontend on Linux Tk: Browse with posters, Downloads with restored task, Library with rescan
-- Screenshot: `docs/screenshot.png`
-
-Windows (Qt front‑end): built on CI (`windows-latest`), smoke‑tested (starts, stays running, loads Browse/Library/Downloads/Media pages, Qt WebEngine loads provider embed). No interactive Windows desktop verification performed by the author.
+MIT. Third-party components: aria2 (GPLv2, only when bundled as `aria2c.exe`),
+PyInstaller bootloader (GPLv2 with a runtime exception), Qt 6 / PySide6 (LGPLv3).
