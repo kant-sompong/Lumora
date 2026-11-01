@@ -13,7 +13,11 @@ import sys
 
 def main() -> int:
     if sys.platform == "win32":
-        from .windows_app import main as app_main
+        try:
+            from .qt_main import main as app_main
+        except ImportError:
+            # PySide6 missing: keep the legacy Tkinter frontend working.
+            from .windows_app import main as app_main
 
         return int(app_main() or 0)
 
