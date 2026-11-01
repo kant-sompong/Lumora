@@ -13,31 +13,21 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import Callable, Sequence
+from typing import Sequence
 
-from PySide6.QtCore import QPoint, QRect, QSize, Qt, Signal
-from PySide6.QtGui import (
-    QColor,
-    QIcon,
-    QPainter,
-    QPainterPath,
-    QPen,
-    QPixmap,
-)
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
     QFrame,
     QHBoxLayout,
     QLabel,
-    QLayout,
-    QLayoutItem,
     QLineEdit,
     QMainWindow,
     QMenu,
     QPushButton,
     QScrollArea,
-    QSizePolicy,
     QStackedWidget,
     QToolButton,
     QVBoxLayout,
@@ -45,13 +35,22 @@ from PySide6.QtWidgets import (
 )
 
 from . import __version__, platform_support, sorting, theme
+from .archive import ArchiveClient, build_download_url
+from .downloader import DownloadManager, TaskSnapshot
 from .library_store import LibraryEntry, LibraryStore
 from .qt_theme import build_stylesheet
+from .qt_archive import ArchiveView
+from .qt_downloads import (
+    DownloadBridge,
+    DownloadsPanel,
+    FilePickDialog,
+    downloadable_files,
+    enqueue_files,
+)
+from .qt_widgets import THEME_STATE, CoverArt, FlowLayout, Toast, clear_layout, run_async, search_icon
 from .util import human_size
 
 APP_TITLE = "Native Game Library"
-#: Theme-dependent values widgets need before the stylesheet can reach them.
-_STATE = {"muted": theme.DARK["muted"]}
 TILE_W = 222
 COVER_H = 180
 
@@ -59,113 +58,6 @@ COVER_H = 180
 # --------------------------------------------------------------------------
 # small building blocks
 # --------------------------------------------------------------------------
-
-
-def search_icon(color: QColor, size: int = 16) -> QIcon:
-    """Magnifier drawn with QPainter, so it needs no font or image file."""
-    pix = QPixmap(size * 2, size * 2)
-    pix.fill(Qt.transparent)
-    painter = QPainter(pix)
-    painter.setRenderHint(QPainter.Antialiasing)
-    pen = QPen(QColor(color.red(), color.green(), color.blue(), 150), 2.6)
-    pen.setCapStyle(Qt.RoundCap)
-    painter.setPen(pen)
-    painter.drawEllipse(5, 5, 15, 15)
-    painter.drawLine(18, 18, 27, 27)
-    painter.end()
-    pix.setDevicePixelRatio(2)
-    return QIcon(pix)
-
-
-class FlowLayout(QLayout):
-    """Left-to-right layout that wraps, like GTK's FlowBox."""
-
-    def __init__(self, parent: QWidget | None = None, spacing: int = 16) -> None:
-        super().__init__(parent)
-        self._items: list[QLayoutItem] = []
-        self.setSpacing(spacing)
-
-    def addItem(self, item: QLayoutItem) -> None:  # noqa: N802 - Qt API
-        self._items.append(item)
-
-    def count(self) -> int:
-        return len(self._items)
-
-    def itemAt(self, index: int) -> QLayoutItem | None:  # noqa: N802
-        return self._items[index] if 0 <= index < len(self._items) else None
-
-    def takeAt(self, index: int) -> QLayoutItem | None:  # noqa: N802
-        return self._items.pop(index) if 0 <= index < len(self._items) else None
-
-    def hasHeightForWidth(self) -> bool:  # noqa: N802
-        return True
-
-    def heightForWidth(self, width: int) -> int:  # noqa: N802
-        return self._lay_out(QRect(0, 0, width, 0), apply=False)
-
-    def setGeometry(self, rect: QRect) -> None:  # noqa: N802
-        super().setGeometry(rect)
-        self._lay_out(rect, apply=True)
-
-    def sizeHint(self) -> QSize:  # noqa: N802
-        return self.minimumSize()
-
-    def minimumSize(self) -> QSize:  # noqa: N802
-        size = QSize()
-        for item in self._items:
-            size = size.expandedTo(item.minimumSize())
-        margins = self.contentsMargins()
-        return size + QSize(margins.left() + margins.right(), margins.top() + margins.bottom())
-
-    def _lay_out(self, rect: QRect, *, apply: bool) -> int:
-        m = self.contentsMargins()
-        area = rect.adjusted(m.left(), m.top(), -m.right(), -m.bottom())
-        x, y, row_h = area.x(), area.y(), 0
-        gap = self.spacing()
-        for item in self._items:
-            hint = item.sizeHint()
-            if x + hint.width() > area.right() + 1 and row_h > 0:
-                x = area.x()
-                y += row_h + gap
-                row_h = 0
-            if apply:
-                item.setGeometry(QRect(QPoint(x, y), hint))
-            x += hint.width() + gap
-            row_h = max(row_h, hint.height())
-        return y + row_h - rect.y() + m.bottom()
-
-
-class CoverArt(QWidget):
-    """Rounded cover image; a quiet tinted block when there is no art."""
-
-    def __init__(self, width: int, height: int, radius: int = 6) -> None:
-        super().__init__()
-        self._pixmap: QPixmap | None = None
-        self._radius = radius
-        self.setFixedSize(width, height)
-
-    def set_image(self, path: str) -> None:
-        pix = QPixmap(path) if path and Path(path).is_file() else QPixmap()
-        self._pixmap = None if pix.isNull() else pix
-        self.update()
-
-    def paintEvent(self, _event) -> None:  # noqa: N802
-        painter = QPainter(self)
-        painter.setRenderHints(QPainter.Antialiasing | QPainter.SmoothPixmapTransform)
-        clip = QPainterPath()
-        clip.addRoundedRect(self.rect(), self._radius, self._radius)
-        painter.setClipPath(clip)
-        fg = QColor(self.palette().color(self.foregroundRole()))
-        painter.fillRect(self.rect(), QColor(fg.red(), fg.green(), fg.blue(), 12))
-        if self._pixmap:
-            scaled = self._pixmap.scaled(
-                self.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation
-            )
-            painter.drawPixmap(
-                (self.width() - scaled.width()) // 2,
-                (self.height() - scaled.height()) // 2,
-                scaled,
-            )
 
 
 class Tile(QFrame):
@@ -427,7 +319,7 @@ class LibraryView(QWidget):
         row.setSpacing(8)
         self.search = QLineEdit()
         self.search.setPlaceholderText("Search library")
-        self.search.addAction(search_icon(QColor(_STATE["muted"])), QLineEdit.LeadingPosition)
+        self.search.addAction(search_icon(QColor(THEME_STATE["muted"])), QLineEdit.LeadingPosition)
         self.search.textChanged.connect(self.refresh)
         row.addWidget(self.search, 1)
         self.view_toggle = QPushButton("☰")
@@ -502,10 +394,7 @@ class LibraryView(QWidget):
             if not query or query in (e.title or "").lower() or query in e.identifier.lower()
         ]
         shown = sorting.sort_entries(shown, self.sort.currentData() or "name")
-        while self.flow.count():
-            item = self.flow.takeAt(0)
-            if item and item.widget():
-                item.widget().deleteLater()
+        clear_layout(self.flow)
         self._tiles.clear()
         for entry in shown:
             tile = Tile(entry)
@@ -550,24 +439,16 @@ class LibraryView(QWidget):
 # --------------------------------------------------------------------------
 
 
-class Placeholder(QWidget):
-    """Stand-in for views that are ported in later steps."""
-
-    def __init__(self, title: str, sub: str) -> None:
-        super().__init__()
-        col = QVBoxLayout(self)
-        col.addStretch(1)
-        for text, name in ((title, "empty-title"), (sub, "empty-sub")):
-            label = QLabel(text)
-            label.setObjectName(name)
-            label.setAlignment(Qt.AlignCenter)
-            col.addWidget(label)
-        col.addStretch(1)
-
-
 class MainWindow(QMainWindow):
-    def __init__(self, store: LibraryStore | None = None) -> None:
+    def __init__(self, store: LibraryStore | None = None,
+                 client: ArchiveClient | None = None,
+                 manager: DownloadManager | None = None,
+                 download_dir: Path | None = None) -> None:
         super().__init__()
+        self.client = client
+        self.manager = manager
+        self.download_dir = Path(download_dir) if download_dir else Path.home()
+        self.bridge = DownloadBridge()
         self.setWindowTitle(APP_TITLE)
         self.resize(1280, 800)
         self.setMinimumSize(900, 600)
@@ -613,10 +494,114 @@ class MainWindow(QMainWindow):
 
         self.stack = QStackedWidget()
         self.library = LibraryView(store)
-        self.stack.addWidget(Placeholder("Archive", "The remote catalog is ported next."))
+        self.archive = ArchiveView(client)
+        self.stack.addWidget(self.archive)
         self.stack.addWidget(self.library)
         col.addWidget(self.stack, 1)
+
+        self.downloads: DownloadsPanel | None = None
+        if manager is not None:
+            self.downloads = DownloadsPanel(manager, lambda: self.download_dir, self._title_for)
+            self.downloads.hide()
+            self.downloads.closed.connect(self.toggle_downloads)
+            self.downloads.count_changed.connect(self._downloads_count)
+            self.bridge.changed.connect(self.downloads.schedule_refresh)
+            col.addWidget(self.downloads)
+        self.downloads_btn.setCheckable(True)
+        self.downloads_btn.clicked.connect(self.toggle_downloads)
+        self.archive.download_requested.connect(self._download_requested)
+
+        self.toast = Toast(host)
         self.show_view("Library")
+
+    # downloads -------------------------------------------------------------
+    def toggle_downloads(self) -> None:
+        if self.downloads is None:
+            self.toast.show_message("Downloads are not available.", error=True)
+            self.downloads_btn.setChecked(False)
+            return
+        show = not self.downloads.isVisible()
+        self.downloads.setVisible(show)
+        self.downloads_btn.setChecked(show)
+        if show:
+            self.downloads.refresh()
+
+    def _downloads_count(self, active: int) -> None:
+        self.downloads_btn.setText(f"↓  Downloads ({active})" if active else "↓  Downloads")
+
+    def _game(self, identifier: str):
+        return next((g for g in self.archive._games if g.identifier == identifier), None)
+
+    def _title_for(self, identifier: str) -> str:
+        game = self._game(identifier)
+        return (game.title if game else "") or identifier
+
+    def _download_requested(self, identifier: str) -> None:
+        game = self._game(identifier)
+        if self.manager is None or self.client is None or game is None:
+            self.toast.show_message("Downloads are not available.", error=True)
+            return
+        if game.is_catalog:
+            self.toast.show_message(
+                "Downloads from imported catalogs are not ported to this version yet.", error=True
+            )
+            return
+        client = self.client
+        self.toast.show_message("Looking up files…", ms=2500)
+
+        def failed(exc: object) -> None:
+            self.toast.show_message(f"Could not load this game: {exc}", error=True)
+
+        def got_item(item: object) -> None:
+            if getattr(item, "restricted", False):
+                self.toast.show_message(
+                    "This archive item is restricted; downloads are unavailable.", error=True
+                )
+                return
+            files = downloadable_files(item)  # type: ignore[arg-type]
+            if not files:
+                self.toast.show_message("No downloadable files were found.", error=True)
+                return
+            if len(files) > 1:
+                dialog = FilePickDialog(game.title or identifier, files, self)
+                if dialog.exec() != FilePickDialog.Accepted:
+                    return
+                files = dialog.chosen()
+                if not files:
+                    self.toast.show_message("No files were selected.", error=True)
+                    return
+            enqueue_files(
+                self.manager, item, files, self.download_dir,  # type: ignore[arg-type]
+                on_done=self._queued,
+                on_error=lambda exc: self.toast.show_message(f"Could not queue: {exc}", error=True),
+            )
+
+        run_async(lambda: client.fetch_item(identifier), got_item, failed)
+
+    def _queued(self, added: int, errors: list[str], note: str | None) -> None:
+        plural = "file" if added == 1 else "files"
+        if added and not errors and not note:
+            self.toast.show_message(f"Added {added} {plural} to Downloads.")
+        elif added:
+            detail = errors[0] if errors else (note or "")
+            self.toast.show_message(
+                f"Added {added} {plural}. {len(errors)} could not be added: {detail}"
+                if errors else f"Added {added} {plural}. {detail}",
+                error=True,
+            )
+        else:
+            self.toast.show_message(errors[0] if errors else "Nothing was added.", error=True)
+        if self.downloads is not None:
+            self.downloads.refresh()
+
+    def resizeEvent(self, event) -> None:  # noqa: N802
+        super().resizeEvent(event)
+        self.toast.reposition()
+
+    def closeEvent(self, event) -> None:  # noqa: N802
+        if self.manager is not None:
+            self.manager.shutdown()
+        super().closeEvent(event)
 
     def show_view(self, name: str) -> None:
         for key, btn in self.tabs.items():
@@ -636,10 +621,18 @@ def resolved_theme(app: QApplication, mode: str = "system") -> str:
 
 def apply_theme(app: QApplication, mode: str = "system") -> str:
     resolved = resolved_theme(app, mode)
-    _STATE["muted"] = theme.palette(resolved)["muted"]
+    THEME_STATE["muted"] = theme.palette(resolved)["muted"]
     app.setStyle("Fusion")
     app.setStyleSheet(build_stylesheet(resolved))
     return resolved
+
+
+def _resolve_task_url(snapshot: TaskSnapshot) -> str | None:
+    """Fresh URL for a restored task (the manager asks when it resumes one)."""
+    try:
+        return build_download_url(snapshot.identifier, snapshot.filename)
+    except Exception:  # noqa: BLE001 - an unusable name just means "no URL"
+        return None
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -651,8 +644,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     apply_theme(app, settings.theme)
     download_dir = Path(settings.download_dir or platform_support.default_download_dir())
     store = LibraryStore(platform_support.data_dir() / "library.json", download_dir)
-    window = MainWindow(store)
+    client = ArchiveClient(cache_root=platform_support.cache_dir())
+    bridge_holder: dict[str, DownloadBridge] = {}
+    manager = DownloadManager(
+        observer=lambda: bridge_holder["b"].notify() if "b" in bridge_holder else None,
+        queue_path=platform_support.data_dir() / "downloads.json",
+        url_resolver=_resolve_task_url,
+        timeout=float(settings.network_timeout),
+        retry_limit=settings.download_retries,
+    )
+    window = MainWindow(store, client, manager, download_dir)
+    bridge_holder["b"] = window.bridge
     window.library.set_entries(store.entries())
+    window.archive.load()
     window.show()
     return app.exec()
 
