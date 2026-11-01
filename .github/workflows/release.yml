@@ -52,7 +52,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install PySide6-Essentials pillow pyinstaller
+          pip install PySide6 PySide6-WebEngine pillow pyinstaller
       - name: Build with PyInstaller
         run: python -m PyInstaller --noconfirm --clean packaging/windows/Lumora.spec
       - name: Smoke test the built exe (must still be running after 10 s)
@@ -61,6 +61,12 @@ jobs:
           Start-Sleep -Seconds 10
           if ($p.HasExited) { throw "Lumora.exe exited early with code $($p.ExitCode)" }
           Stop-Process -Id $p.Id -Force
+      - name: Check the embedded player is bundled
+        run: |
+          $found = Get-ChildItem -Path dist\Lumora -Recurse -Filter QtWebEngineProcess.exe
+          if (-not $found) { throw "QtWebEngineProcess.exe is missing from the build" }
+          $pak = Get-ChildItem -Path dist\Lumora -Recurse -Filter *.pak
+          if (-not $pak) { throw "Qt WebEngine resources (*.pak) are missing from the build" }
       - name: Zip
         run: |
           Compress-Archive -Path dist\Lumora -DestinationPath "dist\Lumora.zip"

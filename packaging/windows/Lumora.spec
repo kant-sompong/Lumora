@@ -68,6 +68,11 @@ a = Analysis(
         "PySide6.QtCore",
         "PySide6.QtGui",
         "PySide6.QtWidgets",
+        "PySide6.QtNetwork",
+        "PySide6.QtWebChannel",
+        "PySide6.QtPrintSupport",
+        "PySide6.QtWebEngineCore",
+        "PySide6.QtWebEngineWidgets",
         "lgl.platform_support",
         "lgl.settings",
         "lgl.archive",
@@ -100,12 +105,13 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    # The Qt UI only needs QtCore/QtGui/QtWidgets; leaving the rest out keeps
-    # the portable folder from growing by hundreds of megabytes.
+    # Qt WebEngine (Chromium) powers the embedded player; it is bundled so
+    # playback happens inside the app. The heavy modules it does not need are
+    # still left out to keep the portable folder as small as possible.
     excludes=[
         "pytest", "numpy", "PyQt6", "gi",
-        "PySide6.QtWebEngineCore", "PySide6.QtWebEngineWidgets", "PySide6.QtWebEngineQuick",
-        "PySide6.QtQml", "PySide6.QtQuick", "PySide6.QtQuickWidgets", "PySide6.QtQuick3D",
+        "PySide6.QtWebEngineQuick",
+        "PySide6.QtQuickWidgets", "PySide6.QtQuick3D",
         "PySide6.Qt3DCore", "PySide6.Qt3DRender", "PySide6.QtMultimedia", "PySide6.QtCharts",
         "PySide6.QtDataVisualization", "PySide6.QtPdf", "PySide6.QtDesigner", "PySide6.QtSql",
         "PySide6.QtTest", "PySide6.QtBluetooth", "PySide6.QtNfc", "PySide6.QtSensors",

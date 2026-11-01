@@ -85,6 +85,21 @@ def test_resize_before_the_toast_exists_is_safe(app, tmp_path):
     window.close()
 
 
+def test_media_provider_picker_switches_with_the_section(app):
+    """The Media bar offers movie providers, and anime ones on the Anime page."""
+    from lgl import streaming
+    from lgl.qt_media import MediaPage
+
+    qt_main.apply_theme(app, "dark")
+    page = MediaPage(None)
+    assert page.provider_combo.count() == len(streaming.PROVIDERS)
+    page.show_section("anime")
+    assert page.provider_combo.count() == len(streaming.ANIME_PROVIDERS)
+    page.show_section("movies")
+    assert page.provider_combo.count() == len(streaming.PROVIDERS)
+    page.deleteLater()
+
+
 def test_downloads_page_toggles(app, tmp_path):
     """Ctrl+D opens the Downloads page and returns to the previous one."""
     qt_main.apply_theme(app, "dark")

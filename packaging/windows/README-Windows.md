@@ -29,9 +29,8 @@ core with the Linux GTK build, so the two look and behave the same:
   integrity checks
 - **Downloads** — persistent queue with pause, resume, retry and a torrent strip
 - **Media** — Movies & TV: TMDB trending/popular, anime by MyAnimeList ranking,
-  search, My List and History, with playback through Qt WebEngine when the
-  optional WebEngine modules are present (otherwise the provider page opens in
-  your default browser)
+  search, My List and History, with an in-app provider picker and playback inside
+  the window (Qt WebEngine / Chromium is bundled, fullscreen supported)
 - **Settings** — General, Locations, Providers, Media, Shortcuts
 
 ## Data locations
@@ -67,7 +66,7 @@ Requires Windows 10/11 and Python 3.10+ (CI uses 3.12).
 
 ```powershell
 python -m pip install --upgrade pip
-pip install PySide6-Essentials pillow pyinstaller
+pip install PySide6 PySide6-WebEngine pillow pyinstaller
 
 python -m PyInstaller --noconfirm --clean packaging\windows\Lumora.spec
 Compress-Archive -Path dist\Lumora -DestinationPath dist\Lumora.zip

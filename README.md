@@ -9,7 +9,7 @@ Windows version looks and behaves like the Linux one.
 
 ![Lumora](docs/screenshot.png)
 
-**Current release: 0.3.1**
+**Current release: 0.3.2**
 
 ---
 
@@ -67,12 +67,15 @@ by CI.
 - **Home** with a cinematic hero, Continue Watching and Trending carousels
 - **Movies**, **TV Shows** and **Anime** sections, plus **Search**, **My List**
   and **History**
+- **Provider picker** in the Media bar — pick the streaming provider for movies/TV,
+  or the anime provider while the Anime section is open; the choice is saved and
+  used by the next Watch Now
 - **TMDB** metadata; **MyAnimeList** ranking for anime; anime titles that only
   exist in ani.pm are searchable too
-- **Playback** through the configured streaming provider — Qt WebEngine (Chromium)
-  on Windows, WebKit2GTK on Linux, with fullscreen, picture-in-picture and
-  subtitle/audio-track selection. Without the optional WebEngine module the
-  provider page opens in your default browser.
+- **Embedded playback** inside the app — Qt WebEngine (Chromium) on Windows,
+  WebKit2GTK on Linux — with fullscreen, picture-in-picture and subtitle/audio
+  track selection from the provider page. The Windows build bundles WebEngine, so
+  Watch Now opens the player over the app instead of a browser tab.
 
 ### Settings
 - **General** — download folder, desktop notifications, rescan on startup,
@@ -181,7 +184,7 @@ Requires Windows 10/11 and Python 3.10+ (CI uses 3.12).
 
 ```powershell
 python -m pip install --upgrade pip
-pip install PySide6-Essentials pillow pyinstaller
+pip install PySide6 PySide6-WebEngine pillow pyinstaller
 
 python -m PyInstaller --noconfirm --clean packaging\windows\Lumora.spec
 Compress-Archive -Path dist\Lumora -DestinationPath dist\Lumora.zip
@@ -205,7 +208,7 @@ distribution.
 
 `.github/workflows/release.yml` runs the test suite, builds the Windows ZIP and
 the Linux tarball on every push and pull request. Pushing a `v*` tag (for
-example `v0.3.1`) additionally publishes a GitHub release with `Lumora.zip` and
+example `v0.3.2`) additionally publishes a GitHub release with `Lumora.zip` and
 the Linux tarball attached. The tag must match `lgl.__version__`.
 
 ---
@@ -287,7 +290,7 @@ why the Windows build matches the Linux one exactly.
 | "Could not reach archive.org" | Test `curl -I https://archive.org/metadata/native-linux-games-collection` — a stale cache is used when available |
 | HTTP 429 / slow metadata | Wait and press **Refresh**; concurrency is limited to one download |
 | Media tab shows a setup card | Add a free TMDB key in Settings → Providers |
-| Empty Media playback on Windows | The bundled build omits Qt WebEngine; the provider page opens in your browser instead |
+| "Playback opens in your browser" card | You are running from source without Qt WebEngine — install `PySide6` (not `-Essentials`), or use the released `Lumora.zip` |
 | SmartScreen warning | Unsigned PyInstaller build — *More info → Run anyway* |
 
 ---

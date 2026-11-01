@@ -15,6 +15,7 @@ from typing import Callable, Iterable, Sequence
 from PySide6.QtCore import QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QPainter, QPixmap
 from PySide6.QtWidgets import (
+    QComboBox,
     QDialog,
     QFrame,
     QGridLayout,
@@ -387,9 +388,21 @@ class PlayerDialog(QDialog):
         column.setSpacing(0)
         view = None
         try:
+            from PySide6.QtWebEngineCore import QWebEngineSettings  # type: ignore
             from PySide6.QtWebEngineWidgets import QWebEngineView  # type: ignore
 
             view = QWebEngineView(self)
+            page = view.page()
+            # The provider pages use their own fullscreen button; let them ask
+            # Qt for it instead of silently staying windowed.
+            page.settings().setAttribute(
+                QWebEngineSettings.WebAttribute.FullScreenSupportEnabled, True
+            )
+            page.settings().setAttribute(
+                QWebEngineSettings.WebAttribute.PlaybackRequiresUserGesture, False
+            )
+            page.fullScreenRequested.connect(lambda request: request.accept())
+            page.setBackgroundColor(QColor("#000000"))
             view.setUrl(url)
         except Exception:  # noqa: BLE001 - WebEngine is optional in the build
             view = None
@@ -476,6 +489,16 @@ class MediaPage(QWidget):
             self._nav[key] = btn
             bar.addWidget(btn)
         bar.addStretch(1)
+
+        self.provider_label = label("Provider", "mediaNote")
+        bar.addWidget(self.provider_label)
+        self.provider_combo = QComboBox()
+        self.provider_combo.setFixedWidth(150)
+        self.provider_combo.setCursor(Qt.PointingHandCursor)
+        self.provider_combo.setToolTip("Provider used to play movies and TV")
+        self.provider_combo.currentIndexChanged.connect(self._provider_picked)
+        bar.addWidget(self.provider_combo)
+        self._fill_provider_combo("home")
 
         self.search = QLineEdit()
         self.search.setPlaceholderText("Search movies, TV, anime…")
@@ -610,8 +633,8 @@ class MediaPage(QWidget):
         head = self._section_head(column, "Anime")
         column.addWidget(label(
             "Popular anime from MyAnimeList. Metadata comes from MAL; playback uses the "
-            "anime provider selected in Settings. The main search also queries the "
-            "ani.pm catalogue, where titles missing from MAL live.",
+            "anime provider picked in the bar above (or Settings → Media). The main "
+            "search also queries the ani.pm catalogue, where titles missing from MAL live.",
             "detailNote", wrap=True,
         ))
         self.anime_note = label("Popular now", "mediaNote")
@@ -706,6 +729,8 @@ class MediaPage(QWidget):
     # navigation ------------------------------------------------------------
     def show_section(self, key: str) -> None:
         self._section = key
+        if hasattr(self, "provider_combo"):
+            self._fill_provider_combo(key)
         for name, button in self._nav.items():
             button.setChecked(name == key)
         page = self._pages.get(key)
@@ -1089,6 +1114,38 @@ class MediaPage(QWidget):
             self._play_anime(card)
         else:
             self._play_tmdb(card)
+
+    # provider picker -------------------------------------------------------
+    def _fill_provider_combo(self, section: str) -> None:
+        """Movies use the streaming providers; Anime uses the anime ones."""
+        anime = section == "anime"
+        keys = streaming.ANIME_PROVIDERS if anime else streaming.PROVIDERS
+        current = self._anime_provider() if anime else self._provider()
+        self.provider_combo.blockSignals(True)
+        self.provider_combo.clear()
+        for key in keys:
+            self.provider_combo.addItem(streaming.LABELS.get(key, key), key)
+        self.provider_combo.setCurrentIndex(
+            max(0, self.provider_combo.findData(current))
+        )
+        self.provider_combo.blockSignals(False)
+        self.provider_label.setText("Anime provider" if anime else "Provider")
+        self.provider_combo.setToolTip(
+            "Provider used to play anime" if anime
+            else "Provider used to play movies and TV"
+        )
+
+    def _provider_picked(self, _index: int) -> None:
+        """Persist the pick so the next Watch Now uses it straight away."""
+        if self.settings is None:
+            return
+        key = self.provider_combo.currentData()
+        if not key:
+            return
+        if self._section == "anime":
+            self.settings.set("anime_streaming_provider", key)
+        else:
+            self.settings.set("streaming_provider", key)
 
     def _provider(self) -> str:
         default = streaming.DEFAULT_PROVIDER
