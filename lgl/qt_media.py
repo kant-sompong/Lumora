@@ -880,26 +880,25 @@ class MediaPage(QWidget):
 
         run_async(work, done, lambda _exc: None)
 
+    def _poster_widgets(self) -> list[PosterCard]:
+        """Every poster currently on screen, from every grid and carousel."""
+        posters: list[PosterCard] = []
+        for carousel in getattr(self, "_home_carousels", {}).values():
+            posters.extend(carousel.posters())
+        if hasattr(self, "_pages_bits"):
+            for _head, grid, _empty, _note in self._pages_bits.values():
+                posters.extend(grid.cards())
+        for name in ("_anime_grid", "_search_grid", "_list_grid", "_history_grid"):
+            grid = getattr(self, name, None)
+            if grid is not None:
+                posters.extend(grid.cards())
+        return posters
+
     def _paint_card(self, url: str, pix: QPixmap) -> None:
-        for card in self._all_cards():
-            if card.poster_url != url:
-                continue
-            for carousel in getattr(self, "_home_carousels", {}).values():
-                for poster in carousel.posters():
-                    if poster.card.key == card.key:
-                        poster.set_pixmap(pix)
-            if hasattr(self, "_pages_bits"):
-                for _head, grid, _empty, _note in self._pages_bits.values():
-                    for poster in grid.cards():
-                        if poster.card.key == card.key:
-                            poster.set_pixmap(pix)
-            if hasattr(self, "_anime_grid"):
-                for poster in self._anime_grid.cards():
-                    if poster.card.key == card.key:
-                        poster.set_pixmap(pix)
-            for poster in list(self._list_grid.cards()) + list(self._history_grid.cards()):
-                if poster.card.key == card.key:
-                    poster.set_pixmap(pix)
+        """Apply a downloaded poster to every card that shows that image."""
+        for poster in self._poster_widgets():
+            if poster.card.poster_url == url:
+                poster.set_pixmap(pix)
 
     # search ----------------------------------------------------------------
     def _on_search_typed(self, _text: str) -> None:

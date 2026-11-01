@@ -100,6 +100,29 @@ def test_media_provider_picker_switches_with_the_section(app):
     page.deleteLater()
 
 
+def test_search_results_receive_their_posters(app):
+    """A downloaded poster is painted onto the Search grid, not only Home."""
+    from types import SimpleNamespace
+
+    from PySide6.QtGui import QColor, QPixmap
+
+    from lgl.qt_media import MediaPage, card_from_tmdb
+
+    qt_main.apply_theme(app, "dark")
+    page = MediaPage(None)
+    url = "https://image.tmdb.org/t/p/w500/example.jpg"
+    card = card_from_tmdb(SimpleNamespace(
+        key="movie:1", title="Example", year="2020", poster_url=url,
+        kind="movie", tmdb_id=1,
+    ))
+    page._search_grid.set_cards([card])
+    pix = QPixmap(8, 8)
+    pix.fill(QColor("#335577"))
+    page._paint_card(url, pix)
+    assert page._search_grid.cards()[0].cover.has_art()
+    page.deleteLater()
+
+
 def test_catalog_dialog_builds(app):
     """The Website Sources / Kryoto dialogs exist and start from a URL."""
     from lgl.qt_catalog import KRYOTO_NOTE, KRYOTO_URL, CatalogDialog
