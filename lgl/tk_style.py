@@ -25,72 +25,82 @@ from typing import Iterable
 # Palette
 # --------------------------------------------------------------------------
 
-# Light theme: a neutral warm-grey canvas, white surfaces, one deep-green accent.
+# --------------------------------------------------------------------------
+# Palette
+# --------------------------------------------------------------------------
+
+# Colors from lgl/theme.py — single source of truth for both frontends.
+ACCENT = "#3b82f6"
+ACCENT_FILL = "#2563eb"
+ACCENT_FILL_HOVER = "#1d4ed8"
+ACCENT_TEXT = "#7db2ff"  # dark theme
+ACCENT_TEXT_LIGHT = "#1d4ed8"  # light theme
+FAVORITE = "#b8863b"
+
+# Light theme: matches lgl/theme.py LIGHT palette
 LIGHT = {
-    "bg": "#f1f2f4",
+    "bg": "#f5f6f8",
     "surface": "#ffffff",
-    "surface_alt": "#f7f8f9",
-    "border": "#d8dde2",
-    "ink": "#1a1e22",
-    "muted": "#5c6773",
-    "faint": "#8a949e",
-    "accent": "#146b5b",
-    "accent_hover": "#0f584a",
-    "accent_soft": "#e4f1ed",
-    "danger": "#a03a31",
-    "warning_bg": "#fbf4e5",
-    "warning_border": "#e7d5ab",
-    "warning_ink": "#6a4a12",
-    "selection": "#d9ece6",
-    "stripe": "#fafbfc",
-    "trough": "#e7eaed",
-    "button_pressed": "#e6e9ec",
-    "button_active": "#eef1f3",
-    "border_active": "#c4cbd2",
-    "heading_active": "#eef0f2",
-    "scrollbar": "#c7cdd3",
-    "scrollbar_active": "#aeb6be",
-    "progress_trough": "#e5e9ec",
-    "accent_active": "#10604f",
-    "accent_disabled": "#b9cdc8",
-    "accent_disabled_fg": "#f2f5f4",
-    "tab_active": "#e9ebee",
-    "quiet_pressed": "#eceff1",
+    "surface_alt": "#f5f6f8",  # raised = surface in light
+    "border": "#e5e7eb",
+    "ink": "#111827",
+    "muted": "#5f6673",
+    "faint": "#9ca3af",
+    "accent": ACCENT,
+    "accent_hover": "#2563eb",
+    "accent_soft": "#dbeafe",
+    "danger": "#c02626",
+    "warning_bg": "#fef3c7",
+    "warning_border": "#fcd34d",
+    "warning_ink": "#92400e",
+    "selection": "#dbeafe",
+    "stripe": "#f5f6f8",
+    "trough": "#e5e7eb",
+    "button_pressed": "#e5e7eb",
+    "button_active": "#f5f6f8",
+    "border_active": "#d1d5db",
+    "heading_active": "#e5e7eb",
+    "scrollbar": "#d1d5db",
+    "scrollbar_active": "#9ca3af",
+    "progress_trough": "#e5e7eb",
+    "accent_active": "#1d4ed8",
+    "accent_disabled": "#93c5fd",
+    "accent_disabled_fg": "#1e3a8a",
+    "tab_active": "#eff6ff",
+    "quiet_pressed": "#e5e7eb",
 }
 
-# Dark theme: every surface is genuinely dark, including tables, fields, menus,
-# scrollbars, and the status bar.  A brighter green is used so the accent keeps
-# its contrast against the dark canvas.
+# Dark theme: matches lgl/theme.py DARK palette
 DARK = {
-    "bg": "#15181b",
-    "surface": "#1e2226",
-    "surface_alt": "#191c1f",
-    "border": "#333a41",
-    "ink": "#e6eaee",
-    "muted": "#a4aeb8",
-    "faint": "#7b8791",
-    "accent": "#4fb79f",
-    "accent_hover": "#3fa48e",
-    "accent_soft": "#1e3b35",
-    "danger": "#e17b72",
-    "warning_bg": "#3a3222",
-    "warning_border": "#5a4b2c",
-    "warning_ink": "#ecdcad",
-    "selection": "#28473f",
-    "stripe": "#22272b",
-    "trough": "#2a3036",
-    "button_pressed": "#2b3238",
-    "button_active": "#262d33",
-    "border_active": "#465059",
-    "heading_active": "#2a3137",
-    "scrollbar": "#4a545d",
-    "scrollbar_active": "#5d6872",
-    "progress_trough": "#2a3036",
-    "accent_active": "#3f9c86",
-    "accent_disabled": "#2f4a44",
-    "accent_disabled_fg": "#9fb6b0",
-    "tab_active": "#252b30",
-    "quiet_pressed": "#2b3238",
+    "bg": "#101216",
+    "surface": "#171a20",
+    "surface_alt": "#1e222a",
+    "border": "#262b34",
+    "ink": "#e8eaed",
+    "muted": "#9aa3af",
+    "faint": "#6b7280",
+    "accent": ACCENT,
+    "accent_hover": "#5b9bff",
+    "accent_soft": "#1e3a8a",
+    "danger": "#ef4444",
+    "warning_bg": "#37301a",
+    "warning_border": "#92400e",
+    "warning_ink": "#fde68a",
+    "selection": "#1e3a8a",
+    "stripe": "#101216",
+    "trough": "#262b34",
+    "button_pressed": "#1e222a",
+    "button_active": "#101216",
+    "border_active": "#374151",
+    "heading_active": "#1e222a",
+    "scrollbar": "#374151",
+    "scrollbar_active": "#4b5563",
+    "progress_trough": "#262b34",
+    "accent_active": "#2563eb",
+    "accent_disabled": "#1e3a8a",
+    "accent_disabled_fg": "#93c5fd",
+    "tab_active": "#1e222a",
+    "quiet_pressed": "#1e222a",
 }
 
 # Module-level names kept for callers that read colours while building widgets.
