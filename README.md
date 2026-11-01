@@ -9,7 +9,7 @@ Windows version looks and behaves like the Linux one.
 
 ![Lumora](docs/screenshot.png)
 
-**Current release: 0.3.3**
+**Current release: 0.3.4**
 
 ---
 
@@ -95,7 +95,7 @@ by CI.
 
 ### Windows (portable, no Python needed)
 
-1. Download **`Lumora.zip`** from the
+1. Download **`Lumora-Windows-x64.zip`** from the
    [Releases](https://github.com/kant-sompong/Lumora/releases) page.
 2. Extract it anywhere — the ZIP contains a single `Lumora` folder.
 3. Run `Lumora.exe` inside that folder.
@@ -182,7 +182,7 @@ over without any migration step.
 
 ## Build from source
 
-### Windows portable `Lumora.zip`
+### Windows portable `Lumora-Windows-x64.zip`
 
 Requires Windows 10/11 and Python 3.10+ (CI uses 3.12).
 
@@ -191,7 +191,7 @@ python -m pip install --upgrade pip
 pip install PySide6 PySide6-WebEngine pillow pyinstaller
 
 python -m PyInstaller --noconfirm --clean packaging\windows\Lumora.spec
-Compress-Archive -Path dist\Lumora -DestinationPath dist\Lumora.zip
+Compress-Archive -Path dist\Lumora -DestinationPath dist\Lumora-Windows-x64.zip
 ```
 
 The portable application is `dist\Lumora\Lumora.exe`; the ZIP keeps that folder
@@ -212,7 +212,7 @@ distribution.
 
 `.github/workflows/release.yml` runs the test suite, builds the Windows ZIP and
 the Linux tarball on every push and pull request. Pushing a `v*` tag (for
-example `v0.3.3`) additionally publishes a GitHub release with `Lumora.zip` and
+example `v0.3.4`) additionally publishes a GitHub release with `Lumora-Windows-x64.zip` and
 the Linux tarball attached. The tag must match `lgl.__version__`.
 
 ---
@@ -294,7 +294,7 @@ why the Windows build matches the Linux one exactly.
 | "Could not reach archive.org" | Test `curl -I https://archive.org/metadata/native-linux-games-collection` — a stale cache is used when available |
 | HTTP 429 / slow metadata | Wait and press **Refresh**; concurrency is limited to one download |
 | Media tab shows a setup card | Add a free TMDB key in Settings → Providers |
-| "Playback opens in your browser" card | You are running from source without Qt WebEngine — install `PySide6` (not `-Essentials`), or use the released `Lumora.zip` |
+| "Playback opens in your browser" card | You are running from source without Qt WebEngine — install `PySide6` (not `-Essentials`), or use the released `Lumora-Windows-x64.zip` |
 | SmartScreen warning | Unsigned PyInstaller build — *More info → Run anyway* |
 
 ---
@@ -302,7 +302,7 @@ why the Windows build matches the Linux one exactly.
 ## Known gaps
 
 - No macOS frontend
-- No built-in updater — download the new `Lumora.zip`
+- No built-in updater — download the new `Lumora-Windows-x64.zip`
 - No Steam / itch.io / GOG import (archive.org only)
 - No automatic game launch after a download finishes
 

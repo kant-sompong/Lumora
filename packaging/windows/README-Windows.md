@@ -12,7 +12,7 @@ Portable Windows build of Lumora, the same application as the Linux version.
 
 ## Running
 
-1. Extract `Lumora.zip` to a folder of your choice (for example `C:\Lumora`).
+1. Extract `Lumora-Windows-x64.zip` to a folder of your choice (for example `C:\Lumora`).
 2. Run `Lumora.exe` inside it.
 
 The ZIP contains one top-level `Lumora` folder, so extracting keeps everything
@@ -69,12 +69,12 @@ python -m pip install --upgrade pip
 pip install PySide6 PySide6-WebEngine pillow pyinstaller
 
 python -m PyInstaller --noconfirm --clean packaging\windows\Lumora.spec
-Compress-Archive -Path dist\Lumora -DestinationPath dist\Lumora.zip
+Compress-Archive -Path dist\Lumora -DestinationPath dist\Lumora-Windows-x64.zip
 ```
 
 The portable application is the folder `dist\Lumora` (run `Lumora.exe` inside
 it). `.github/workflows/release.yml` performs exactly these steps on a Windows
-runner for every `v*` tag and attaches `Lumora.zip` to the release.
+runner for every `v*` tag and attaches `Lumora-Windows-x64.zip` to the release.
 
 ## Troubleshooting
 

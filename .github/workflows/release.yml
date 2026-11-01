@@ -69,11 +69,11 @@ jobs:
           if (-not $pak) { throw "Qt WebEngine resources (*.pak) are missing from the build" }
       - name: Zip
         run: |
-          Compress-Archive -Path dist\Lumora -DestinationPath "dist\Lumora.zip"
+          Compress-Archive -Path dist\Lumora -DestinationPath "dist\Lumora-Windows-x64.zip"
       - uses: actions/upload-artifact@v4
         with:
           name: Lumora
-          path: dist/Lumora.zip
+          path: dist/Lumora-Windows-x64.zip
 
   linux:
     name: Linux tarball
