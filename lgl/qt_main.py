@@ -13,31 +13,21 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import Callable, Sequence
+from typing import Sequence
 
-from PySide6.QtCore import QPoint, QRect, QSize, Qt, Signal
-from PySide6.QtGui import (
-    QColor,
-    QIcon,
-    QPainter,
-    QPainterPath,
-    QPen,
-    QPixmap,
-)
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
     QFrame,
     QHBoxLayout,
     QLabel,
-    QLayout,
-    QLayoutItem,
     QLineEdit,
     QMainWindow,
     QMenu,
     QPushButton,
     QScrollArea,
-    QSizePolicy,
     QStackedWidget,
     QToolButton,
     QVBoxLayout,
@@ -45,13 +35,14 @@ from PySide6.QtWidgets import (
 )
 
 from . import __version__, platform_support, sorting, theme
+from .archive import ArchiveClient
 from .library_store import LibraryEntry, LibraryStore
 from .qt_theme import build_stylesheet
+from .qt_archive import ArchiveView
+from .qt_widgets import THEME_STATE, CoverArt, FlowLayout, clear_layout, search_icon
 from .util import human_size
 
 APP_TITLE = "Native Game Library"
-#: Theme-dependent values widgets need before the stylesheet can reach them.
-_STATE = {"muted": theme.DARK["muted"]}
 TILE_W = 222
 COVER_H = 180
 
@@ -59,113 +50,6 @@ COVER_H = 180
 # --------------------------------------------------------------------------
 # small building blocks
 # --------------------------------------------------------------------------
-
-
-def search_icon(color: QColor, size: int = 16) -> QIcon:
-    """Magnifier drawn with QPainter, so it needs no font or image file."""
-    pix = QPixmap(size * 2, size * 2)
-    pix.fill(Qt.transparent)
-    painter = QPainter(pix)
-    painter.setRenderHint(QPainter.Antialiasing)
-    pen = QPen(QColor(color.red(), color.green(), color.blue(), 150), 2.6)
-    pen.setCapStyle(Qt.RoundCap)
-    painter.setPen(pen)
-    painter.drawEllipse(5, 5, 15, 15)
-    painter.drawLine(18, 18, 27, 27)
-    painter.end()
-    pix.setDevicePixelRatio(2)
-    return QIcon(pix)
-
-
-class FlowLayout(QLayout):
-    """Left-to-right layout that wraps, like GTK's FlowBox."""
-
-    def __init__(self, parent: QWidget | None = None, spacing: int = 16) -> None:
-        super().__init__(parent)
-        self._items: list[QLayoutItem] = []
-        self.setSpacing(spacing)
-
-    def addItem(self, item: QLayoutItem) -> None:  # noqa: N802 - Qt API
-        self._items.append(item)
-
-    def count(self) -> int:
-        return len(self._items)
-
-    def itemAt(self, index: int) -> QLayoutItem | None:  # noqa: N802
-        return self._items[index] if 0 <= index < len(self._items) else None
-
-    def takeAt(self, index: int) -> QLayoutItem | None:  # noqa: N802
-        return self._items.pop(index) if 0 <= index < len(self._items) else None
-
-    def hasHeightForWidth(self) -> bool:  # noqa: N802
-        return True
-
-    def heightForWidth(self, width: int) -> int:  # noqa: N802
-        return self._lay_out(QRect(0, 0, width, 0), apply=False)
-
-    def setGeometry(self, rect: QRect) -> None:  # noqa: N802
-        super().setGeometry(rect)
-        self._lay_out(rect, apply=True)
-
-    def sizeHint(self) -> QSize:  # noqa: N802
-        return self.minimumSize()
-
-    def minimumSize(self) -> QSize:  # noqa: N802
-        size = QSize()
-        for item in self._items:
-            size = size.expandedTo(item.minimumSize())
-        margins = self.contentsMargins()
-        return size + QSize(margins.left() + margins.right(), margins.top() + margins.bottom())
-
-    def _lay_out(self, rect: QRect, *, apply: bool) -> int:
-        m = self.contentsMargins()
-        area = rect.adjusted(m.left(), m.top(), -m.right(), -m.bottom())
-        x, y, row_h = area.x(), area.y(), 0
-        gap = self.spacing()
-        for item in self._items:
-            hint = item.sizeHint()
-            if x + hint.width() > area.right() + 1 and row_h > 0:
-                x = area.x()
-                y += row_h + gap
-                row_h = 0
-            if apply:
-                item.setGeometry(QRect(QPoint(x, y), hint))
-            x += hint.width() + gap
-            row_h = max(row_h, hint.height())
-        return y + row_h - rect.y() + m.bottom()
-
-
-class CoverArt(QWidget):
-    """Rounded cover image; a quiet tinted block when there is no art."""
-
-    def __init__(self, width: int, height: int, radius: int = 6) -> None:
-        super().__init__()
-        self._pixmap: QPixmap | None = None
-        self._radius = radius
-        self.setFixedSize(width, height)
-
-    def set_image(self, path: str) -> None:
-        pix = QPixmap(path) if path and Path(path).is_file() else QPixmap()
-        self._pixmap = None if pix.isNull() else pix
-        self.update()
-
-    def paintEvent(self, _event) -> None:  # noqa: N802
-        painter = QPainter(self)
-        painter.setRenderHints(QPainter.Antialiasing | QPainter.SmoothPixmapTransform)
-        clip = QPainterPath()
-        clip.addRoundedRect(self.rect(), self._radius, self._radius)
-        painter.setClipPath(clip)
-        fg = QColor(self.palette().color(self.foregroundRole()))
-        painter.fillRect(self.rect(), QColor(fg.red(), fg.green(), fg.blue(), 12))
-        if self._pixmap:
-            scaled = self._pixmap.scaled(
-                self.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation
-            )
-            painter.drawPixmap(
-                (self.width() - scaled.width()) // 2,
-                (self.height() - scaled.height()) // 2,
-                scaled,
-            )
 
 
 class Tile(QFrame):
@@ -427,7 +311,7 @@ class LibraryView(QWidget):
         row.setSpacing(8)
         self.search = QLineEdit()
         self.search.setPlaceholderText("Search library")
-        self.search.addAction(search_icon(QColor(_STATE["muted"])), QLineEdit.LeadingPosition)
+        self.search.addAction(search_icon(QColor(THEME_STATE["muted"])), QLineEdit.LeadingPosition)
         self.search.textChanged.connect(self.refresh)
         row.addWidget(self.search, 1)
         self.view_toggle = QPushButton("☰")
@@ -502,10 +386,7 @@ class LibraryView(QWidget):
             if not query or query in (e.title or "").lower() or query in e.identifier.lower()
         ]
         shown = sorting.sort_entries(shown, self.sort.currentData() or "name")
-        while self.flow.count():
-            item = self.flow.takeAt(0)
-            if item and item.widget():
-                item.widget().deleteLater()
+        clear_layout(self.flow)
         self._tiles.clear()
         for entry in shown:
             tile = Tile(entry)
@@ -566,7 +447,8 @@ class Placeholder(QWidget):
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, store: LibraryStore | None = None) -> None:
+    def __init__(self, store: LibraryStore | None = None,
+                 client: ArchiveClient | None = None) -> None:
         super().__init__()
         self.setWindowTitle(APP_TITLE)
         self.resize(1280, 800)
@@ -613,7 +495,8 @@ class MainWindow(QMainWindow):
 
         self.stack = QStackedWidget()
         self.library = LibraryView(store)
-        self.stack.addWidget(Placeholder("Archive", "The remote catalog is ported next."))
+        self.archive = ArchiveView(client)
+        self.stack.addWidget(self.archive)
         self.stack.addWidget(self.library)
         col.addWidget(self.stack, 1)
         self.show_view("Library")
@@ -636,7 +519,7 @@ def resolved_theme(app: QApplication, mode: str = "system") -> str:
 
 def apply_theme(app: QApplication, mode: str = "system") -> str:
     resolved = resolved_theme(app, mode)
-    _STATE["muted"] = theme.palette(resolved)["muted"]
+    THEME_STATE["muted"] = theme.palette(resolved)["muted"]
     app.setStyle("Fusion")
     app.setStyleSheet(build_stylesheet(resolved))
     return resolved
@@ -651,8 +534,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     apply_theme(app, settings.theme)
     download_dir = Path(settings.download_dir or platform_support.default_download_dir())
     store = LibraryStore(platform_support.data_dir() / "library.json", download_dir)
-    window = MainWindow(store)
+    client = ArchiveClient(cache_root=platform_support.cache_dir())
+    window = MainWindow(store, client)
     window.library.set_entries(store.entries())
+    window.archive.load()
     window.show()
     return app.exec()
 

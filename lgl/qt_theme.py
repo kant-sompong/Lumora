@@ -126,6 +126,18 @@ QToolButton#favorite-star {{
 QToolButton#favorite-star:hover {{ background: {alpha(c['bg'], 0.90)}; }}
 QToolButton#favorite-star:checked {{ color: {c['favorite']}; }}
 
+/* ---- archive filter column ------------------------------------------------ */
+QFrame#filters {{ background: {c['surface']}; border-right: 1px solid {alpha(fg, 0.08)}; }}
+QLabel#filter-head {{
+    color: {c['faint']}; font-size: {small - 1}px; font-weight: 700; letter-spacing: 0.6px;
+}}
+QPushButton#chip {{
+    background: transparent; border: none; border-radius: {sm}px;
+    padding: 6px 10px; text-align: left; color: {c['muted']};
+}}
+QPushButton#chip:hover {{ background: {alpha(fg, 0.06)}; color: {fg}; }}
+QPushButton#chip:checked {{ background: {alpha(c['accent'], 0.16)}; color: {c['accent_text']}; font-weight: 600; }}
+
 /* ---- detail panel ---------------------------------------------------------- */
 QFrame#detail {{ background: {c['surface']}; border-left: 1px solid {alpha(fg, 0.08)}; }}
 QLabel#detail-eyebrow {{
