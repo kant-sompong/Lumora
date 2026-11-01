@@ -498,7 +498,11 @@ class Window(QMainWindow):
     # lifecycle ------------------------------------------------------------
     def resizeEvent(self, event) -> None:  # noqa: N802
         super().resizeEvent(event)
-        self.toast.reposition()
+        # The window is resized inside __init__, before the toast exists, and
+        # some platforms (Windows) deliver that event immediately.
+        toast = getattr(self, "toast", None)
+        if toast is not None:
+            toast.reposition()
 
     def closeEvent(self, event) -> None:  # noqa: N802
         if not self.isMaximized():

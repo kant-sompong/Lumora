@@ -72,6 +72,19 @@ def test_window_builds_and_switches_views(app, tmp_path, mode):
     window.close()
 
 
+def test_resize_before_the_toast_exists_is_safe(app, tmp_path):
+    """Windows delivers the first resize during __init__, before Toast exists."""
+    from PySide6.QtCore import QSize
+    from PySide6.QtGui import QResizeEvent
+
+    qt_main.apply_theme(app, "dark")
+    window, _ = make_window(tmp_path)
+    window.show()
+    del window.toast
+    QApplication.sendEvent(window, QResizeEvent(QSize(1200, 800), QSize(1000, 700)))
+    window.close()
+
+
 def test_downloads_page_toggles(app, tmp_path):
     """Ctrl+D opens the Downloads page and returns to the previous one."""
     qt_main.apply_theme(app, "dark")
