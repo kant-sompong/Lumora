@@ -1,0 +1,1720 @@
+/* Native Game Library
+ *
+ * Flat, quiet styling layered over the active GTK theme.  Rules of the house:
+ * hairline separators only where they clarify structure, no gradients, no
+ * decorative borders, one warm accent used for progress and selection.
+ * Containers that own a GdkWindow always get a solid background so nothing
+ * shows through as black on X11 or in screenshots.
+ */
+
+/* -- base --------------------------------------------------------------- */
+
+window {
+  background-color: @bg;
+  background-image: none;
+}
+
+
+
+.library-view,
+.library-grid,
+.library-grid-scroll,
+.library-grid-scroll viewport,
+.library-flow,
+.library-detail,
+.library-toolbar,
+.library-meta,
+.details,
+.sidebar,
+.downloads-panel,
+.dir-bar {
+  background-color: @bg;
+  background-image: none;
+}
+
+.section-label {
+  font-size: 0.68em;
+  font-weight: 700;
+  letter-spacing: 0.9px;
+  color: alpha(@fg, 0.42);
+}
+
+.count-label {
+  font-size: 0.80em;
+  color: alpha(@fg, 0.50);
+}
+
+.dim {
+  color: alpha(@fg, 0.62);
+}
+
+.small {
+  font-size: 0.84em;
+}
+
+.mono {
+  font-family: "Iosevka NF", "DejaVu Sans Mono", monospace;
+  font-size: 0.84em;
+  color: alpha(@fg, 0.62);
+}
+
+.error-text {
+  color: @danger;
+  font-size: 0.84em;
+}
+
+.rule {
+  background-color: alpha(@fg, 0.08);
+  min-height: 1px;
+  border: none;
+}
+
+/* -- headerbar ---------------------------------------------------------- */
+
+.view-switcher {
+  background-color: transparent;
+  background-image: none;
+  border: none;
+}
+
+.view-switcher button {
+  font-size: 0.86em;
+  font-weight: 500;
+  padding: 3px 12px;
+  border-radius: 6px;
+  color: alpha(@fg, 0.62);
+  background-color: transparent;
+  background-image: none;
+  box-shadow: none;
+  border: none;
+}
+
+.view-switcher button:hover {
+  background-color: alpha(@fg, 0.05);
+}
+
+.view-switcher button:checked {
+  color: alpha(@fg, 0.95);
+  background-color: alpha(@fg, 0.09);
+}
+
+.badge {
+  background-color: alpha(@accent, 0.22);
+  border-radius: 999px;
+  padding: 0 6px;
+  font-size: 0.70em;
+  font-weight: 700;
+  min-height: 15px;
+}
+
+/* -- archive sidebar ---------------------------------------------------- */
+
+.sidebar {
+  border-right: 1px solid alpha(@fg, 0.08);
+}
+
+.sidebar-header {
+  padding: 12px 14px 8px 16px;
+}
+
+.sidebar-footer {
+  padding: 6px 16px 8px 16px;
+  font-size: 0.74em;
+  color: alpha(@fg, 0.40);
+  border-top: 1px solid alpha(@fg, 0.06);
+}
+
+.sidebar-filters {
+  padding-bottom: 2px;
+}
+
+row.game-row {
+  padding: 8px 14px 9px 16px;
+  border-left: 2px solid transparent;
+}
+
+row.game-row:hover {
+  background-color: alpha(@fg, 0.04);
+}
+
+row.game-row:selected {
+  border-left-color: @accent;
+  background-color: alpha(@fg, 0.05);
+}
+
+.game-title {
+  font-size: 0.94em;
+  font-weight: 500;
+}
+
+.game-meta {
+  font-size: 0.78em;
+  color: alpha(@fg, 0.46);
+}
+
+.sort-direction {
+  padding: 2px 6px;
+  min-height: 26px;
+  min-width: 28px;
+}
+
+.sort-direction:hover {
+  background-color: @hover;
+}
+
+/* Pickers read the same in the Library toolbar and the Browse sidebar. */
+menubutton.picker > button {
+  font-size: 0.88em;
+  min-height: 26px;
+  padding: 4px 12px;
+  border-radius: 999px;
+}
+
+/* The Filter / Views buttons sit on the same line, so they share the height. */
+.library-toolbar menubutton > button,
+.sidebar-filters menubutton > button {
+  font-size: 0.88em;
+  min-height: 26px;
+  padding: 4px 12px;
+}
+
+menubutton.picker > button label {
+  font-size: 0.94em;
+}
+
+.picker-item {
+  border-radius: 6px;
+  padding: 5px 10px;
+  font-size: 0.90em;
+}
+
+.picker-item:hover {
+  background-color: @hover;
+}
+
+.picker-item.picker-selected {
+  color: @accent_text;
+  background-color: alpha(@accent, 0.16);
+}
+
+/* -- archive details ---------------------------------------------------- */
+
+.details {
+  border: none;
+}
+
+.detail-title {
+  font-size: 1.55em;
+  font-weight: 600;
+}
+
+.meta-line {
+  font-size: 0.86em;
+  color: alpha(@fg, 0.60);
+}
+
+.subject-pill {
+  background-color: alpha(@fg, 0.06);
+  color: alpha(@fg, 0.80);
+  border-radius: 999px;
+  padding: 2px 9px;
+  font-size: 0.77em;
+}
+
+.poster-frame {
+  background-color: alpha(@fg, 0.035);
+  border: none;
+  border-radius: 6px;
+}
+
+.poster-empty-text {
+  font-size: 0.79em;
+  color: alpha(@fg, 0.42);
+}
+
+.description-frame {
+  background-color: alpha(@fg, 0.025);
+  border: 1px solid alpha(@fg, 0.05);
+  border-radius: 6px;
+}
+
+.description-frame textview,
+.description-frame textview text {
+  background-color: transparent;
+}
+
+.description-text {
+  font-size: 0.92em;
+  color: alpha(@fg, 0.86);
+}
+
+.note-box {
+  background-color: alpha(@fg, 0.03);
+  border-radius: 6px;
+  padding: 9px 12px;
+}
+
+.note-text {
+  font-size: 0.81em;
+  color: alpha(@fg, 0.58);
+}
+
+.warning-box {
+  background-color: alpha(@warning, 0.09);
+  border: 1px solid alpha(@warning, 0.22);
+  border-radius: 6px;
+  padding: 10px 12px;
+}
+
+.warning-text {
+  font-size: 0.85em;
+  color: alpha(@fg, 0.82);
+}
+
+.file-frame {
+  background-color: alpha(@fg, 0.018);
+  border: 1px solid alpha(@fg, 0.06);
+  border-radius: 6px;
+}
+
+.file-frame treeview {
+  background-color: transparent;
+}
+
+.file-frame treeview.view:hover {
+  background-color: alpha(@fg, 0.04);
+}
+
+.file-frame treeview.view:selected,
+.file-frame treeview.view:selected:focus {
+  background-color: alpha(@accent, 0.22);
+  color: @fg;
+}
+
+.file-frame treeview.view header button {
+  background-color: transparent;
+  border: none;
+  border-bottom: 1px solid alpha(@fg, 0.07);
+  border-radius: 0;
+  font-size: 0.77em;
+  font-weight: 600;
+  color: alpha(@fg, 0.52);
+  padding: 5px 8px;
+  box-shadow: none;
+}
+
+.file-summary {
+  font-size: 0.79em;
+  color: alpha(@fg, 0.46);
+}
+
+.selection-count {
+  font-size: 0.82em;
+  color: alpha(@fg, 0.55);
+}
+
+.local-frame {
+  background-color: alpha(@fg, 0.018);
+  border: 1px solid alpha(@fg, 0.06);
+  border-radius: 6px;
+}
+
+.expander-title {
+  font-size: 0.86em;
+  font-weight: 500;
+}
+
+.screenshot-strip {
+  background-color: transparent;
+}
+
+.screenshot-thumb {
+  background-color: alpha(@fg, 0.04);
+  border: none;
+  border-radius: 6px;
+  padding: 0;
+  box-shadow: none;
+}
+
+.screenshot-thumb:hover {
+  background-color: alpha(@fg, 0.09);
+}
+
+/* -- directory bar / downloads ----------------------------------------- */
+
+.dir-bar {
+  border-top: 1px solid alpha(@fg, 0.07);
+  padding: 6px 12px 6px 14px;
+}
+
+.dir-label {
+  font-size: 0.82em;
+  color: alpha(@fg, 0.60);
+}
+
+.downloads-panel {
+  border-top: 1px solid alpha(@fg, 0.08);
+}
+
+.downloads-header {
+  padding: 6px 12px 6px 16px;
+  border-bottom: 1px solid alpha(@fg, 0.05);
+}
+
+.small-button {
+  font-size: 0.79em;
+  padding: 2px 9px;
+  min-height: 22px;
+}
+
+.link-button {
+  font-size: 0.79em;
+  padding: 0 2px;
+  min-height: 18px;
+  border: none;
+  box-shadow: none;
+  background-color: transparent;
+  background-image: none;
+  color: @accent_text;
+}
+
+.link-button:hover {
+  background-color: transparent;
+  background-image: none;
+}
+
+row.task-row {
+  padding: 8px 14px 9px 16px;
+  border-bottom: 1px solid alpha(@fg, 0.05);
+}
+
+row.task-row:hover {
+  background-color: alpha(@fg, 0.035);
+}
+
+row.task-row:selected {
+  background-color: alpha(@fg, 0.055);
+}
+
+.task-file {
+  font-size: 0.88em;
+  font-weight: 500;
+}
+
+.task-game {
+  font-size: 0.78em;
+  color: alpha(@fg, 0.45);
+}
+
+.task-detail {
+  font-size: 0.77em;
+  color: alpha(@fg, 0.48);
+}
+
+.status-pill {
+  font-size: 0.68em;
+  font-weight: 600;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background-color: alpha(@fg, 0.07);
+  color: alpha(@fg, 0.70);
+}
+
+.status-running {
+  background-color: alpha(@accent, 0.18);
+}
+
+.status-completed {
+  background-color: alpha(@success, 0.16);
+}
+
+.status-failed {
+  background-color: alpha(@danger, 0.18);
+}
+
+.status-paused {
+  background-color: alpha(@muted, 0.16);
+}
+
+progressbar.download-progress trough,
+progressbar.verify-progress trough {
+  min-height: 3px;
+  border: none;
+  border-radius: 999px;
+  background-color: alpha(@fg, 0.09);
+}
+
+progressbar.download-progress progress,
+progressbar.verify-progress progress {
+  min-height: 3px;
+  border: none;
+  border-radius: 999px;
+  background-color: @accent;
+}
+
+/* -- torrent queue ------------------------------------------------------ */
+
+.torrent-separator {
+  min-height: 1px;
+  background-color: alpha(@fg, 0.07);
+  border: none;
+}
+
+.torrent-section {
+  background-color: @bg;
+  background-image: none;
+}
+
+.torrent-header {
+  padding: 5px 12px 4px 16px;
+}
+
+.torrent-engine {
+  font-size: 0.76em;
+  color: alpha(@fg, 0.38);
+  padding-left: 4px;
+}
+
+row.torrent-row {
+  padding: 5px 14px 6px 16px;
+  border-bottom: 1px solid alpha(@fg, 0.04);
+}
+
+row.torrent-row:hover {
+  background-color: alpha(@fg, 0.035);
+}
+
+row.torrent-row:selected {
+  background-color: alpha(@accent, 0.10);
+}
+
+/* -- banner, toast, empty states --------------------------------------- */
+
+.banner {
+  background-color: alpha(@accent, 0.08);
+  border-bottom: 1px solid alpha(@accent, 0.18);
+  padding: 6px 12px 6px 16px;
+}
+
+.banner-text {
+  font-size: 0.86em;
+  color: alpha(@fg, 0.80);
+}
+
+.toast {
+  background-color: alpha(@bg, 0.97);
+  border: 1px solid alpha(@fg, 0.12);
+  border-radius: 8px;
+  padding: 8px 14px;
+  box-shadow: 0 3px 12px @shadow;
+}
+
+.toast.error {
+  border-color: alpha(@danger, 0.45);
+}
+
+.toast label {
+  font-size: 0.88em;
+}
+
+.empty-title {
+  font-size: 1.14em;
+  font-weight: 600;
+}
+
+.empty-text {
+  font-size: 0.89em;
+  color: alpha(@fg, 0.50);
+}
+
+.selection-dock {
+  background-color: alpha(@bg, 0.96);
+  border-top: 1px solid alpha(@fg, 0.07);
+  padding: 7px 16px;
+}
+
+.duplicate-heading {
+  font-weight: 600;
+}
+
+.duplicate-group {
+  background-color: alpha(@fg, 0.02);
+  border-radius: 6px;
+  padding: 9px 12px;
+}
+
+/* -- library ------------------------------------------------------------ */
+
+.library-toolbar {
+  padding: 7px 12px 6px 12px;
+  border-bottom: 1px solid alpha(@fg, 0.07);
+}
+
+.library-toolbar entry {
+  font-size: 0.88em;
+}
+
+.library-toolbar button {
+  font-size: 0.88em;
+}
+
+.library-meta {
+  padding: 4px 14px 6px 14px;
+  border-bottom: 1px solid alpha(@fg, 0.05);
+}
+
+.usage-label {
+  font-size: 0.77em;
+  color: alpha(@fg, 0.46);
+}
+
+.library-flow {
+  padding: 16px 18px 24px 18px;
+}
+
+flowboxchild.library-tile {
+  padding: 0;
+  border-radius: 8px;
+  outline: none;
+  background-color: transparent;
+  background-image: none;
+}
+
+.cover-card {
+  padding: 0;
+  border-radius: 8px;
+  border: none;
+  background-color: transparent;
+  background-image: none;
+}
+
+flowboxchild.library-tile:hover .cover-card {
+  background-color: alpha(@fg, 0.035);
+}
+
+flowboxchild.library-tile:selected .cover-card {
+  background-color: alpha(@accent, 0.10);
+}
+
+.tile-cover {
+  border-radius: 6px;
+  background-color: alpha(@fg, 0.04);
+  min-height: 110px;
+  min-width: 150px;
+}
+
+.tile-title {
+  font-size: 0.86em;
+  font-weight: 600;
+  margin-top: 7px;
+  margin-left: 2px;
+  color: alpha(@fg, 0.92);
+}
+
+.tile-meta {
+  font-size: 0.78em;
+  margin-left: 2px;
+  color: alpha(@fg, 0.48);
+}
+
+.tile-compat {
+  font-size: 0.76em;
+  margin-left: 2px;
+  color: alpha(@fg, 0.38);
+}
+
+.tile-badge {
+  font-size: 0.65em;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 999px;
+  color: alpha(@fg, 0.92);
+}
+
+.badge-incomplete {
+  background-color: alpha(@warning, 0.92);
+}
+
+.badge-missing {
+  background-color: alpha(@muted, 0.72);
+}
+
+.badge-failed {
+  background-color: alpha(@danger, 0.85);
+}
+
+.badge-copies {
+  background-color: alpha(@bg, 0.80);
+  color: alpha(@fg, 0.70);
+  border: 1px solid alpha(@fg, 0.14);
+}
+
+button.favorite-star {
+  padding: 2px;
+  min-height: 22px;
+  min-width: 22px;
+  border-radius: 999px;
+  background-color: alpha(@bg, 0.55);
+  color: alpha(@fg, 0.38);
+  border: none;
+  box-shadow: none;
+  opacity: 0;
+}
+
+flowboxchild.library-tile:hover button.favorite-star,
+flowboxchild.library-tile:selected button.favorite-star,
+button.favorite-star:checked {
+  opacity: 1;
+}
+
+button.favorite-star:hover {
+  background-color: alpha(@bg, 0.90);
+}
+
+button.favorite-star:checked {
+  color: @favorite;
+}
+
+.library-detail {
+  border-left: 1px solid alpha(@fg, 0.08);
+}
+
+.panel-title {
+  font-size: 1.20em;
+  font-weight: 600;
+}
+
+.fact-name {
+  font-size: 0.72em;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  color: alpha(@fg, 0.58);
+}
+
+.fact-value {
+  font-size: 0.87em;
+}
+
+.start-frame {
+  background-color: alpha(@fg, 0.02);
+  border-radius: 6px;
+}
+
+.filter-active {
+  color: @accent_text;
+}
+
+.popover-title {
+  font-size: 0.72em;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  color: alpha(@fg, 0.45);
+}
+
+.field-label {
+  font-size: 0.84em;
+  color: alpha(@fg, 0.60);
+}
+
+.integrity-ok {
+  color: @success;
+}
+
+.integrity-warn {
+  color: @warning;
+}
+
+.integrity-bad {
+  color: @danger;
+}
+
+.queue-banner {
+  background-color: alpha(@accent, 0.08);
+  border-bottom: 1px solid alpha(@accent, 0.18);
+}
+
+.settings-page {
+  background-color: @bg;
+}
+
+/* Settings dialog: consistent control heights and readable flow rows. */
+dialog button {
+  min-height: 28px;
+  padding: 4px 12px;
+  border-radius: 6px;
+}
+
+dialog entry,
+dialog combobox,
+dialog spinbutton {
+  min-height: 28px;
+}
+
+dialog flowbox {
+  background-color: transparent;
+  background-image: none;
+}
+
+dialog flowboxchild {
+  padding: 0;
+  background-color: transparent;
+}
+
+.shortcut-keycap {
+  font-family: "Iosevka NF", "DejaVu Sans Mono", monospace;
+  font-size: 0.82em;
+  font-weight: 600;
+  color: @fg;
+  padding: 2px 8px;
+  min-height: 22px;
+  border-radius: 5px;
+  border: 1px solid alpha(@fg, 0.18);
+  background-color: @raised;
+  background-image: none;
+}
+
+/* -- scrollbars --------------------------------------------------------- */
+
+scrollbar slider {
+  background-color: alpha(@fg, 0.20);
+  border-radius: 999px;
+  min-width: 5px;
+  min-height: 5px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+scrollbar slider:hover {
+  background-color: alpha(@fg, 0.32);
+}
+
+scrollbar trough {
+  background-color: transparent;
+}
+
+/* -- popovers ----------------------------------------------------------- */
+
+popover {
+  border-radius: 8px;
+  border: 1px solid alpha(@fg, 0.10);
+}
+
+/* -- stock widget surfaces ---------------------------------------------- */
+/* The in-app palette paints stock widgets too, so Dark stays dark even when
+ * the desktop theme has no dark variant of its own. */
+
+headerbar,
+.titlebar,
+menubar,
+.background,
+dialog,
+decoration {
+  background-color: @bg;
+  background-image: none;
+  color: @fg;
+}
+
+headerbar {
+  border-bottom: 1px solid @divider;
+  box-shadow: none;
+}
+
+menu,
+.menu,
+popover.background,
+/* GTK 3 builds a tooltip as window.background.tooltip, so both spellings are
+ * needed: the node name alone never matches, and .background alone loses to
+ * the page rule. */
+window.tooltip,
+tooltip,
+tooltip.background {
+  background-color: @raised;
+  background-image: none;
+  color: @fg;
+  border: 1px solid alpha(@fg, 0.10);
+  border-radius: 12px;
+  box-shadow: 0 8px 24px @shadow;
+}
+
+menuitem {
+  padding: 6px 12px;
+  border-radius: 8px;
+  color: @fg;
+}
+
+menuitem:hover {
+  background-color: @hover;
+}
+
+menuitem:disabled {
+  color: @faint;
+}
+
+window.tooltip,
+tooltip,
+tooltip.background {
+  border-radius: 8px;
+  padding: 6px 10px;
+  box-shadow: 0 4px 14px @shadow;
+}
+
+entry,
+spinbutton,
+combobox button {
+  background-color: @raised;
+  background-image: none;
+  color: @fg;
+  border: 1px solid @divider;
+  border-radius: 999px;
+  padding: 6px 12px;
+  box-shadow: none;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+
+entry:focus,
+spinbutton:focus,
+combobox button:focus {
+  border-color: @accent;
+  box-shadow: inset 0 0 0 1px @accent;
+}
+
+entry:disabled,
+combobox button:disabled {
+  color: @faint;
+  background-color: @surface;
+}
+
+entry selection,
+textview text selection {
+  background-color: alpha(@accent, 0.40);
+  color: @fg;
+}
+
+button {
+  background-color: @raised;
+  background-image: none;
+  color: @fg;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  box-shadow: none;
+  transition: background-color 150ms ease, color 150ms ease;
+}
+
+button:hover,
+button:active,
+button:checked {
+  background-color: @hover;
+}
+
+button:disabled {
+  background-color: @surface;
+  color: @faint;
+}
+
+button.suggested-action {
+  background-color: @accent_fill;
+  color: @on_accent;
+}
+
+button.suggested-action:hover {
+  background-color: @accent_fill_hover;
+}
+
+button.suggested-action:disabled {
+  background-color: alpha(@accent_fill, 0.40);
+  color: @on_accent;
+}
+
+checkbutton check,
+radiobutton radio {
+  background-color: @raised;
+  border: 1px solid @divider;
+  color: @on_accent;
+}
+
+checkbutton check:checked,
+radiobutton radio:checked {
+  background-color: @accent_fill;
+  border-color: @accent_fill;
+}
+
+switch {
+  background-color: @hover;
+  border: 1px solid @divider;
+}
+
+switch:checked {
+  background-color: @accent;
+  border-color: @accent;
+}
+
+switch slider {
+  background-color: @surface;
+}
+
+treeview.view,
+list row {
+  background-color: transparent;
+  color: @fg;
+}
+
+treeview.view:hover,
+list row:hover {
+  background-color: @hover;
+}
+
+treeview.view:selected,
+list row:selected {
+  background-color: alpha(@accent, 0.26);
+  color: @fg;
+}
+
+treeview.view:focus {
+  box-shadow: inset 0 0 0 1px alpha(@accent, 0.55);
+}
+
+separator {
+  background-color: @divider;
+}
+
+/* -- notebooks, dialogs and their action areas --------------------------- */
+/* GTK paints a notebook's page area from the *system* theme's base colour and
+ * a dialog from its own background colour.  With an application palette on top
+ * of a mixed desktop that leaks: the tab body kept a light system surface while
+ * the labels already used the dark palette's light foreground, which is exactly
+ * the unreadable Settings dialog ("Where things are kept", "Settings file", the
+ * paths).  A window rule cannot cover it, because the notebook paints over the
+ * window.  Paint both from the palette, explicitly. */
+
+dialog,
+messagedialog,
+messagedialog box,
+dialog .dialog-action-area,
+dialog actionbar,
+dialog box,
+dialog content {
+  background-color: @surface;
+  background-image: none;
+  color: @fg;
+  border: none;
+  box-shadow: none;
+}
+
+dialog .dialog-action-area,
+dialog actionbar {
+  border-top: 1px solid @divider;
+  padding: 10px 12px;
+}
+
+notebook {
+  background-color: @surface;
+  background-image: none;
+  border: none;
+  color: @fg;
+}
+
+notebook > header {
+  background-color: @surface;
+  background-image: none;
+  border: none;
+  border-bottom: 1px solid @divider;
+  padding: 4px 6px 0 6px;
+}
+
+notebook > header tab {
+  min-height: 32px;
+  padding: 0 14px;
+  margin: 0 2px;
+  border: none;
+  border-radius: 8px 8px 0 0;
+  background-color: transparent;
+  background-image: none;
+  box-shadow: none;
+  color: @muted;
+}
+
+notebook > header tab:hover {
+  background-color: @hover;
+  color: @fg;
+}
+
+notebook > header tab:checked {
+  background-color: @surface;
+  color: @fg;
+}
+
+notebook > header tab:checked label {
+  font-weight: 600;
+}
+
+notebook > header tab:checked:hover {
+  background-color: @surface;
+}
+
+/* The page itself is a plain container (no GdkWindow), so the notebook's own
+ * surface shows through; give the padding room GTK's default margins lack. */
+notebook > box,
+notebook > scrolledwindow,
+notebook > viewport,
+notebook > stack,
+notebook > box > box,
+notebook page,
+notebook page > box,
+viewport,
+scrolledwindow,
+scrolledwindow > viewport,
+scrolledwindow > viewport > box {
+  background-color: @surface;
+  background-image: none;
+  color: @fg;
+  border: none;
+  box-shadow: none;
+}
+
+/* Dialog content area and all direct children must have a solid background so
+ * no system-theme (black/gray) leaks through as artifacts. */
+dialog > *,
+dialog content,
+dialog .dialog-vbox,
+dialog box > box,
+dialog > box > box {
+  background-color: @surface;
+  background-image: none;
+  color: @fg;
+  border: none;
+  box-shadow: none;
+}
+
+/* Remove any stray borders that show as black pixels around widgets. */
+dialog box,
+dialog box > * {
+  border: none;
+  box-shadow: none;
+}
+
+/* -- lists and file choosers -------------------------------------------- */
+/* GTK's list containers and the system file chooser paint the desktop theme's
+ * surface, which is white on a light desktop even while this app is dark.  That
+ * is what made the torrent row and the "Import library index" list unreadable:
+ * light text on a white system surface.  Paint them from the palette instead. */
+
+list,
+list.view,
+list box {
+  background-color: transparent;
+  background-image: none;
+  color: @fg;
+}
+
+.downloads-panel,
+.torrent-section {
+  background-color: @bg;
+  background-image: none;
+}
+
+filechooser list,
+filechooser treeview.view,
+filechooser placessidebar,
+filechooser .sidebar,
+filechooserwidget list,
+filechooserwidget treeview.view,
+filechooserwidget placessidebar,
+filechooserwidget .sidebar {
+  background-color: @bg;
+  background-image: none;
+  color: @fg;
+}
+
+filechooser treeview.view:hover,
+filechooserwidget treeview.view:hover {
+  background-color: @hover;
+}
+
+filechooser treeview.view:selected,
+filechooserwidget treeview.view:selected {
+  background-color: alpha(@accent, 0.26);
+  color: @fg;
+}
+
+progressbar trough {
+  background-color: alpha(@fg, 0.10);
+  border-radius: 999px;
+}
+
+progressbar progress {
+  background-color: @accent;
+  border-radius: 999px;
+}
+
+/* -- Browse page (cover grid + grouped filters) ------------------------- */
+.browse-page {
+  background-color: @bg;
+}
+
+.browse-header {
+  padding: 12px 20px 8px 20px;
+}
+
+.page-title {
+  font-size: 1.30em;
+  font-weight: 700;
+  color: @fg;
+}
+
+.page-count {
+  font-size: 0.78em;
+  color: @muted;
+}
+
+.browse-filters {
+  background-color: @bg;
+  border-right: 1px solid alpha(@fg, 0.06);
+}
+
+.filter-body {
+  background-color: @bg;
+}
+
+.filter-title {
+  font-size: 0.74em;
+  font-weight: 700;
+  color: @muted;
+}
+
+.filter-row {
+  padding: 1px 0;
+}
+
+.filter-check {
+  font-size: 0.80em;
+  color: @muted;
+  padding: 1px 0;
+}
+
+.filter-check check {
+  min-width: 13px;
+  min-height: 13px;
+  border-radius: 4px;
+  border: 1px solid alpha(@fg, 0.22);
+  background-color: transparent;
+}
+
+.filter-check:checked check {
+  background-color: @accent_fill;
+  border-color: @accent_fill;
+}
+
+.filter-count {
+  font-size: 0.74em;
+  color: @faint;
+  margin-left: 6px;
+}
+
+.chip {
+  min-height: 18px;
+  padding: 0 8px;
+  margin: 0;
+  border-radius: 999px;
+  border: 1px solid alpha(@fg, 0.12);
+  background-color: transparent;
+  font-size: 0.74em;
+  color: @muted;
+}
+
+/* The chips live in a FlowBox so they wrap instead of widening the column. */
+.chip-row flowboxchild {
+  padding: 0;
+  min-width: 0;
+  min-height: 0;
+  border-radius: 999px;
+  background-color: transparent;
+}
+
+.chip-row flowboxchild:selected {
+  background-color: transparent;
+}
+
+.chip:hover {
+  background-color: @hover;
+  color: @fg;
+}
+
+.chip-on {
+  background-color: @raised;
+  border-color: alpha(@fg, 0.28);
+  color: @fg;
+}
+
+.browse-grid {
+  padding: 12px 20px 22px 20px;
+}
+
+.browse-tile {
+  padding: 0;
+  border-radius: 8px;
+  background-color: transparent;
+  background-image: none;
+  outline: none;
+}
+
+.tile-cover {
+  border-radius: 6px;
+  background-color: @surface;
+}
+
+.tile-title {
+  font-size: 0.80em;
+  font-weight: 600;
+  color: @fg;
+}
+
+.tile-meta {
+  font-size: 0.73em;
+  color: @faint;
+}
+
+.game-page,
+.game-page > stack,
+.game-page stack,
+.game-page scrolledwindow,
+.game-page scrolledwindow > viewport {
+  background-color: @bg;
+  background-image: none;
+}
+
+.details,
+.details > viewport,
+.details > viewport > box {
+  background-color: @bg;
+  background-image: none;
+}
+
+.game-header {
+  padding: 8px 18px 4px 18px;
+}
+
+.crumb {
+  font-size: 0.86em;
+  color: @muted;
+}
+
+flowboxchild.browse-tile:selected {
+  background-color: transparent;
+  box-shadow: inset 0 0 0 2px @accent;
+  border-radius: 8px;
+}
+
+flowboxchild.browse-tile:hover .cover-card {
+  background-color: transparent;
+}
+
+/* -- App shell: icon rail + top bar ------------------------------------- */
+.app-shell {
+  background-color: @bg;
+}
+
+.app-rail {
+  background-color: @bg;
+  border-right: 1px solid alpha(@fg, 0.06);
+  padding: 8px 6px 10px 6px;
+}
+
+.rail-button {
+  background-color: transparent;
+  background-image: none;
+  border: none;
+  box-shadow: none;
+  padding: 9px 4px;
+  border-radius: 8px;
+  color: @muted;
+}
+
+.rail-button:hover {
+  background-color: @hover;
+  color: @fg;
+}
+
+.rail-button.rail-on {
+  background-color: @raised;
+  color: @accent_text;
+}
+
+.rail-label {
+  font-size: 0.68em;
+  font-weight: 600;
+  color: inherit;
+}
+
+.rail-badge {
+  font-size: 0.62em;
+  font-weight: 700;
+  min-height: 14px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background-color: alpha(@accent, 0.22);
+  color: @accent_text;
+}
+
+.app-header {
+  background-color: @bg;
+  border-bottom: 1px solid alpha(@fg, 0.06);
+  padding: 5px 8px;
+}
+
+.nav-buttons button {
+  background-color: transparent;
+  background-image: none;
+  border: none;
+  box-shadow: none;
+  min-width: 26px;
+  min-height: 26px;
+  padding: 2px;
+  color: @muted;
+}
+
+.search-pill {
+  background-color: @raised;
+  border: 1px solid alpha(@fg, 0.08);
+  border-radius: 999px;
+  padding: 1px 8px 1px 6px;
+  min-height: 30px;
+}
+
+.search-pill entry {
+  background-color: transparent;
+  background-image: none;
+  border: none;
+  box-shadow: none;
+  font-size: 0.88em;
+  color: @fg;
+}
+
+.key-hint {
+  font-size: 0.72em;
+  color: @faint;
+  background-color: alpha(@fg, 0.06);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+
+/* -- movies & tv (cinematic) -- */
+
+/* The window paints its own near-black base; these rules only use tokens so
+   the file stays honest about the palette.  The fixed cinematic colours live
+   in movies_ui.py, scoped to that window, because the movie window is dark in
+   both app themes by design. */
+.movie-window.background,
+.movie-window {
+  background-color: @bg;
+  color: @fg;
+}
+
+.movie-window stack,
+.movie-window scrolledwindow,
+.movie-window scrolledwindow > viewport {
+  background-color: @bg;
+  background-image: none;
+}
+
+.movie-nav {
+  background-color: @bg;
+  background-image: none;
+  border-bottom: 1px solid alpha(@fg, 0.07);
+  box-shadow: none;
+  padding: 4px 12px;
+}
+
+button.movie-nav-item {
+  background-color: transparent;
+  background-image: none;
+  border: none;
+  border-image: none;
+  box-shadow: none;
+  color: @muted;
+  padding: 5px 10px;
+  min-height: 0;
+  min-width: 0;
+  border-radius: 7px;
+  font-weight: 600;
+}
+
+button.movie-nav-item:hover {
+  color: @fg;
+  background-color: alpha(@fg, 0.07);
+}
+
+button.movie-nav-item.active {
+  color: @bg;
+  background-color: @fg;
+}
+
+.movie-brand { color: @fg; font-weight: 700; }
+.movie-brand-mark { color: @warning; }
+
+.movie-hero {
+  background-color: @surface;
+  background-image: linear-gradient(120deg, @raised, @bg 55%, @surface);
+}
+
+.movie-hero-scrim {
+  background-image: linear-gradient(
+    to bottom,
+    alpha(@bg, 0.00) 0%,
+    alpha(@bg, 0.24) 38%,
+    alpha(@bg, 0.88) 78%,
+    @bg 100%
+  );
+}
+
+.movie-hero-badge {
+  background-color: alpha(@fg, 0.13);
+  color: @fg;
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 0.68em;
+  font-weight: 800;
+}
+
+.movie-hero-title {
+  color: @fg;
+  font-size: 2.5em;
+  font-weight: 800;
+}
+
+.movie-rating-star {
+  color: @warning;
+  font-weight: 700;
+}
+
+button.movie-btn-primary {
+  background-color: @fg;
+  background-image: none;
+  border: none;
+  border-image: none;
+  box-shadow: none;
+  color: @bg;
+  border-radius: 8px;
+  padding: 9px 20px;
+  min-height: 0;
+  font-weight: 700;
+}
+
+button.movie-btn-primary:hover {
+  background-color: @hover;
+  color: @fg;
+}
+
+button.movie-btn-dark {
+  background-color: alpha(@fg, 0.10);
+  background-image: none;
+  border: 1px solid alpha(@fg, 0.14);
+  border-image: none;
+  box-shadow: none;
+  color: @fg;
+  border-radius: 8px;
+  padding: 8px 16px;
+  min-height: 0;
+  font-weight: 600;
+}
+
+button.movie-btn-dark:hover {
+  background-color: alpha(@fg, 0.18);
+}
+
+.movie-section-title {
+  color: @fg;
+  font-size: 1.15em;
+  font-weight: 700;
+}
+
+.movie-section-count {
+  background-color: alpha(@fg, 0.08);
+  color: @muted;
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-size: 0.72em;
+  font-weight: 700;
+}
+
+.movie-section-sub {
+  color: @muted;
+  font-size: 0.82em;
+}
+
+button.movie-card {
+  background-color: transparent;
+  background-image: none;
+  border: none;
+  border-image: none;
+  box-shadow: none;
+  padding: 0;
+  min-height: 0;
+  min-width: 0;
+  border-radius: 10px;
+}
+
+.movie-card-poster {
+  background-color: @surface;
+  border-radius: 10px;
+}
+
+.movie-card-title {
+  color: @fg;
+  font-size: 0.9em;
+  font-weight: 600;
+}
+
+.movie-card-meta {
+  color: @muted;
+  font-size: 0.78em;
+}
+
+.movie-card-rating {
+  background-color: alpha(@bg, 0.82);
+  color: @warning;
+  border-radius: 6px;
+  padding: 1px 6px;
+  font-size: 0.72em;
+  font-weight: 700;
+}
+
+.movie-poster-frame {
+  background-color: @surface;
+  border-radius: 10px;
+}
+
+.movie-title {
+  color: @fg;
+  font-weight: 600;
+}
+
+button.movie-arrow {
+  background-color: alpha(@bg, 0.72);
+  background-image: none;
+  border: 1px solid alpha(@fg, 0.14);
+  border-image: none;
+  box-shadow: none;
+  color: @fg;
+  border-radius: 999px;
+  padding: 0;
+  min-width: 32px;
+  min-height: 32px;
+}
+
+button.movie-arrow:hover {
+  background-color: alpha(@fg, 0.16);
+}
+
+button.movie-arrow:disabled {
+  color: @faint;
+}
+
+.movie-empty {
+  background-color: @surface;
+  border: 1px solid alpha(@fg, 0.08);
+  border-radius: 14px;
+  padding: 28px;
+  color: @muted;
+}
+
+.movie-empty-title {
+  color: @fg;
+  font-size: 1.05em;
+  font-weight: 700;
+}
+
+.movie-status {
+  color: @muted;
+  font-size: 0.88em;
+}
+
+.movie-meta {
+  color: @muted;
+  font-size: 0.9em;
+}
+
+.movie-overview {
+  color: @fg;
+  font-size: 0.98em;
+}
+
+.movie-episode {
+  color: @fg;
+  font-size: 0.94em;
+}
+
+.movie-episode-row {
+  background-color: @surface;
+  border-radius: 8px;
+  padding: 6px 8px;
+}
+
+.movie-episode-row:hover {
+  background-color: @hover;
+}
+
+.movie-episode-list {
+  background-color: transparent;
+}
+
+.movie-history-row {
+  background-color: @surface;
+  background-image: none;
+  border: 1px solid alpha(@fg, 0.06);
+  border-image: none;
+  border-radius: 10px;
+  box-shadow: none;
+  padding: 8px;
+}
+
+.movie-history-title {
+  color: @fg;
+  font-weight: 600;
+  font-size: 0.95em;
+}
+
+.movie-scroll,
+.movie-scroll viewport {
+  background-color: transparent;
+}
+
+button.movie-link {
+  background-color: transparent;
+  background-image: none;
+  border: none;
+  box-shadow: none;
+  color: @muted;
+  padding: 2px 6px;
+  min-height: 0;
+  font-weight: 600;
+}
+
+button.movie-link:hover {
+  color: @fg;
+}
+
+.movie-search {
+  background-color: @raised;
+  border: 1px solid @divider;
+  border-radius: 999px;
+  color: @fg;
+  padding: 1px 10px;
+  min-height: 30px;
+}
+
+.movie-search entry {
+  background-color: transparent;
+  background-image: none;
+  border: none;
+  box-shadow: none;
+  color: @fg;
+}
+
+.movie-detail-body {
+  background-color: @bg;
+}
+
+.movie-player-frame {
+  background-color: @bg;
+  border-radius: 10px;
+}

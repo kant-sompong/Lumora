@@ -1,0 +1,177 @@
+{
+ "fetched_at": 1793474710.4402404,
+ "item": {
+  "identifier": "100-orange-juice-linux-steam-rip-linuxrulez-phoenix-games-lab",
+  "title": "100% Orange Juice (build 16899048) [Linux, Steam-Rip, LinuxRuleZ!, Goldberg Steam Emulator]",
+  "description": "This Game is brought to you by LinuxRuleZ!\n\n100% Orange Juice is a digital multiplayer board game populated by developer Orange Juice's all-star cast. Characters from Flying Red Barrel, QP Shooting, Suguri and Sora come together with all-new characters to duke it out... with\ndice.\n\nThis is a world where dogs, people and machines fly through the air. In that\nworld, a small patch of darkness was born. Infinitesimal at first, it gradually began to envelop everything..\n\nA youth named Kai, led by the mysterious life form known as Marie Poppo,\nbegins a journey that will span worlds. The black, bottomless darkness\nof desire slowly eats away at both Kai and the world itself...\n\nLet Marie Poppo lead you into a mysterious world to play. Grab your deck of cards and let the games begin!\n\nFeatures:\n\nDice, cards, stars, battles and pudding\n\n4 Single-player campaigns\n\nPlayable by up to 4 players online\n\nCountless battle combinations\n\nUtilize each character's unique combat attributes\n\nMore than 50 different cards to collect\n\nCharacter abilities in the form of Hyper Cards\n\nNew Steam Features:\n\nFull HD support\n\nRedesigned multiplayer experience using Steam's lobby system\n\nSpectator mode\n\nAvatar customization\n\nNew character skins to unlock\n\nVAC enabled\n\nCustom language support\n\nPhoeNix Games Lab\n\nYou can play on Linux for FREE!",
+  "creator": "Orange_Juice, Fruitbat Factory",
+  "date": "2014-05-16",
+  "year": "2014",
+  "licenseurl": "",
+  "rights": "",
+  "item_size": 2503550862,
+  "subjects": [
+   "Linux Games",
+   "GNU/Linux Games",
+   "Steam-Rip",
+   "Goldberg Steam Emulator",
+   "Uploaded by Y@Ldysse",
+   "PhoeNix Games Lab",
+   "LinuxRuleZ!",
+   "100% Orange Juice"
+  ],
+  "restricted": false,
+  "files": [
+   {
+    "name": "100% Orange Juice (v.build 16899048) + 49 DLC [Goldberg] [LinuxRuleZ!].sh",
+    "size": 2501446250,
+    "format": "MPEG Audio",
+    "md5": "ac712efdfbb34a469154f3cbe140e43c",
+    "sha1": "88b8f133ad608804bdd15f0a9e96fc995ca21488",
+    "source": "original",
+    "private": false,
+    "sha256": ""
+   },
+   {
+    "name": "100-orange-juice-linux-steam-rip-linuxrulez-phoenix-games-lab_archive.torrent",
+    "size": 28608,
+    "format": "Archive BitTorrent",
+    "md5": "26399f5cb852668d5dc2c97a4b5b9827",
+    "sha1": "3fb04d5b3481b6f152f439da75695e79570288da",
+    "source": "metadata",
+    "private": false,
+    "sha256": ""
+   },
+   {
+    "name": "100-orange-juice-linux-steam-rip-linuxrulez-phoenix-games-lab_files.xml",
+    "size": null,
+    "format": "Metadata",
+    "md5": "12560dbade90f17ca81b06db4e20667b",
+    "sha1": "",
+    "source": "original",
+    "private": false,
+    "sha256": ""
+   },
+   {
+    "name": "100-orange-juice-linux-steam-rip-linuxrulez-phoenix-games-lab_meta.sqlite",
+    "size": 73728,
+    "format": "Metadata",
+    "md5": "d13ebe604fc70a706ee7d538c42fee06",
+    "sha1": "473e4b6435d02f29228d48a0f91f6e871e98cb51",
+    "source": "original",
+    "private": false,
+    "sha256": ""
+   },
+   {
+    "name": "100-orange-juice-linux-steam-rip-linuxrulez-phoenix-games-lab_meta.xml",
+    "size": 5404,
+    "format": "Metadata",
+    "md5": "2259539061576696d491efc0273d58ba",
+    "sha1": "3afab1a5d045bcaf2b350c9fe9a2703e9b4d9ce3",
+    "source": "original",
+    "private": false,
+    "sha256": ""
+   },
+   {
+    "name": "100-orange-juice-linux-steam-rip-linuxrulez-phoenix-games-lab_reviews.xml",
+    "size": 520,
+    "format": "Metadata",
+    "md5": "bc271ea07ea29727f4f18fbf0aaf6701",
+    "sha1": "39580af5d5f749bdb1efe30186012cc593c69895",
+    "source": "original",
+    "private": false,
+    "sha256": ""
+   },
+   {
+    "name": "__ia_thumb.jpg",
+    "size": 34975,
+    "format": "Item Tile",
+    "md5": "ea56a3485ae7efc201f8a0a88ee97708",
+    "sha1": "ae3c5191aed83f51ab3422730b5aa2d2fdbdbc95",
+    "source": "original",
+    "private": false,
+    "sha256": ""
+   },
+   {
+    "name": "logo_100%_Orange_Juice.jpg",
+    "size": 221327,
+    "format": "JPEG",
+    "md5": "dccd00f03cf43d4cfc193667f4105625",
+    "sha1": "f420567ad236f992fbeada74dce173609c44ceae",
+    "source": "original",
+    "private": false,
+    "sha256": ""
+   },
+   {
+    "name": "logo_100%_Orange_Juice_thumb.jpg",
+    "size": 9746,
+    "format": "JPEG Thumb",
+    "md5": "9a61f7239ea4be039766eda2b01f2e62",
+    "sha1": "9c5315b2e8f9bb141fd909ee90a4e701fb4e9cd1",
+    "source": "derivative",
+    "private": false,
+    "sha256": ""
+   },
+   {
+    "name": "screenshot-0_100%_Orange_Juice.jpg",
+    "size": 357920,
+    "format": "JPEG",
+    "md5": "f8d7817973b0b484bde6f8c64ede11bb",
+    "sha1": "84606d40db3eb4c2a365fb875906001d475ac3fc",
+    "source": "original",
+    "private": false,
+    "sha256": ""
+   },
+   {
+    "name": "screenshot-0_100%_Orange_Juice_thumb.jpg",
+    "size": 9047,
+    "format": "JPEG Thumb",
+    "md5": "09c89fa27b5233f700f3f2ad4a11182c",
+    "sha1": "8d6cf13de8f0856886077afbe49136ae46435e20",
+    "source": "derivative",
+    "private": false,
+    "sha256": ""
+   },
+   {
+    "name": "screenshot-1_100%_Orange_Juice.jpg",
+    "size": 331576,
+    "format": "JPEG",
+    "md5": "2c54d85cfb61d47bbe6ea0aa529b993c",
+    "sha1": "bd3be4813b73533831e82461799f138c608d21b6",
+    "source": "original",
+    "private": false,
+    "sha256": ""
+   },
+   {
+    "name": "screenshot-1_100%_Orange_Juice_thumb.jpg",
+    "size": 6941,
+    "format": "JPEG Thumb",
+    "md5": "8a2e3df457f3b505b41229de085fac99",
+    "sha1": "fd52e53330744ce9b0a95c5c2d40359aea194730",
+    "source": "derivative",
+    "private": false,
+    "sha256": ""
+   },
+   {
+    "name": "screenshot-2_100%_Orange_Juice.jpg",
+    "size": 1015187,
+    "format": "JPEG",
+    "md5": "8d185fc0a8218a7eb72adb84ef1ef83c",
+    "sha1": "71afd9bca1b3e385892e8aa747581ecbbd499910",
+    "source": "original",
+    "private": false,
+    "sha256": ""
+   },
+   {
+    "name": "screenshot-2_100%_Orange_Juice_thumb.jpg",
+    "size": 9633,
+    "format": "JPEG Thumb",
+    "md5": "992a8d67c85b22f86cc7f968bbd41c28",
+    "sha1": "2b3d7f0ff7fa2bcad5e92fe51f19d64dbb504f56",
+    "source": "derivative",
+    "private": false,
+    "sha256": ""
+   }
+  ]
+ }
+}
