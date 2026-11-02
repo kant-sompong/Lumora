@@ -74,6 +74,16 @@ jobs:
         with:
           name: Lumora
           path: dist/Lumora-Windows-x64.zip
+      - name: Build the per-user installer
+        run: |
+          choco install innosetup --no-progress -y
+          $v = python -c "import lgl; print(lgl.__version__)"
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "/DMyAppVersion=$v" "packaging\windows\Lumora.iss"
+          if (-not (Test-Path "dist\Lumora-Setup-x64.exe")) { throw "The installer was not produced" }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Lumora-setup
+          path: dist/Lumora-Setup-x64.exe
 
   linux:
     name: Linux tarball

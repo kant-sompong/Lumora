@@ -33,6 +33,7 @@ from PySide6.QtWidgets import (
 from . import __version__, mal, platform_support, streaming, theme, tmdb
 from .qt_widgets import Toast, label, run_async
 from .settings import Settings
+from .sources import RawgSource
 
 TABS = (("general", "General"), ("locations", "Locations"),
         ("providers", "Providers"), ("media", "Media"), ("shortcuts", "Shortcuts"))
@@ -347,6 +348,21 @@ class SettingsDialog(QDialog):
             head = label(title, "settLabel")
             column.addWidget(head)
             column.addWidget(label(description, "settDesc", wrap=True))
+            if key == "rawg":
+                helper = QHBoxLayout()
+                helper.setSpacing(8)
+                helper.addWidget(label(
+                    "A free key is enough: register at rawg.io/apidocs and copy the "
+                    "API key from the dashboard.",
+                    "settDesc", wrap=True,
+                ), 1)
+                get = QPushButton("Get a RAWG key")
+                get.setCursor(Qt.PointingHandCursor)
+                get.clicked.connect(
+                    lambda: platform_support.open_url("https://rawg.io/apidocs")
+                )
+                helper.addWidget(get)
+                column.addLayout(helper)
             field = QLineEdit()
             field.setPlaceholderText(placeholder)
             field.setEchoMode(QLineEdit.Password)
@@ -396,6 +412,8 @@ class SettingsDialog(QDialog):
                 return tmdb.TmdbClient(value, timeout=timeout).test_connection()
             if key == "mal":
                 return mal.MalClient(value, timeout=timeout).test_connection()
+            if key == "rawg":
+                return RawgSource(value, timeout=timeout).test_connection()
             return "The key was saved to this user's settings file."
 
         def done(message: object) -> None:

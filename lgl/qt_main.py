@@ -422,6 +422,9 @@ class Window(QMainWindow):
         folder.triggered.connect(lambda: platform_support.open_folder(self.download_dir))
         menu.addAction(folder)
         menu.addSeparator()
+        updates = QAction("Check for updates…", self)
+        updates.triggered.connect(self.check_updates)
+        menu.addAction(updates)
         settings = QAction("Settings…", self)
         settings.triggered.connect(self.show_settings)
         menu.addAction(settings)
@@ -626,6 +629,42 @@ class Window(QMainWindow):
                 f"Artwork sync failed: {exc}", error=True
             ),
         )
+
+    def check_updates(self) -> None:
+        """Ask GitHub for the latest release; never install anything."""
+        from .updates import check_for_update
+
+        def work() -> object:
+            return check_for_update(__version__)
+
+        def done(status: object) -> None:
+            newer = bool(getattr(status, "newer", False))
+            message = str(getattr(status, "message", ""))
+            url = str(getattr(status, "url", ""))
+            if not newer:
+                self.toast.show_message(
+                    message or "You are running the latest release."
+                )
+                return
+            from PySide6.QtWidgets import QMessageBox
+
+            box = QMessageBox(self)
+            box.setWindowTitle("Update available")
+            box.setText(message)
+            box.setInformativeText(
+                "Lumora never installs updates by itself. Open the release page to "
+                "download the new build."
+            )
+            open_btn = box.addButton("Open release page", QMessageBox.AcceptRole)
+            box.addButton("Later", QMessageBox.RejectRole)
+            box.exec()
+            if box.clickedButton() is open_btn and url:
+                platform_support.open_url(url)
+
+        def failed(exc: object) -> None:
+            self.toast.show_message(f"Update check failed: {exc}", error=True)
+
+        run_async(work, done, failed)
 
     # lifecycle ------------------------------------------------------------
     def resizeEvent(self, event) -> None:  # noqa: N802

@@ -35,7 +35,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from . import integrity, platform_support
+from . import external_dm, integrity, platform_support
 from .archive import ArchiveClient, ArchiveItem
 from .library import MANIFEST_NAME, scan_game_folder
 from .library_store import LibraryEntry, LibraryStore, SORT_DEFAULT_DESCENDING, STATUSES
@@ -519,6 +519,7 @@ class LibraryDetail(QFrame):
             (("Verify integrity", "verify"), ("☆ Favorite", "favorite")),
             (("Review && launch…", "launch"),),
             (("Add magnet…", "magnet"),),
+            (("Send to JDownloader", "jd"), ("Send to AB Download", "ab")),
             (("Remove from library", "remove"),),
         ):
             line = QHBoxLayout()
@@ -718,6 +719,7 @@ class LibraryPage(QWidget):
 
     changed = Signal()
     magnet_requested = Signal(str)
+    external_requested = Signal(str, str)  # manager key, identifier
 
     def __init__(self, store: LibraryStore | None, settings=None,
                  client: ArchiveClient | None = None,
@@ -1176,6 +1178,34 @@ class LibraryPage(QWidget):
         self.set_entries(self.store.entries())
         self._toast(f"Forgot {removed} missing entr{'y' if removed == 1 else 'ies'}.")
 
+    def _send_external(self, kind: str, entry: LibraryEntry) -> None:
+        """Hand this game's own links to a download manager the user runs."""
+        links: list[str] = []
+        for value in (entry.magnet, entry.source_url):
+            text = (value or "").strip()
+            if text and text not in links:
+                links.append(text)
+        if not links:
+            self._toast(
+                "This game has no magnet link or source page to send.", error=True
+            )
+            return
+        if kind == "jd":
+            sender = external_dm.send_to_jdownloader
+            name = "JDownloader 2"
+        else:
+            sender = external_dm.send_to_ab_download_manager
+            name = "AB Download Manager"
+        self._toast(f"Sending {len(links)} link(s) to {name}…")
+
+        def done(_result: object) -> None:
+            self._toast(f"{name} accepted the link(s).")
+
+        def failed(exc: object) -> None:
+            self._toast(f"{name} did not accept them: {exc}", error=True)
+
+        run_async(lambda: sender(links), done, failed)
+
     def _on_action(self, action: str, identifier: str) -> None:
         entry = self._entry(identifier)
         if entry is None:
@@ -1198,6 +1228,8 @@ class LibraryPage(QWidget):
                 self.refresh()
         elif action == "magnet":
             self.magnet_requested.emit(identifier)
+        elif action in ("jd", "ab"):
+            self._send_external(action, entry)
         elif action == "verify":
             self._verify(entry)
         elif action == "launch":

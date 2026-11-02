@@ -140,6 +140,9 @@ class ArchiveItem:
         """
         candidates: list[tuple[int, int, ArchiveFile]] = []
         for f in self.image_files:
+            if f.private:
+                # A private file cannot be fetched, so it is not a usable poster.
+                continue
             score = _poster_score(f)
             if score is None:
                 continue

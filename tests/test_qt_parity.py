@@ -242,4 +242,15 @@ def test_library_exposes_the_magnet_action_and_media_the_lookup(app):
     from lgl.qt_media import MediaPage
 
     assert hasattr(LibraryPage, "magnet_requested")
+    assert hasattr(LibraryPage, "external_requested")
     assert hasattr(MediaPage, "lookup_anime")
+
+
+def test_update_check_and_installer_are_wired(app):
+    from lgl import updates
+    from lgl.qt_main import Window
+
+    assert hasattr(Window, "check_updates")
+    status = updates.interpret_release({"tag_name": "v99.0.0"}, "0.5.0")
+    assert status.newer is True
+    assert updates.interpret_release({"tag_name": "v0.1.0"}, "0.5.0").newer is False

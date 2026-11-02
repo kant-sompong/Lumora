@@ -183,12 +183,14 @@ metadata and streaming.
 
 ## Installation
 
-### Windows (portable)
+### Windows
 
-1. Download **`Lumora-Windows-x64.zip`** from the
-   [latest release](https://github.com/kant-sompong/Lumora/releases/latest).
-2. Extract it anywhere — the ZIP contains a single `Lumora` folder.
-3. Run `Lumora.exe` inside that folder.
+Every release publishes two builds:
+
+- **`Lumora-Setup-x64.exe`** — a per-user installer (no administrator prompt),
+  with Start-menu and optional desktop shortcuts and a normal uninstaller.
+- **`Lumora-Windows-x64.zip`** — portable: extract the single `Lumora` folder
+  anywhere and run `Lumora.exe`.
 
 The executable is unsigned, so SmartScreen may warn: choose **More info → Run
 anyway**. Some antivirus heuristics also flag PyInstaller binaries; that is a
@@ -283,6 +285,11 @@ pip install PySide6 PySide6-WebEngine pillow pyinstaller
 
 python -m PyInstaller --noconfirm --clean packaging\windows\Lumora.spec
 Compress-Archive -Path dist\Lumora -DestinationPath dist\Lumora-Windows-x64.zip
+
+# Optional: the installer (requires Inno Setup 6)
+"C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DMyAppVersion=0.5.0 `
+  packaging\windows\Lumora.iss
+# → dist/Lumora-Setup-x64.exe
 ```
 
 Qt 6.12 ships WebEngine as a separate `PySide6-WebEngine` wheel; without it the
@@ -298,10 +305,10 @@ sh packaging/linux/build-tarball.sh
 ### CI
 
 [`.github/workflows/release.yml`](.github/workflows/release.yml) runs the test
-suite, builds the Windows ZIP and the Linux tarball on every push and pull
-request, and verifies that the WebEngine player files are actually bundled.
-Pushing a `v*` tag publishes a GitHub release; the tag must match
-`lgl.__version__`.
+suite, builds the Windows ZIP and the Inno Setup installer, builds the Linux
+tarball on every push and pull request, and verifies that the WebEngine player
+files are actually bundled. Pushing a `v*` tag publishes a GitHub release with
+all three assets; the tag must match `lgl.__version__`.
 
 ---
 
@@ -311,10 +318,17 @@ Pushing a `v*` tag publishes a GitHub release; the tag must match
 python -m pytest tests -q
 ```
 
-The suite runs headlessly (`QT_QPA_PLATFORM=offscreen`) and builds the real
+The Qt tests run headlessly (`QT_QPA_PLATFORM=offscreen`) and build the real
 window: navigation, Browse filtering and rendering, the library grid and detail
 panel, download rows end to end against a local HTTP server, media cards and
-posters, the episode picker, provider switching and the catalogue dialog.
+posters, the episode picker, provider switching, the catalogue dialog, the
+artwork picker and the screenshot viewer.
+
+The core has its own tests, which need no display: the download queue (pause,
+cancel, retry, duplicate and path rules, queue persistence), archive URL and
+poster rules, folder scanning and the library index, checksum verification,
+source configuration, a full import run over a fake source, and the update
+check's version comparison. 149 tests in total.
 
 ---
 
@@ -392,7 +406,8 @@ the Windows build matches the Linux one.
 ## Roadmap & known gaps
 
 - No macOS frontend
-- No built-in updater — download the new `Lumora-Windows-x64.zip`
+- No automatic updater — *Check for updates…* reports a newer release and
+  opens its page; installing it stays a manual step
 - No Steam / itch.io / GOG import (archive.org and imported catalogues only)
 - No automatic game launch after a download finishes
 - Windows builds are compiled and smoke-tested in CI, but interactive testing on
