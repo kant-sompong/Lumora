@@ -48,27 +48,29 @@ display and Windows, which this review did not have.
 - [x] **Update check.** ☰ → "Check for updates…" reads the latest GitHub release
   and offers the release page when it is newer. It never installs anything
 
-## 3. Folders and naming
+## 3. Naming and data
 
-- [x] **Data folders and app id renamed to Lumora.** 0.6.0 moves settings to
+- [x] **Migrate data folders to "Lumora".** 0.6.0 moves settings to
   `%APPDATA%\Lumora` / `$XDG_CONFIG_HOME/lumora` and the library, queues and
-  catalogue to the matching data folders. On the first launch after the
-  upgrade `lgl/migration.py` **copies** the old documents across: nothing is
-  moved or deleted, so an older build still works, and rolling back is deleting
-  the new folders (the old ones were never touched). Existing new data always
-  wins, so a second launch never overwrites anything. A `migration.json`
-  marker records what was copied and how to roll back. The image cache is not
-  copied — it is regenerable artwork
-- [x] **API keys carried over.** `Settings` now stores keys under the
-  `Lumora` keyring service and reads the pre-0.6.0 services
-  (`linux-game-library`, `NativeGameLibrary`) once, copying the key forward
-  while leaving the old entry in place for a rollback
-- [x] **Old names retired.** User agents, the GTK program class and prgname
-  (`lumora`), the Windows AppUserModelID, the desktop entry
-  (`io.github.lumora.Lumora.desktop`) and the icon files all say Lumora now.
-  The Inno Setup `AppId` GUID deliberately stays: it is an opaque install
-  identity, so the installer keeps upgrading the same installation instead of
-  leaving a second one behind
+  catalogue to the matching data folders, replacing `linux-game-library`,
+  `NativeGameLibrary` and the app ID `io.github.nativegamelibrary.NativeGameLibrary`.
+  `lgl/migration.py` **copies** the old documents across on the first launch:
+  nothing is moved or deleted, so an older build still works and rolling back is
+  deleting the new folders (the old ones were never touched). Existing new data
+  always wins, so a second launch never overwrites anything, and a
+  `migration.json` marker records what was copied and how to roll back. The
+  image cache is not copied — it is regenerable artwork
+- [x] **Rename the remaining old strings.** User agents, the GTK program name and
+  window class (`lumora` / `Lumora`), the Windows AppUserModelID, the `.desktop`
+  entry (`io.github.lumora.Lumora.desktop`, `StartupWMClass=lumora`) and the icon
+  file names all say Lumora now. `install-desktop.sh` also removes the stale old
+  launcher entry and icons. The Inno Setup `AppId` GUID deliberately stays: it is
+  an opaque install identity, so the installer keeps upgrading the same
+  installation instead of leaving a second one behind
+- [x] **API keys carried over.** `Settings` stores keys under the `Lumora`
+  keyring service and reads the pre-0.6.0 services (`linux-game-library`,
+  `NativeGameLibrary`) once, copying the key forward while leaving the old entry
+  in place for a rollback
 
 ## 4. Linux (GTK)
 
@@ -79,16 +81,68 @@ display and Windows, which this review did not have.
   smaller modules so they can be tested. Deliberately not started: a move that
   large cannot be checked without a display, and a half-moved GTK app is worse
   than a large one file. This stays last, after the desktop review
+- [ ] **Linux packaging beyond the source tarball** (AppImage or Flatpak), if
+  wanted. The tarball needs GTK 3, PyGObject, WebKit2GTK and GStreamer from the
+  distribution
 
-## 5. How to run the checks
+## 5. Problems found in the 2026-11-02 recheck
+
+- [x] **This file lost sections.** After a rewrite it stopped partway through
+  section 3 and dropped the naming/data items, the Linux packaging item, the
+  housekeeping items, "Done" and "How to re-check". Restored here (sections 3–7);
+  the 0.6.0 rewrite merged with them instead of replacing them
+- [ ] **Nothing has been seen on real hardware.** CI proves the app builds and
+  starts; it does not show how it looks or behaves on a Windows desktop, and the
+  GTK app has not been reviewed on a running display. Covered by the unticked
+  items in sections 1 and 4, which are the highest-value work left
+- [x] **Qt tests can run on the review host now.** This entry previously said
+  only the 101 core tests could be re-run locally. PySide6 with its Qt libraries
+  is installed under `.venv` and `/tmp/libs`, so the whole suite — Qt tests
+  included — runs here: 164 tests pass. What still cannot run here is a real
+  desktop, which is the unticked item in section 1
+
+## 6. Housekeeping
+
+- [ ] **Keep this file honest.** When something ships, tick it and update the
+  date at the top. Check for lost sections before saving over another edit
+
+## 7. Done (so nobody redoes it)
+
+Verified present in the code and in the v0.5.0 release:
+
+- Qt shell: left rail (Browse, Library, Downloads, Media), Settings and About at
+  the bottom, back button, live theme switching, keyboard shortcuts
+- Browse: batched rendering, full filter set, sort, grid and list, game details
+  with screenshots, per-file download, mirror check
+- Library: every control and detail button, filter sheet, sorts matching GTK,
+  Edit details, Review & launch, duplicates, export / import, add magnet,
+  JDownloader / AB hand-off
+- Downloads: persistent queue, torrent strip, catalogue and Kryoto downloads,
+  desktop notifications, resume prompt
+- Media: Home, Movies, TV Shows, Anime, My List, History, Search, TMDB / MAL /
+  ani.pm, episode selector, embedded playback (Qt WebEngine)
+- Settings (5 tabs), RAWG key flow with live test, update check, artwork sync
+- Tests and packaging: core test suite, Qt tests (149 tests pass in CI), portable
+  zip, Inno Setup installer and Linux tarball published on every `v*` tag
+
+Added by 0.6.0:
+
+- Folder and app-ID rename with copy-on-first-launch migration, rollback marker
+  and keyring carry-over (`lgl/migration.py`, `tests/test_migration.py`)
+- Old user agents, program class, `.desktop` entry and icon names retired
+- Offscreen pixel review of every Qt window at 1×, 2× and the minimum size
+
+## How to re-check
 
 ```sh
 python -m compileall lgl
-QT_QPA_PLATFORM=offscreen python -m pytest tests -q        # 164 tests
-LD_LIBRARY_PATH=/tmp/libs/root/usr/lib/x86_64-linux-gnu \
-  QT_QPA_PLATFORM=offscreen python ../../qt_shots.py shots/1x 1
+python -m pytest tests -q          # set QT_QPA_PLATFORM=offscreen when headless
 ```
 
-The second command needs PySide6 with its system libraries; the shots script
-lives beside the repo and writes PNGs into `shots/`. This VM has no fontconfig,
-so it loads DejaVu from `fonts/` first — a real desktop needs none of that.
+The second command needs PySide6 with its Qt system libraries; on this review
+host they live in `/tmp/libs/root/usr/lib/x86_64-linux-gnu`. To re-render the
+Qt windows as pixels, run the `qt_shots.py` harness that sits beside the repo
+(it loads DejaVu from `fonts/` first, because this host has no fontconfig) and
+read the PNGs it writes.
+
+Screenshots of the current Qt UI are in [`docs/screens`](screens).
