@@ -538,6 +538,15 @@ class MediaPage(QWidget):
         self.provider_combo.setToolTip("Provider used to play movies and TV")
         self.provider_combo.currentIndexChanged.connect(self._provider_picked)
         bar.addWidget(self.provider_combo)
+        self.lookup_btn = QPushButton("Lookup…")
+        self.lookup_btn.setObjectName("small")
+        self.lookup_btn.setCursor(Qt.PointingHandCursor)
+        self.lookup_btn.setToolTip(
+            "Play an anime by searching AniList for its title, for titles with no "
+            "TMDB or MyAnimeList id"
+        )
+        self.lookup_btn.clicked.connect(self.lookup_anime)
+        bar.addWidget(self.lookup_btn)
         self._fill_provider_combo("home")
 
         self.search = QLineEdit()
@@ -1253,6 +1262,48 @@ class MediaPage(QWidget):
             return
         self._record_history(card)
         PlayerDialog(url, card.title, self).exec()
+
+    def lookup_anime(self) -> None:
+        """Play an anime by title, resolving its AniList id through AniList's API.
+
+        The two AniList routes need an id that TMDB and MyAnimeList do not
+        provide for every title, so this exists instead of guessing one.
+        """
+        from PySide6.QtWidgets import QInputDialog
+
+        title, ok = QInputDialog.getText(
+            self, "Find anime",
+            "Anime title to look up on AniList:",
+        )
+        title = title.strip()
+        if not ok or not title:
+            return
+        provider = self._anime_provider()
+        if provider not in streaming.ANILIST_ANIME_PROVIDERS:
+            self._note_error(
+                "Pick ToFlix or CineLite as the anime provider first; those two "
+                "routes take an AniList id."
+            )
+            return
+
+        def work() -> object:
+            return streaming.anilist_search(title)
+
+        def done(result: object) -> None:
+            anilist_id = int(result) if isinstance(result, int) else 0
+            if not anilist_id:
+                self._note_error(f"AniList has no match for “{title}”.")
+                return
+            try:
+                url = streaming.anime_url(provider, anilist_id, 1)
+            except (streaming.EmbedUrlError, ValueError) as exc:
+                self._note_error(str(exc))
+                return
+            PlayerDialog(url, title, self).exec()
+
+        from .qt_widgets import run_async
+
+        run_async(work, done, lambda exc: self._note_error(f"AniList lookup failed: {exc}"))
 
     def _play_anime(self, card: Card) -> None:
         provider = self._anime_provider()

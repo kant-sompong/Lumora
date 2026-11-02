@@ -518,6 +518,7 @@ class LibraryDetail(QFrame):
             (("Edit details…", "edit"),),
             (("Verify integrity", "verify"), ("☆ Favorite", "favorite")),
             (("Review && launch…", "launch"),),
+            (("Add magnet…", "magnet"),),
             (("Remove from library", "remove"),),
         ):
             line = QHBoxLayout()
@@ -716,6 +717,7 @@ class LibraryPage(QWidget):
     """Installed games: search, sort, filter, grid/list and detail panel."""
 
     changed = Signal()
+    magnet_requested = Signal(str)
 
     def __init__(self, store: LibraryStore | None, settings=None,
                  client: ArchiveClient | None = None,
@@ -1194,6 +1196,8 @@ class LibraryPage(QWidget):
                 if refreshed is not None:
                     self.detail.show_entry(refreshed, self._pix.get(identifier))
                 self.refresh()
+        elif action == "magnet":
+            self.magnet_requested.emit(identifier)
         elif action == "verify":
             self._verify(entry)
         elif action == "launch":

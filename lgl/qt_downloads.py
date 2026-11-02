@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Callable, Sequence
 
 from PySide6.QtCore import QObject, Qt, QTimer, Signal
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
@@ -23,11 +24,12 @@ from PySide6.QtWidgets import (
     QProgressBar,
     QPushButton,
     QScrollArea,
+    QSystemTrayIcon,
     QVBoxLayout,
     QWidget,
 )
 
-from . import platform_support
+from . import external_dm, platform_support
 from .archive import ArchiveFile, ArchiveItem
 from .downloader import DownloadManager, DownloadStatus, TaskSnapshot
 from .library import game_folder, write_manifest
@@ -87,6 +89,50 @@ def actions_for(snap: TaskSnapshot) -> list[str]:
 
 def active_count(snaps: Sequence[TaskSnapshot]) -> int:
     return sum(1 for s in snaps if not s.status.terminal)
+
+
+def should_notify(previous: object, snap: TaskSnapshot) -> bool:
+    """True when a task just moved from an unfinished state to finished/failed."""
+    if snap.status not in (DownloadStatus.COMPLETED, DownloadStatus.FAILED):
+        return False
+    if not isinstance(previous, DownloadStatus):
+        return False
+    return previous != snap.status and not previous.terminal
+
+
+def unfinished_count(snaps: Sequence[TaskSnapshot]) -> int:
+    """Downloads left over from an earlier session, waiting to be restarted."""
+    return sum(
+        1
+        for snap in snaps
+        if snap.status
+        in (DownloadStatus.PAUSED, DownloadStatus.QUEUED, DownloadStatus.FAILED, DownloadStatus.CANCELLED)
+    )
+
+
+def resume_leftovers(manager: DownloadManager) -> int:
+    """Restart every leftover task that can be restarted; return how many."""
+    resumed = 0
+    for snap in manager.snapshots():
+        try:
+            if snap.status == DownloadStatus.PAUSED:
+                manager.resume(snap.id)
+                resumed += 1
+            elif snap.status in (DownloadStatus.FAILED, DownloadStatus.CANCELLED) and snap.can_retry:
+                manager.retry(snap.id)
+                resumed += 1
+        except (AppError, ValueError, OSError):
+            continue
+    return resumed
+
+
+def send_to_external(name: str, urls: Sequence[object], folder: str = "") -> int:
+    """Hand links to JDownloader or AB Download Manager; return how many were sent."""
+    if name == "jdownloader":
+        return external_dm.send_to_jdownloader(urls, source="Lumora")
+    if name == "ab_download_manager":
+        return external_dm.send_to_ab_download_manager(urls, folder=folder)
+    raise ValueError(f"Unknown download manager: {name}")
 
 
 def downloadable_files(item: ArchiveItem) -> list[ArchiveFile]:
@@ -257,15 +303,20 @@ class DownloadsPage(QWidget):
         title_for: Callable[[str], str],
         torrents: object | None = None,
         cover_for: Callable[[str], str] | None = None,
+        settings: object | None = None,
     ) -> None:
         super().__init__()
         self._manager = manager
         self._download_dir = download_dir
         self._title_for = title_for
         self._torrents = torrents
+        self._settings = settings
         self._rows: dict[str, DownloadRow] = {}
         self._last_active = -1
         self._selected = ""
+        self._status_before: dict[str, DownloadStatus] = {}
+        self._banner_dismissed = False
+        self._tray: QSystemTrayIcon | None = None
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -301,6 +352,28 @@ class DownloadsPage(QWidget):
         line.setObjectName("metabar")
         line.setFixedHeight(1)
         root.addWidget(line)
+
+        self.banner = QFrame()
+        self.banner.setObjectName("dlBanner")
+        banner_row = QHBoxLayout(self.banner)
+        banner_row.setContentsMargins(24, 8, 24, 8)
+        banner_row.setSpacing(8)
+        self.banner_text = label("", "statLine")
+        banner_row.addWidget(self.banner_text)
+        banner_row.addStretch(1)
+        self.banner_resume = QPushButton("Resume all")
+        self.banner_resume.setObjectName("small")
+        self.banner_resume.setCursor(Qt.PointingHandCursor)
+        self.banner_resume.setToolTip("Restart every download left from an earlier session")
+        self.banner_resume.clicked.connect(self._resume_unfinished)
+        banner_row.addWidget(self.banner_resume)
+        self.banner_dismiss = QPushButton("Not now")
+        self.banner_dismiss.setObjectName("quiet")
+        self.banner_dismiss.setCursor(Qt.PointingHandCursor)
+        self.banner_dismiss.clicked.connect(self._dismiss_banner)
+        banner_row.addWidget(self.banner_dismiss)
+        self.banner.hide()
+        root.addWidget(self.banner)
 
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
@@ -405,7 +478,85 @@ class DownloadsPage(QWidget):
         if active != self._last_active:
             self._last_active = active
             self.count_changed.emit(active)
+        self._notice_finished(snaps)
+        self._update_banner(snaps)
         self._refresh_torrents()
+
+    # notices ---------------------------------------------------------------
+    def _notice_finished(self, snaps: Sequence[TaskSnapshot]) -> None:
+        """One desktop notification per task that just finished or failed."""
+        seen = {snap.id for snap in snaps}
+        for snap in snaps:
+            previous = self._status_before.get(snap.id)
+            if should_notify(previous, snap):
+                self._notify_finished(snap)
+            self._status_before[snap.id] = snap.status
+        for task_id in [t for t in self._status_before if t not in seen]:
+            self._status_before.pop(task_id, None)
+
+    def _notifications_on(self) -> bool:
+        settings = self._settings
+        if settings is None:
+            return True
+        try:
+            return bool(settings.get("desktop_notifications", True))
+        except Exception:  # noqa: BLE001 - a settings issue must not stop downloads
+            return True
+
+    def _notify_finished(self, snap: TaskSnapshot) -> None:
+        if not self._notifications_on():
+            return
+        name = Path(snap.filename).name
+        failed = snap.status == DownloadStatus.FAILED
+        title = "Download failed" if failed else "Download finished"
+        message = f"{name}: {snap.error or 'unknown error'}" if failed else name
+        if platform_support.notify(title, message, error=failed):
+            return
+        self._tray_message(title, message)
+
+    def _tray_message(self, title: str, message: str) -> None:
+        """Windows has no notify-send; a tray balloon is the portable fallback."""
+        try:
+            if self._tray is None:
+                if not QSystemTrayIcon.isSystemTrayAvailable():
+                    return
+                self._tray = QSystemTrayIcon(self)
+                window = self.window()
+                pixmap = window.windowIcon().pixmap(32, 32) if window is not None else None
+                if pixmap is not None and not pixmap.isNull():
+                    self._tray.setIcon(QIcon(pixmap))
+            self._tray.show()
+            self._tray.showMessage(
+                title, message, QSystemTrayIcon.Information, 6000
+            )
+        except Exception:  # noqa: BLE001 - a notification is never worth a crash
+            return
+
+    def _update_banner(self, snaps: Sequence[TaskSnapshot]) -> None:
+        count = 0 if self._banner_dismissed else unfinished_count(snaps)
+        self.banner.setVisible(bool(count))
+        if count:
+            self.banner_text.setText(
+                f"{count} unfinished download{'s' if count != 1 else ''} from the last "
+                "session — resume them or remove them."
+            )
+
+    def _resume_unfinished(self) -> None:
+        resumed = resume_leftovers(self._manager)
+        self._banner_dismissed = True
+        self.banner.hide()
+        toast = getattr(self.window(), "toast", None)
+        if isinstance(toast, Toast):
+            toast.show_message(
+                f"Resumed {resumed} download{'s' if resumed != 1 else ''}."
+                if resumed else "Nothing could be resumed.",
+                error=not resumed,
+            )
+        self.refresh()
+
+    def _dismiss_banner(self) -> None:
+        self._banner_dismissed = True
+        self.banner.hide()
 
     def _refresh_torrents(self) -> None:
         if self._torrents is None:
@@ -614,4 +765,8 @@ __all__ = [
     "detail_text",
     "downloadable_files",
     "enqueue_files",
+    "resume_leftovers",
+    "send_to_external",
+    "should_notify",
+    "unfinished_count",
 ]

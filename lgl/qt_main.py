@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
     QApplication,
     QFrame,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QLineEdit,
     QMainWindow,
@@ -32,8 +33,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from . import __version__, platform_support, theme
+from . import __version__, magnet as magnetlib, platform_support, theme
 from .archive import ArchiveClient, build_download_url
+from .catalog_store import CatalogStore
 from .downloader import DownloadManager, TaskSnapshot
 from .library_store import LibraryStore
 from .qt_browse import BrowsePage
@@ -81,6 +83,8 @@ class Window(QMainWindow):
         self.bridge = DownloadBridge()
         self._history: list[str] = []
         self._history_index = -1
+        self._titles: dict[str, str] = {}
+        self.catalog = CatalogStore(platform_support.data_dir() / "catalog.json")
         self.setWindowTitle(APP_TITLE)
         width, height = self._settings.window_size
         self.resize(width, height)
@@ -108,12 +112,17 @@ class Window(QMainWindow):
         column.addWidget(self.stack, 1)
         shell.addWidget(body, 1)
 
-        self.browse = BrowsePage(client, cache_root=platform_support.cache_dir())
+        self.browse = BrowsePage(
+            client, cache_root=platform_support.cache_dir(), catalog=self.catalog
+        )
         self.browse.download_requested.connect(self._download_requested)
+        self.browse.files_download_requested.connect(self._files_download_requested)
+        self.browse.catalog_download_requested.connect(self._catalog_download_requested)
         self.browse.count_changed.connect(self._browse_count_changed)
         self.stack.addWidget(self.browse)
 
         self.library = LibraryPage(store, self._settings, client, self.download_dir)
+        self.library.magnet_requested.connect(self.add_magnet)
         self.stack.addWidget(self.library)
 
         self.downloads: DownloadsPage | None = None
@@ -121,7 +130,7 @@ class Window(QMainWindow):
             self.torrents = self._torrent_manager()
             self.downloads = DownloadsPage(
                 manager, lambda: self.download_dir, self._title_for,
-                torrents=self.torrents,
+                torrents=self.torrents, settings=self._settings,
             )
             self.downloads.count_changed.connect(self._downloads_count)
             self.bridge.changed.connect(self.downloads.schedule_refresh)
@@ -397,6 +406,12 @@ class Window(QMainWindow):
         rescan.triggered.connect(self.library.rescan)
         reload_action = maintenance.addAction("Reload collection")
         reload_action.triggered.connect(lambda: self.browse.load(force=True))
+        catalog_downloads = maintenance.addAction("Download from catalogue…")
+        catalog_downloads.triggered.connect(self.show_catalog_downloads)
+        artwork_action = maintenance.addAction("Sync catalogue artwork")
+        artwork_action.triggered.connect(lambda: self.sync_artwork(False))
+        recheck_action = maintenance.addAction("Re-check games with no artwork match")
+        recheck_action.triggered.connect(lambda: self.sync_artwork(True))
         cache_action = maintenance.addAction("Clear image cache")
         cache_action.triggered.connect(self.clear_image_cache)
         open_data = maintenance.addAction("Open data folder")
@@ -461,6 +476,8 @@ class Window(QMainWindow):
         return self.browse.game(identifier)
 
     def _title_for(self, identifier: str) -> str:
+        if identifier in self._titles:
+            return self._titles[identifier]
         game = self._game(identifier)
         return (game.title if game else "") or identifier
 
@@ -524,6 +541,91 @@ class Window(QMainWindow):
             self.toast.show_message(errors[0] if errors else "Nothing was added.", error=True)
         if self.downloads is not None:
             self.downloads.refresh()
+
+    # catalogue and torrents -----------------------------------------------
+    def _files_download_requested(self, payload: object) -> None:
+        """Queue an explicit file selection chosen in the Browse detail panel."""
+        if self.manager is None:
+            self.toast.show_message("Downloads are not available.", error=True)
+            return
+        item, files = payload  # type: ignore[misc]
+        enqueue_files(
+            self.manager, item, files, self.download_dir,
+            on_done=self._queued,
+            on_error=lambda exc: self.toast.show_message(
+                f"Could not queue: {exc}", error=True
+            ),
+        )
+
+    def show_catalog_downloads(self) -> None:
+        from .qt_catalog import CatalogDownloadDialog
+
+        CatalogDownloadDialog(
+            self, self.catalog, self.manager, getattr(self, "torrents", None),
+            self.download_dir, on_queued=self._catalog_queued,
+        ).exec()
+
+    def _catalog_download_requested(self, identifier: str) -> None:
+        self.show_catalog_downloads()
+
+    def _catalog_queued(self, identifier: str, title: str) -> None:
+        self._titles[identifier] = title
+
+    def add_magnet(self, identifier: str) -> None:
+        """Attach a magnet link to a library game with the torrent queue."""
+        entry = next((e for e in self.library._entries if e.identifier == identifier), None)
+        title = entry.title if entry is not None else identifier
+        text, ok = QInputDialog.getText(
+            self, "Add magnet link",
+            f"Magnet URI for {title or identifier}:",
+        )
+        if not ok or not text.strip():
+            return
+        try:
+            link = magnetlib.parse_magnet(text.strip())
+        except Exception as exc:  # noqa: BLE001 - reported in the toast
+            self.toast.show_message(f"That is not a usable magnet link: {exc}", error=True)
+            return
+        torrents = getattr(self, "torrents", None)
+        if torrents is None:
+            self.toast.show_message("The torrent queue is unavailable.", error=True)
+            return
+        try:
+            torrents.add(link.uri, title=title or link.display_name)
+        except Exception as exc:  # noqa: BLE001
+            self.toast.show_message(f"Could not add the magnet: {exc}", error=True)
+            return
+        self.toast.show_message(f"Added {title or link.display_name or 'the magnet'} to Torrents.")
+        if self.downloads is not None:
+            self.show_view("downloads")
+
+    def sync_artwork(self, force: bool = False) -> None:
+        """Match posters and details for imported catalogue records."""
+        from .qt_artwork import sync_catalog_artwork
+
+        catalog = self.catalog
+        if catalog.count_games() == 0:
+            self.toast.show_message("No catalogue has been imported yet.")
+            return
+        self.toast.show_message("Matching artwork for imported games…", ms=3000)
+
+        def done(summary: object) -> None:
+            data = summary if isinstance(summary, dict) else {}
+            self.toast.show_message(
+                f"Artwork: {data.get('added', 0)} filled, "
+                f"{data.get('unchanged', 0)} unchanged, "
+                f"{data.get('missing', 0)} with no match, "
+                f"{data.get('failed', 0)} failed.",
+                error=bool(data.get('failed')) and not data.get('added'),
+            )
+
+        run_async(
+            lambda: sync_catalog_artwork(catalog, self._settings, force=force),
+            done,
+            lambda exc: self.toast.show_message(
+                f"Artwork sync failed: {exc}", error=True
+            ),
+        )
 
     # lifecycle ------------------------------------------------------------
     def resizeEvent(self, event) -> None:  # noqa: N802

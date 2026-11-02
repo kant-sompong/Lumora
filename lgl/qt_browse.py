@@ -9,17 +9,20 @@ the Library uses.
 from __future__ import annotations
 
 import time
+import urllib.error
+import urllib.request
 from pathlib import Path
 from typing import Callable, Sequence
 
-from PySide6.QtCore import QRectF, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QPainter, QPixmap
+from PySide6.QtCore import QRectF, QSize, Qt, QTimer, Signal
+from PySide6.QtGui import QColor, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import (
+    QApplication,
     QButtonGroup,
+    QDialog,
     QFrame,
     QGridLayout,
     QHBoxLayout,
-    QSizePolicy,
     QLabel,
     QPushButton,
     QScrollArea,
@@ -73,6 +76,7 @@ from .qt_widgets import (
     search_icon,
     space,
 )
+from .qt_downloads import FilePickDialog
 from .settings import ARCHIVE_SORT_KEYS
 from .util import human_size
 
@@ -378,6 +382,95 @@ class BrowseFilters(QFrame):
 
 
 # --------------------------------------------------------------------------
+# screenshots and link checks
+# --------------------------------------------------------------------------
+
+
+def probe_urls(urls: Sequence[object], timeout: float = 8.0) -> list[tuple[str, bool, str]]:
+    """HEAD each http(s) link and report what actually answered.
+
+    A mirror list is only a list until something is requested: this returns
+    ``(url, ok, detail)`` with the status code or the failure, so the UI can say
+    "3 of 4 links answered" instead of implying that every link works.
+    """
+    results: list[tuple[str, bool, str]] = []
+    for url in urls:
+        text = str(url or "").strip()
+        if not text.startswith(("http://", "https://")):
+            continue
+        request = urllib.request.Request(
+            text, method="HEAD", headers={"User-Agent": "Lumora (mirror check)"}
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                results.append((text, True, str(response.status)))
+        except urllib.error.HTTPError as exc:
+            results.append((text, False, f"HTTP {exc.code}"))
+        except (urllib.error.URLError, OSError, ValueError) as exc:
+            results.append((text, False, str(exc) or exc.__class__.__name__))
+    return results
+
+
+class ScreenshotViewer(QDialog):
+    """Full-size screenshot viewer with previous/next navigation."""
+
+    def __init__(
+        self, shots: Sequence[QPixmap], index: int = 0, parent: QWidget | None = None
+    ) -> None:
+        super().__init__(parent)
+        self.setObjectName("sheet")
+        self.setWindowTitle("Screenshots")
+        self.resize(1100, 720)
+        self._shots = [pix for pix in shots if pix is not None and not pix.isNull()]
+        self._index = max(0, min(index, len(self._shots) - 1)) if self._shots else 0
+
+        column = QVBoxLayout(self)
+        column.setContentsMargins(0, 0, 0, 0)
+        column.setSpacing(0)
+        self.view = QLabel()
+        self.view.setAlignment(Qt.AlignCenter)
+        self.view.setMinimumSize(320, 200)
+        column.addWidget(self.view, 1)
+
+        bar = QWidget()
+        row = QHBoxLayout(bar)
+        row.setContentsMargins(12, 8, 12, 8)
+        self.counter = label("", "statLine")
+        row.addWidget(self.counter)
+        row.addStretch(1)
+        for text, delta in (("Previous", -1), ("Next", 1)):
+            btn = QPushButton(text)
+            btn.clicked.connect(lambda _=False, d=delta: self._step(d))
+            row.addWidget(btn)
+        close = QPushButton("Close")
+        close.clicked.connect(self.accept)
+        row.addWidget(close)
+        column.addWidget(bar)
+        self._render()
+
+    def _step(self, delta: int) -> None:
+        if not self._shots:
+            return
+        self._index = (self._index + delta) % len(self._shots)
+        self._render()
+
+    def _render(self) -> None:
+        if not self._shots:
+            self.counter.setText("No screenshots")
+            return
+        pix = self._shots[self._index]
+        target = QSize(max(self.view.width() - 8, 320), max(self.view.height() - 8, 200))
+        self.view.setPixmap(
+            pix.scaled(target, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        )
+        self.counter.setText(f"{self._index + 1} of {len(self._shots)}")
+
+    def resizeEvent(self, event) -> None:  # noqa: N802
+        super().resizeEvent(event)
+        self._render()
+
+
+# --------------------------------------------------------------------------
 # detail panel
 # --------------------------------------------------------------------------
 
@@ -388,6 +481,10 @@ class BrowseDetail(QFrame):
     closed = Signal()
     download_requested = Signal(str)
     open_external = Signal(str)
+    files_requested = Signal(str, object)
+    catalog_requested = Signal(str)
+    external_requested = Signal(str, str)
+    mirror_requested = Signal(str)
 
     def __init__(self) -> None:
         super().__init__()
@@ -395,6 +492,9 @@ class BrowseDetail(QFrame):
         self.setFixedWidth(420)
         self._identifier = ""
         self._item: ArchiveItem | None = None
+        self._is_catalog = False
+        self._site_url = ""
+        self._shots: list[QPixmap] = []
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
@@ -436,6 +536,15 @@ class BrowseDetail(QFrame):
         self.about = label("", "detailNote", wrap=True)
         column.addWidget(self.about)
         column.addSpacing(12)
+        self.shots_head = label("SCREENSHOTS", "kvKey")
+        column.addWidget(self.shots_head)
+        self.shots_host = QWidget()
+        self.shots_row = QHBoxLayout(self.shots_host)
+        self.shots_row.setContentsMargins(0, 0, 0, 0)
+        self.shots_row.setSpacing(6)
+        column.addWidget(self.shots_host)
+        self.shots_head.hide()
+        self.shots_host.hide()
 
         self.files_head = label("FILES", "kvKey")
         column.addWidget(self.files_head)
@@ -448,8 +557,53 @@ class BrowseDetail(QFrame):
         self.download.setObjectName("suggested")
         self.download.setMinimumHeight(38)
         self.download.setCursor(Qt.PointingHandCursor)
-        self.download.clicked.connect(lambda: self.download_requested.emit(self._identifier))
+        self.download.clicked.connect(self._download_clicked)
         column.addWidget(self.download)
+
+        self.files_btn = QPushButton("Download selected…")
+        self.files_btn.setObjectName("quiet")
+        self.files_btn.setMinimumHeight(34)
+        self.files_btn.setCursor(Qt.PointingHandCursor)
+        self.files_btn.setToolTip("Choose which files of this item to download")
+        self.files_btn.clicked.connect(self._pick_files)
+        self.files_btn.hide()
+        column.addWidget(self.files_btn)
+
+        extras = QHBoxLayout()
+        extras.setSpacing(8)
+        self.copy_btn = QPushButton("Copy identifier")
+        self.copy_btn.setObjectName("quiet")
+        self.copy_btn.setCursor(Qt.PointingHandCursor)
+        self.copy_btn.clicked.connect(self._copy_identifier)
+        extras.addWidget(self.copy_btn)
+        self.mirror_btn = QPushButton("Check mirrors")
+        self.mirror_btn.setObjectName("quiet")
+        self.mirror_btn.setCursor(Qt.PointingHandCursor)
+        self.mirror_btn.setToolTip("Send a HEAD request to each download link and report what answered")
+        self.mirror_btn.clicked.connect(lambda: self.mirror_requested.emit(self._identifier))
+        self.mirror_btn.hide()
+        extras.addWidget(self.mirror_btn)
+        column.addLayout(extras)
+
+        managers = QHBoxLayout()
+        managers.setSpacing(8)
+        for name, text in (
+            ("jdownloader", "JDownloader"),
+            ("ab_download_manager", "AB Download Manager"),
+        ):
+            btn = QPushButton(text)
+            btn.setObjectName("quiet")
+            btn.setCursor(Qt.PointingHandCursor)
+            btn.setToolTip(f"Send this item's links to {text} on this computer")
+            btn.clicked.connect(lambda _=False, key=name: self.external_requested.emit(key, self._identifier))
+            btn.hide()
+            managers.addWidget(btn)
+            if name == "jdownloader":
+                self.jd_btn = btn
+            else:
+                self.ab_btn = btn
+        column.addLayout(managers)
+
         self.open_btn = QPushButton("Open on archive.org")
         self.open_btn.setObjectName("quiet")
         self.open_btn.setMinimumHeight(34)
@@ -478,6 +632,17 @@ class BrowseDetail(QFrame):
     def show_game(self, game: GameSummary, pix: QPixmap | None = None) -> None:
         self._identifier = game.identifier
         self._item = None
+        self._is_catalog = bool(getattr(game, "is_catalog", False))
+        self._site_url = str(getattr(game, "source_url", "") or "")
+        self.clear_screenshots()
+        self.files_btn.hide()
+        self.mirror_btn.hide()
+        self.jd_btn.hide()
+        self.ab_btn.hide()
+        self.open_btn.setText("Open source page")
+        self.download.setText(
+            "Download from catalogue…" if self._is_catalog else "Download"
+        )
         title_text = bare_title(game.title) or game.identifier
         self.title.setText(title_text)
         self.cover.set_title(title_text)
@@ -501,6 +666,11 @@ class BrowseDetail(QFrame):
     def show_item(self, item: ArchiveItem) -> None:
         self._item = item
         self.about.setText(item.description or "This item has no description.")
+        self.files_btn.setVisible(bool(item.files))
+        self.mirror_btn.setVisible(True)
+        self.jd_btn.setVisible(True)
+        self.ab_btn.setVisible(True)
+        self.open_btn.setText("Open on archive.org")
         files = item.primary_files
         self._put("files", f"{len(item.files)} files")
         if files:
@@ -512,10 +682,65 @@ class BrowseDetail(QFrame):
         else:
             self.files_note.setText("No downloadable game files were listed.")
 
+    # actions ---------------------------------------------------------------
+    def _download_clicked(self) -> None:
+        if not self._identifier:
+            return
+        if self._is_catalog:
+            self.catalog_requested.emit(self._identifier)
+        else:
+            self.download_requested.emit(self._identifier)
+
+    def _pick_files(self) -> None:
+        if self._item is None:
+            return
+        files = [f for f in self._item.files if f.downloadable]
+        if not files:
+            return
+        dialog = FilePickDialog(self._item.title or self._identifier, files, self)
+        if dialog.exec() == QDialog.Accepted:
+            chosen = dialog.chosen()
+            if chosen:
+                self.files_requested.emit(self._identifier, chosen)
+
+    def _copy_identifier(self) -> None:
+        if not self._identifier:
+            return
+        QApplication.clipboard().setText(self._identifier)
+        self.copy_btn.setText("Copied")
+        QTimer.singleShot(1500, lambda: self.copy_btn.setText("Copy identifier"))
+
+    def clear_screenshots(self) -> None:
+        clear_layout(self.shots_row)
+        self._shots.clear()
+        self.shots_head.hide()
+        self.shots_host.hide()
+
+    def add_screenshot(self, pix: QPixmap | None) -> None:
+        if pix is None or pix.isNull():
+            return
+        self._shots.append(pix)
+        index = len(self._shots) - 1
+        thumb = QToolButton()
+        thumb.setObjectName("shotThumb")
+        thumb.setCursor(Qt.PointingHandCursor)
+        thumb.setToolTip("Open this screenshot")
+        thumb.setIcon(QIcon(pix.scaled(150, 84, Qt.KeepAspectRatio, Qt.SmoothTransformation)))
+        thumb.setIconSize(QSize(150, 84))
+        thumb.setFixedSize(150, 84)
+        thumb.clicked.connect(lambda _=False, i=index: self._open_viewer(i))
+        self.shots_row.addWidget(thumb)
+        self.shots_head.show()
+        self.shots_host.show()
+
+    def _open_viewer(self, index: int) -> None:
+        ScreenshotViewer(self._shots, index, self).exec()
+
     def _open_site(self) -> None:
         if not self._identifier:
             return
-        self.open_external.emit(f"https://archive.org/details/{self._identifier}")
+        url = self._site_url or f"https://archive.org/details/{self._identifier}"
+        self.open_external.emit(url)
 
 
 # --------------------------------------------------------------------------
@@ -527,20 +752,25 @@ class BrowsePage(QWidget):
     """Remote catalog browser."""
 
     download_requested = Signal(str)
+    files_download_requested = Signal(object)
     selection_changed = Signal(bool)
     count_changed = Signal(int)
+    catalog_download_requested = Signal(str)
 
     def __init__(self, client: ArchiveClient | None = None,
                  cache_root: Path | None = None,
-                 formats_for: Callable[[str], Sequence[str]] | None = None) -> None:
+                 formats_for: Callable[[str], Sequence[str]] | None = None,
+                 catalog: object | None = None) -> None:
         super().__init__()
         self.client = client
+        self.catalog = catalog
         self._cache_root = cache_root
         self._formats_for = formats_for or (lambda _identifier: ())
         self._games: list[GameSummary] = []
         self._shown: list[GameSummary] = []
         self._cards: dict[str, QWidget] = {}
         self._pix: dict[str, QPixmap] = {}
+        self._items: dict[str, ArchiveItem] = {}
         self._selected = ""
         self._descending = False
         self._generation = 0
@@ -640,6 +870,10 @@ class BrowsePage(QWidget):
         self.detail.closed.connect(self.clear_selection)
         self.detail.download_requested.connect(self._download)
         self.detail.open_external.connect(self._open_url)
+        self.detail.files_requested.connect(self._download_files)
+        self.detail.catalog_requested.connect(self.catalog_download_requested)
+        self.detail.external_requested.connect(self._send_external)
+        self.detail.mirror_requested.connect(self._check_mirrors)
         root.addWidget(self.detail)
 
     # data ------------------------------------------------------------------
@@ -906,11 +1140,12 @@ class BrowsePage(QWidget):
 
     def _load_item(self, game: GameSummary) -> None:
         if game.is_catalog:
+            self.detail.download.setEnabled(True)
             self.detail.about.setText(
-                "Imported catalog records keep their description in the catalog index. "
-                "This build does not download from imported catalogs yet."
+                "Imported catalogue record. Choose “Download from catalogue…” to "
+                "queue its verified links, or the ☰ menu → “Download from "
+                "catalogue…” for every record."
             )
-            self.detail.download.setEnabled(False)
             return
         if self.client is None:
             return
@@ -920,9 +1155,11 @@ class BrowsePage(QWidget):
         def done(item: object) -> None:
             if identifier != self._selected or not isinstance(item, ArchiveItem):
                 return
+            self._items[identifier] = item
             self.detail.show_item(item)
             if not self.detail.cover.has_art():
                 self._load_poster(item)
+            self._load_screenshots(item)
 
         def failed(exc: object) -> None:
             if identifier == self._selected:
@@ -951,9 +1188,106 @@ class BrowsePage(QWidget):
         self.detail.hide()
         self.selection_changed.emit(False)
 
+    def _load_screenshots(self, item: ArchiveItem) -> None:
+        """Fetch the item's gameplay screenshots for the thumbnail strip."""
+        self.detail.clear_screenshots()
+        files = list(item.screenshot_files)[:6]
+        if not files or self.client is None:
+            return
+        client = self.client
+        identifier = item.identifier
+
+        def done_all(pixmaps: object) -> None:
+            if item.identifier != self._selected:
+                return
+            for pix in pixmaps or ():  # type: ignore[union-attr]
+                self.detail.add_screenshot(pix)
+
+        def fetch(url: str, key: str) -> object:
+            return pixmap_from_bytes(client.fetch_image(url, key))
+
+        def work() -> list[object]:
+            shots: list[object] = []
+            for archive_file in files:
+                try:
+                    pix = fetch(
+                        item.file_url(archive_file),
+                        f"shot-{identifier}-{Path(archive_file.name).name}",
+                    )
+                except (OSError, ValueError):
+                    continue
+                if pix is not None:
+                    shots.append(pix)
+            return shots
+
+        run_async(work, done_all)
+
     # actions ---------------------------------------------------------------
     def _download(self, identifier: str) -> None:
         self.download_requested.emit(identifier)
+
+    def _download_files(self, identifier: str, files: object) -> None:
+        item = self._items.get(identifier)
+        chosen = list(files) if files else []  # type: ignore[arg-type]
+        if item is None or not chosen:
+            return
+        self.files_download_requested.emit((item, chosen))
+
+    def _send_external(self, name: str, identifier: str) -> None:
+        """Hand this item's links to a locally running download manager."""
+        item = self._items.get(identifier)
+        toast = getattr(self.window(), "toast", None)
+        if item is None:
+            if isinstance(toast, Toast):
+                toast.show_message("Load the item details first.", error=True)
+            return
+        urls = [item.file_url(f) for f in item.files if f.downloadable]
+        if not urls:
+            if isinstance(toast, Toast):
+                toast.show_message("This item has no downloadable links.", error=True)
+            return
+        from .qt_downloads import send_to_external
+
+        folder = str(getattr(self.window(), "download_dir", ""))
+
+        def done(count: object) -> None:
+            if isinstance(toast, Toast):
+                toast.show_message(f"Sent {count} link(s) to the download manager.")
+
+        def failed(exc: object) -> None:
+            if isinstance(toast, Toast):
+                toast.show_message(f"Could not send the links: {exc}", error=True)
+
+        run_async(lambda: send_to_external(name, urls, folder), done, failed)
+
+    def _check_mirrors(self, identifier: str) -> None:
+        item = self._items.get(identifier)
+        toast = getattr(self.window(), "toast", None)
+        if item is None:
+            return
+        urls = [item.file_url(f) for f in item.files if f.downloadable][:8]
+        if not urls:
+            if isinstance(toast, Toast):
+                toast.show_message("This item has no links to check.", error=True)
+            return
+
+        def done(result: object) -> None:
+            if not isinstance(toast, Toast):
+                return
+            rows = list(result) if isinstance(result, list) else []
+            ok = sum(1 for _url, good, _detail in rows if good)
+            detail = " · ".join(
+                f"{url.rsplit('/', 1)[-1] or url}: {'answered' if good else why}"
+                for url, good, why in rows[:3]
+            )
+            toast.show_message(
+                f"{ok} of {len(rows)} links answered. {detail}".strip(),
+                error=ok == 0,
+            )
+
+        run_async(lambda: probe_urls(urls), done,
+                  lambda exc: toast.show_message(f"Mirror check failed: {exc}", error=True)
+                  if isinstance(toast, Toast) else None)
 
     def _open_url(self, url: str) -> None:
         platform_support.open_url(url)
@@ -963,4 +1297,12 @@ def thumb_url_from_item(item: ArchiveItem) -> str:
     return "https://archive.org/services/img/" + item.identifier
 
 
-__all__ = ["BrowseCard", "BrowseDetail", "BrowseFilters", "BrowsePage", "BrowseRow"]
+__all__ = [
+    "BrowseCard",
+    "BrowseDetail",
+    "BrowseFilters",
+    "BrowsePage",
+    "BrowseRow",
+    "ScreenshotViewer",
+    "probe_urls",
+]

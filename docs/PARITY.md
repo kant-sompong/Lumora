@@ -3,7 +3,7 @@
 Goal: the Windows Qt app should match the Linux GTK app 1:1. GTK (`lgl/ui.py`,
 `lgl/movies_ui.py`) is the reference; Qt lives in `lgl/qt_*.py`.
 
-**Last verified: 2026-11-02, version 0.3.6**, by reading both frontends and
+**Last verified: 2026-11-02, version 0.4.0**, by reading both frontends and
 running the Qt suite (`python -m pytest tests -q` → 35 passed). GTK was not run
 on a display, so Linux behaviour is read from the code.
 
@@ -78,31 +78,39 @@ lands and bump the date above.
 - [x] **README rewritten** for 0.3.x with screenshots; it no longer mentions
       `build.ps1`, `installer.iss` or tab layouts that do not exist
 
-## 2. Still missing in Qt
+## 2. Shipped in 0.4.0 — the last gaps
 
-### Downloads
-- [ ] **Catalog and Kryoto downloads** — `ImportResult` rows from the catalogue
-      importer are not yet turned into download queue entries
-- [ ] **JDownloader and AB Download Manager hand-off**
-- [ ] **Desktop notifications on finish or failure** — the
-      `desktop_notifications` setting exists and is saved, but nothing emits the
-      notification yet
-- [ ] **Resume-unfinished prompt** and the queue banner GTK shows on startup
+- [x] **Catalogue and Kryoto downloads** — ☰ → Maintenance → “Download from
+      catalogue…” queues a record's magnets in the torrent queue and its http(s)
+      links in the download queue, showing the importer's own link status
+      (`qt_catalog.CatalogDownloadDialog`)
+- [x] **JDownloader and AB Download Manager hand-off** — the Browse detail panel
+      sends an item's links to either local API (`external_dm`) and reports a
+      refusal in the toast
+- [x] **Desktop notifications on finish or failure** — the
+      `desktop_notifications` setting is now wired: `notify-send` on Linux, a
+      tray balloon on Windows, once per task, so a restored queue does not
+      re-announce old results
+- [x] **Resume-unfinished prompt** — a banner counts downloads left from the last
+      session and offers Resume all / Not now
+- [x] **Artwork match dialog and RAWG sync** — Maintenance → “Sync catalogue
+      artwork” fills every record whose poster could never load; “Re-check games
+      with no artwork match” ignores remembered misses; each record also has
+      “Match artwork…” (`qt_artwork`)
+- [x] **Magnet link field** — Library → Add magnet… validates the URI and queues
+      it in the torrent strip
+- [x] **Browse details**: description, screenshots with a lightbox, the file list
+      with “Download selected…”, open source page, mirror check (a HEAD request
+      per link) and copy identifier
+- [x] **AniList lookup** — Media → “Lookup…” resolves a title through AniList for
+      the two AniList-id providers
 
-### Library
-- [ ] **Artwork match dialog** and **RAWG artwork sync** — RAWG is only used for
-      metadata lookup so far
-- [ ] **Magnet link field** on a game without a direct download
+### Still open
 
-### Browse
-- [ ] **Game details page**: description, screenshots with a lightbox, the full
-      file list with "Download selected…", open source page, mirror check, copy
-      (Qt shows a details panel, not the full page)
-- [ ] **Open source page / copy identifier** actions from that page
-
-### Media
-- [ ] AniList-id providers that need a manual id **search** UI; the picker
-      currently derives ids from TMDB/MAL metadata
+- [ ] The JDownloader/AB hand-off is offered from Browse only; the Library
+      detail panel could offer it too
+- [ ] RAWG descriptions, genres and screenshots need a RAWG key. Without one the
+      sync adds posters from the keyless store search and nothing else
 
 ## 3. Linux side
 

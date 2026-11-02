@@ -9,18 +9,24 @@ so an import done here is the same import the Linux build would make.
 
 from __future__ import annotations
 
+import re
+import urllib.parse
+from pathlib import Path
+
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QDialog,
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QListWidget,
+    QListWidgetItem,
     QPushButton,
     QVBoxLayout,
     QWidget,
 )
 
-from .catalog_store import CatalogStore
+from .catalog_store import CatalogGame, CatalogStore
 from .importer import ImportOptions, import_source
 from .qt_widgets import label, run_async
 
@@ -136,4 +142,228 @@ class CatalogDialog(QDialog):
         run_async(work, done, failed)
 
 
-__all__ = ["CatalogDialog", "KRYOTO_URL", "KRYOTO_NOTE", "WEBSITE_NOTE"]
+def catalog_identifier(key: str) -> str:
+    """A download-queue identifier for an imported record.
+
+    Archive identifiers allow dots, dashes and underscores; a catalogue key is
+    ``source:game``, so it is folded into that shape rather than rejected.
+    """
+    folded = re.sub(r"[^A-Za-z0-9._-]+", "-", str(key or "")).strip("-.")
+    return (folded or "catalogue-game")[:120]
+
+
+def mirror_filename(url: str) -> str:
+    """The last path segment of a link, decoded, as a usable file name."""
+    path = urllib.parse.urlsplit(str(url or "")).path
+    name = urllib.parse.unquote(path.rsplit("/", 1)[-1])
+    return name or "download"
+
+
+class CatalogDownloadDialog(QDialog):
+    """Queue the links imported catalogues actually carry.
+
+    Magnets go to the torrent queue, ordinary http(s) links to the download
+    manager.  A link is only a link: the dialog shows the status the importer
+    recorded and never claims a file was verified when it was not.
+    """
+
+    def __init__(
+        self,
+        parent: QWidget | None = None,
+        catalog: CatalogStore | None = None,
+        manager: object | None = None,
+        torrents: object | None = None,
+        download_dir: Path | None = None,
+        on_queued: object | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self.setObjectName("sheet")
+        self.setWindowTitle("Download from catalogue")
+        self.resize(760, 540)
+        self.catalog = catalog or CatalogStore()
+        self.manager = manager
+        self.torrents = torrents
+        self.download_dir = Path(download_dir) if download_dir else Path.home()
+        self._on_queued = on_queued if callable(on_queued) else None
+        self._games: list[CatalogGame] = []
+
+        column = QVBoxLayout(self)
+        column.setContentsMargins(24, 22, 24, 16)
+        column.setSpacing(10)
+        column.addWidget(label("Download from catalogue", "pageTitle"))
+        column.addWidget(
+            label(
+                "Imported records carry magnets, mirrors, or both. Magnets go to "
+                "the torrent queue; http(s) links go to the download queue. A "
+                "record with no link cannot be downloaded, whatever it is called.",
+                "detailNote", wrap=True,
+            )
+        )
+
+        body = QHBoxLayout()
+        body.setSpacing(14)
+        self.list = QListWidget()
+        self.list.currentRowChanged.connect(self._show_details)
+        body.addWidget(self.list, 1)
+        self.detail = label("", "detailNote", wrap=True)
+        self.detail.setMinimumWidth(220)
+        body.addWidget(self.detail, 1)
+        column.addLayout(body, 1)
+
+        self.status = label("", "detailNote", wrap=True)
+        column.addWidget(self.status)
+
+        bottom = QHBoxLayout()
+        bottom.setSpacing(8)
+        self.art_btn = QPushButton("Match artwork…")
+        self.art_btn.setCursor(Qt.PointingHandCursor)
+        self.art_btn.setToolTip("Pick a provider record for this catalogue game")
+        self.art_btn.clicked.connect(self.match_artwork)
+        bottom.addWidget(self.art_btn)
+        bottom.addStretch(1)
+        self.queue_btn = QPushButton("Queue selected")
+        self.queue_btn.setObjectName("suggested")
+        self.queue_btn.setCursor(Qt.PointingHandCursor)
+        self.queue_btn.clicked.connect(self.queue_selected)
+        bottom.addWidget(self.queue_btn)
+        close = QPushButton("Close")
+        close.clicked.connect(self.reject)
+        bottom.addWidget(close)
+        column.addLayout(bottom)
+
+        self._fill()
+
+    # helpers ---------------------------------------------------------------
+    def _fill(self) -> None:
+        self.list.clear()
+        self._games = []
+        for game in self.catalog.iter_games():
+            magnets = self._magnets(game)
+            mirrors = self._mirrors(game)
+            if not magnets and not mirrors:
+                continue
+            self._games.append(game)
+            item = QListWidgetItem(
+                f"{game.title or game.game_id}  ·  {len(magnets)} magnet(s) · "
+                f"{len(mirrors)} link(s)"
+            )
+            item.setToolTip(game.source_url or game.key)
+            self.list.addItem(item)
+        if not self._games:
+            self.status.setText(
+                "No imported record carries a download link yet. Import a "
+                "catalogue that publishes magnets or mirrors first."
+            )
+            self.queue_btn.setEnabled(False)
+            self.art_btn.setEnabled(False)
+        else:
+            self.status.setText(f"{len(self._games)} record(s) with links.")
+            self.list.setCurrentRow(0)
+
+    def _magnets(self, game: CatalogGame) -> list[object]:
+        try:
+            return list(self.catalog.magnets_for(game.key))
+        except Exception:  # noqa: BLE001 - a store issue is shown, not raised
+            return []
+
+    def _mirrors(self, game: CatalogGame) -> list[object]:
+        try:
+            return [
+                record for record in self.catalog.mirrors_for(game.key)
+                if str(getattr(record, "url", "")).startswith(("http://", "https://"))
+            ]
+        except Exception:  # noqa: BLE001
+            return []
+
+    def _selected(self) -> CatalogGame | None:
+        row = self.list.currentRow()
+        if 0 <= row < len(self._games):
+            return self._games[row]
+        return None
+
+    def _show_details(self, _row: int) -> None:
+        game = self._selected()
+        if game is None:
+            return
+        magnets = self._magnets(game)
+        mirrors = self._mirrors(game)
+        lines = [game.title or game.game_id, ""]
+        if game.year:
+            lines.append(f"Year: {game.year}")
+        if magnets:
+            lines.append("Magnets:")
+            for record in magnets[:4]:
+                lines.append(f"  · {getattr(record, 'display_name', '') or 'unnamed'}")
+        if mirrors:
+            lines.append("Links:")
+            for record in mirrors[:6]:
+                status = getattr(record, "status_label", None)
+                label_text = status() if callable(status) else str(
+                    getattr(record, "check_status", "unchecked")
+                )
+                lines.append(f"  · {getattr(record, 'filename', '') or mirror_filename(getattr(record, 'url', ''))}: {label_text}")
+        self.detail.setText("\n".join(lines))
+
+    # actions ---------------------------------------------------------------
+    def queue_selected(self) -> None:
+        game = self._selected()
+        if game is None:
+            return
+        added = 0
+        errors: list[str] = []
+        for record in self._magnets(game):
+            uri = str(getattr(record, "uri", "") or "")
+            if not uri:
+                continue
+            if self.torrents is None:
+                errors.append("the torrent queue is unavailable")
+                continue
+            try:
+                self.torrents.add(uri, title=game.title)  # type: ignore[attr-defined]
+                added += 1
+            except Exception as exc:  # noqa: BLE001 - collected, never fatal
+                errors.append(str(exc))
+        if self.manager is None:
+            errors.append("the download queue is unavailable")
+        else:
+            identifier = catalog_identifier(game.key)
+            for record in self._mirrors(game):
+                url = str(getattr(record, "url", "") or "")
+                name = str(getattr(record, "filename", "") or "") or mirror_filename(url)
+                try:
+                    self.manager.add(  # type: ignore[attr-defined]
+                        identifier=identifier,
+                        filename=name,
+                        url=url,
+                        download_dir=self.download_dir,
+                        total_size=getattr(record, "size", 0) or None,
+                    )
+                    added += 1
+                except Exception as exc:  # noqa: BLE001
+                    errors.append(f"{name}: {exc}")
+        if added and self._on_queued is not None:
+            self._on_queued(catalog_identifier(game.key), game.title or game.game_id)
+        if added:
+            self.status.setText(f"Queued {added} link(s) for {game.title or game.game_id}.")
+        elif errors:
+            self.status.setText(f"Nothing was queued: {errors[0]}")
+
+    def match_artwork(self) -> None:
+        game = self._selected()
+        if game is None:
+            return
+        from .qt_artwork import MatchArtworkDialog
+
+        settings = getattr(self.parent(), "_settings", None)
+        MatchArtworkDialog(self.catalog, game, settings, self).exec()
+
+
+__all__ = [
+    "CatalogDialog",
+    "CatalogDownloadDialog",
+    "KRYOTO_URL",
+    "KRYOTO_NOTE",
+    "WEBSITE_NOTE",
+    "catalog_identifier",
+    "mirror_filename",
+]
