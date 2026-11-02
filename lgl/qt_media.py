@@ -761,8 +761,8 @@ class MediaPage(QWidget):
         column.addLayout(top)
         self.detail_hero = HeroPanel()
         column.addWidget(self.detail_hero)
-        self.detail_hero.play_clicked.connect(self._play_current)
-        self.detail_hero.list_clicked.connect(self._toggle_current_list)
+        self.detail_hero.play_clicked.connect(self._play_detail)
+        self.detail_hero.list_clicked.connect(self._toggle_detail_list)
         self.detail_hero.details.clicked.connect(self._open_tmdb_page)
         self.detail_info = label("", "mediaNote", wrap=True)
         column.addWidget(self.detail_info)
@@ -1027,7 +1027,14 @@ class MediaPage(QWidget):
         return key in self._watchlist()
 
     def _toggle_current_list(self) -> None:
-        card = getattr(self, "_hero_card", None) or self._detail_card
+        """My List button on the home hero: always the hero's own title."""
+        self._toggle_list_for(getattr(self, "_hero_card", None))
+
+    def _toggle_detail_list(self) -> None:
+        """My List button on a details page: the title that page shows."""
+        self._toggle_list_for(getattr(self, "_detail_card", None))
+
+    def _toggle_list_for(self, card: Card | None) -> None:
         if card is None or self.settings is None:
             return
         entries = self._watchlist()
@@ -1181,7 +1188,14 @@ class MediaPage(QWidget):
         run_async(work, done, lambda exc: self._note_error(exc))
 
     def _play_current(self) -> None:
-        card = getattr(self, "_hero_card", None) or self._detail_card
+        """Play button on the home hero: the hero's own title."""
+        self._play_card(getattr(self, "_hero_card", None))
+
+    def _play_detail(self) -> None:
+        """Play button on a details page: the title that page shows."""
+        self._play_card(getattr(self, "_detail_card", None))
+
+    def _play_card(self, card: Card | None) -> None:
         if card is None:
             return
         if card.kind == "anime":
@@ -1349,7 +1363,9 @@ class MediaPage(QWidget):
             self.open_card(card)
 
     def _open_tmdb_page(self) -> None:
-        card = getattr(self, "_hero_card", None) or self._detail_card
+        # Only a details page links here, so the page's own card is the answer;
+        # falling back to the home hero used to open the trending title instead.
+        card = getattr(self, "_detail_card", None)
         if card is not None and card.tmdb_id:
             platform_support.open_url(f"https://www.themoviedb.org/{card.kind}/{card.tmdb_id}")
 
