@@ -138,15 +138,21 @@ def default_download_dir(system: str | None = None, env: Mapping[str, str] | Non
     return home
 
 
-def ensure_app_dirs() -> None:
+def ensure_app_dirs(
+    system: str | None = None, env: Mapping[str, str] | None = None
+) -> None:
     """Create the per-user folders, copying pre-0.6.0 data across once."""
     from . import migration
 
     try:
-        migration.migrate_once()
+        migration.migrate_once(system=system, env=env)
     except Exception:  # noqa: BLE001 - a broken migration must not block startup
         pass
-    for path in (config_dir(), cache_dir(), data_dir()):
+    for path in (
+        config_dir(system, env),
+        cache_dir(system, env),
+        data_dir(system, env),
+    ):
         try:
             path.mkdir(parents=True, exist_ok=True)
         except OSError:

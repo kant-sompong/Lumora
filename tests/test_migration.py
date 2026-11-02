@@ -216,17 +216,20 @@ def test_windows_folders_migrate_from_native_game_library(tmp_path):
 
 
 def test_ensure_app_dirs_migrates_on_first_launch(tmp_path, monkeypatch):
+    # Pass the platform and environment through explicitly: this file also runs
+    # on the Windows CI runner, where a bare call would resolve the host's real
+    # AppData folders instead of the temporary Linux tree set up below.
     env = linux_env(tmp_path)
     write_legacy_linux(tmp_path, env)
     for key, value in env.items():
         monkeypatch.setenv(key, value)
 
-    platform_support.ensure_app_dirs()
+    platform_support.ensure_app_dirs("linux", env)
 
-    new_config = platform_support.config_dir()
+    new_config = platform_support.config_dir("linux", env)
     assert (new_config / "config.json").is_file()
     assert (new_config / "migration.json").is_file()
-    assert platform_support.cache_dir().is_dir()
+    assert platform_support.cache_dir("linux", env).is_dir()
 
 
 # --------------------------------------------------------------------------
