@@ -3,85 +3,141 @@
 Goal: the Windows Qt app should match the Linux GTK app 1:1. GTK (`lgl/ui.py`,
 `lgl/movies_ui.py`) is the reference; Qt lives in `lgl/qt_*.py`.
 
-Written from a code review of both apps on 2026-11-02. GTK could not be run
-while reviewing, so Linux behaviour is read from the code only. Tick items off
-as they land.
+**Last verified: 2026-11-02, version 0.3.6**, by reading both frontends and
+running the Qt suite (`python -m pytest tests -q` → 35 passed). GTK was not run
+on a display, so Linux behaviour is read from the code.
 
-## 1. Fix: already in Qt but broken or wrong
+The first draft of this file described the pre-0.3 Qt app (top tabs named
+"Archive" and "Library", a Downloads drawer, a 1,063-test claim). Almost all of
+that has since shipped; the list below is the current state. Tick an item when it
+lands and bump the date above.
 
-- [ ] **Dead Library controls**: Filters, grid/list toggle, the ⋮ menu items
-      (duplicates, export, import), header ↻ and ☰ menu do nothing
-- [ ] **Dead Library detail buttons**: Open folder, Show files, Verify integrity,
-      Favorite, Review & launch
-- [ ] **Archive builds a widget for every game** (about 9,800) and rebuilds all of
-      them on each keystroke or filter click; GTK loads 400 at a time with
-      "scroll for more"
-- [ ] **Library sort list**: use GTK's `LIBRARY_SORTS` (Title, Recently
-      seen/added/played, Release year, Installed size, Developer, Genre,
-      Platform), add the direction button, remember the choice
-- [ ] **No keyboard shortcuts**: Ctrl+1, Ctrl+2, Ctrl+F, Ctrl+D, Ctrl+, F5, Esc
-- [ ] **Layout**: GTK has a left icon rail (Browse, Library, Downloads, Media;
-      Settings and About at the bottom) and a back button. Qt has top tabs named
-      "Archive" and "Library" and a Downloads drawer
-- [ ] **Theme only applies at startup**: switch system/light/dark live
-- [ ] **README**: it claims Browse/Downloads/Library/Media tabs and Qt WebEngine
-      on Windows, and lists `build.ps1` and `installer.iss`, which do not exist
-- [ ] **Tests**: the README says 1063 tests, but `tests/` only holds the Qt
-      tests. Commit the core test suite (downloader, archive, library, ...)
+## 1. Done — Qt now matches GTK
 
-## 2. Add: in GTK, missing in Qt
+### Shell and navigation
+- [x] **Layout**: left icon rail (Browse, Library, Downloads, Media) with
+      Settings and About pinned at the bottom, plus the back button — matches the
+      GTK rail
+- [x] **Naming**: "Archive" is gone; the page is "Browse" everywhere
+- [x] **Downloads is a destination page**, not a drawer CTA, with the torrent
+      strip at the bottom
+- [x] **Keyboard shortcuts**: `Ctrl+1`…`Ctrl+4`, `Ctrl+F`/`Ctrl+K`, `Ctrl+R`/`F5`,
+      `Ctrl+,` (`qt_main.py`, `_install_shortcuts`)
+- [x] **Live theme switching**: system/light/dark restyles the running window
+      (`Window.apply_theme`), no restart
+- [x] **Header ↻ and ☰** are wired to refresh and the app menu
+- [x] **Media search tab removed** (0.3.6) — typing in the search field still
+      opens results, so the tab only duplicated it
+
+### Browse
+- [x] **Batched rendering**: 400 cards at a time with a
+      "Showing N of M matches — scroll for more" footer instead of building a
+      widget for all ~9,800 games (`qt_browse.py`, `_maybe_more`)
+- [x] **Filters**: genre with full counts, size, released, licence, file format,
+      availability, and **Reset all filters**
+- [x] **Sort**: title, year, size, downloads, creator, genre, either direction
+- [x] **Grid and compact list**, both lazily loading artwork
 
 ### Library
-- [ ] Filters popover: Status, Platform, Genre, Favorites, Show non-game folders,
+- [x] **Every control is live**: filter sheet, grid/list toggle, sort menu with a
+      direction button, duplicates, export, import, refresh
+- [x] **Every detail button is live**: Open folder, Show files, Verify integrity,
+      Favorite, Edit details, Review & launch, Remove from library
+- [x] **Sort list matches `LIBRARY_SORTS`**: Recently seen/added/played, Release
+      year, Installed size, Developer, Genre, Title
+- [x] **Filter sheet**: Status, Platform, Genre, plus Show non-game folders,
       Show missing folders, Group copies, Hide adult titles, Clear filters
-- [ ] Edit details dialog (`MetadataDialog`)
-- [ ] Review & launch, with the "Start with" file picker
-- [ ] Remove from library, magnet link field
-- [ ] Show duplicate files dialog
-- [ ] Export / import library, Forget missing entries
-- [ ] Artwork match dialog, RAWG artwork sync
-
-### Archive (Browse)
-- [ ] Size, File format and Availability filters, and Reset all filters
-- [ ] Full genre list with counts (Qt shows the top 12 only)
-- [ ] Game details page: description, screenshots with lightbox, file list with
-      "Download selected…", open source page, mirror check, copy
-- [ ] "Showing N of M, scroll for more" paging
+- [x] **Edit details** with the metadata fields and their provenance
+- [x] **Review & launch** dialog with the "Start with" file picker, path
+      confinement and a refused elevated launch
+- [x] **Remove from library** (0.3.6): confirmed, index-only, files untouched
+- [x] **Duplicate files** dialog
+- [x] **Export / import library, forget missing entries**
 
 ### Downloads
-- [ ] Catalog and Kryoto downloads (currently a "not ported yet" toast)
-- [ ] Torrent / magnet section using the built-in engine
-- [ ] JDownloader and AB Download Manager hand-off
-- [ ] Desktop notifications on finish or failure
-- [ ] Resume-unfinished prompt and queue banner
-
-### Menus and dialogs
-- [ ] Settings dialog, 5 tabs: General, Locations, Providers (RAWG / TMDB / MAL
-      keys with Save & test), Media, Shortcuts
-- [ ] Website Sources dialog and Kryoto Catalog dialog
-- [ ] Maintenance submenu (sync artwork, re-check games with no match)
-- [ ] Real About dialog, Show Download Queue item
+- [x] **Persistent queue** rows with pause, resume, cancel, retry, remove
+- [x] **Torrent / magnet strip** driven by the built-in engine
 
 ### Media (Movies & TV)
-- [ ] Home (hero, Continue Watching, Trending), Movies, TV Shows, Anime, Search,
-      My List, History
-- [ ] TMDB, MyAnimeList and ani.pm backends, provider and playback settings
-- [ ] Embedded playback (needs QtWebEngine; `Lumora.spec` currently excludes it,
-      so the zip will grow a lot)
+- [x] **All sections**: Home (hero, Continue Watching, Trending), Movies, TV
+      Shows, Anime, My List, History, Search
+- [x] **TMDB, MyAnimeList and ani.pm backends**
+- [x] **Provider picker** in the Media bar, saved per library and switched
+      automatically for anime
+- [x] **Embedded playback** through Qt WebEngine, with fullscreen; CI verifies
+      that `QtWebEngineProcess.exe` and the `.pak` files are actually bundled
+- [x] **Episode selector** (0.3.6): season dropdown plus episode rows with
+      number, title and air date
 
-## 3. Linux side (no bugs found from reading the code)
+### Menus, settings and docs
+- [x] **Settings dialog, 5 tabs**: General, Locations, Providers (RAWG / TMDB /
+      MAL keys), Media, Shortcuts
+- [x] **Website Sources and Kryoto Catalog dialogs**
+- [x] **Maintenance submenu**: rescan library, reload collection, clear image
+      cache, open data folder — plus the download queue and About items
+- [x] **README rewritten** for 0.3.x with screenshots; it no longer mentions
+      `build.ps1`, `installer.iss` or tab layouts that do not exist
 
-- [ ] `ui.py` (about 11,900 lines) and `movies_ui.py` (about 4,000 lines) are
-      hard to maintain and test; consider splitting
+## 2. Still missing in Qt
+
+### Downloads
+- [ ] **Catalog and Kryoto downloads** — `ImportResult` rows from the catalogue
+      importer are not yet turned into download queue entries
+- [ ] **JDownloader and AB Download Manager hand-off**
+- [ ] **Desktop notifications on finish or failure** — the
+      `desktop_notifications` setting exists and is saved, but nothing emits the
+      notification yet
+- [ ] **Resume-unfinished prompt** and the queue banner GTK shows on startup
+
+### Library
+- [ ] **Artwork match dialog** and **RAWG artwork sync** — RAWG is only used for
+      metadata lookup so far
+- [ ] **Magnet link field** on a game without a direct download
+
+### Browse
+- [ ] **Game details page**: description, screenshots with a lightbox, the full
+      file list with "Download selected…", open source page, mirror check, copy
+      (Qt shows a details panel, not the full page)
+- [ ] **Open source page / copy identifier** actions from that page
+
+### Media
+- [ ] AniList-id providers that need a manual id **search** UI; the picker
+      currently derives ids from TMDB/MAL metadata
+
+## 3. Linux side
+
+- [ ] **No bugs found from reading the code**, but GTK has never been reviewed
+      against a running display in this checklist — that review is still owed
+- [ ] `ui.py` (~11,900 lines) and `movies_ui.py` (~4,000 lines) are hard to
+      maintain; splitting them is worthwhile but unrelated to Windows parity
 - [ ] Data folders still use the old names (`linux-game-library` on Linux,
       `NativeGameLibrary` on Windows). Kept on purpose in 0.2.6; migrating to
       "Lumora" needs a copy-on-first-launch step
 
-## Suggested order
+## 4. Tests
 
-1. Section 1: dead controls, paging, sorting, shortcuts
-2. Layout: rail, Browse naming, Downloads as a page
-3. Settings dialog and filters
-4. Details and launch
-5. Catalog and torrents
-6. Media
+- [x] **Qt suite committed**: `tests/test_qt_smoke.py`, `test_qt_archive.py`,
+      `test_qt_downloads.py` — 35 tests, headless, building the real window,
+      Browse filtering, library grid and detail, downloads against a local HTTP
+      server, media cards and the catalogue dialog
+- [ ] **Core suite is still not in `tests/`** — `downloader`, `archive`,
+      `library`, `library_store`, `integrity`, `sources` and `importer` have no
+      committed tests. The README no longer claims a test count because of this
+
+## 5. Next up
+
+1. Catalog/Kryoto rows into the download queue, then notifications on finish
+2. Browse details page with screenshots, lightbox and per-file selection
+3. Artwork match / RAWG sync
+4. Commit the core test suite
+5. Linux review against a running GTK session
+
+## How to re-check
+
+```sh
+python -m pytest tests -q                 # Qt suite, needs QT_QPA_PLATFORM=offscreen on CI
+python -m compileall lgl                  # import-level sanity across both frontends
+```
+
+Screenshots of the current Qt UI live in [`docs/screens`](screens) and are used
+by the README.
