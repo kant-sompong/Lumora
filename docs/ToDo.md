@@ -46,3 +46,64 @@ Windows, which this review did not have.
   smaller modules so they can be tested. Deliberately not started: a move that
   large cannot be checked without a display, and a half-moved GTK app is worse
   than a large one file
+- [ ] **Linux packaging beyond the source tarball** (AppImage or Flatpak), if
+  wanted. The tarball needs GTK 3, PyGObject, WebKit2GTK and GStreamer from the
+  distribution
+
+## 4. Naming and data
+
+- [ ] **Migrate data folders to "Lumora".** They still use the old names:
+  `linux-game-library` on Linux, `NativeGameLibrary` on Windows, and the app ID
+  `io.github.nativegamelibrary.NativeGameLibrary`. Kept on purpose in 0.2.6 so
+  existing libraries keep working; moving needs a copy-on-first-launch step and a
+  rollback path
+- [ ] **Rename the remaining old strings** the migration will touch: user agents
+  (`native-game-library`, `NativeGameLibrary/1.0`), the Linux program name and
+  window class, the `.desktop` and icon file names (about 40 references in
+  `lgl/`, `packaging/` and `.github/`)
+
+## 5. Problems found in the 2026-11-02 recheck
+
+- [x] **This file lost sections.** After a rewrite it stopped partway through
+  section 3 and dropped the naming/data items, the Linux packaging item, the
+  housekeeping items, "Done" and "How to re-check". Restored here (sections 3–7)
+- [ ] **Nothing has been seen on real hardware.** CI proves the app builds and
+  starts; it does not show how it looks or behaves on a Windows desktop, and the
+  GTK app has not been reviewed on a running display. Covered by the unticked
+  items in sections 1 and 3, which are the highest-value work left
+- [ ] **Qt tests cannot run on the review host** (PySide6 cannot be installed
+  there), so only the 101 core tests were re-run locally; the other tests in the
+  149 that CI passes were checked through the CI log only
+
+## 6. Housekeeping
+
+- [ ] **Keep this file honest.** When something ships, tick it and update the
+  date at the top. Check for lost sections before saving over another edit
+
+## 7. Done (so nobody redoes it)
+
+Verified present in the code and in the v0.5.0 release:
+
+- Qt shell: left rail (Browse, Library, Downloads, Media), Settings and About at
+  the bottom, back button, live theme switching, keyboard shortcuts
+- Browse: batched rendering, full filter set, sort, grid and list, game details
+  with screenshots, per-file download, mirror check
+- Library: every control and detail button, filter sheet, sorts matching GTK,
+  Edit details, Review & launch, duplicates, export / import, add magnet,
+  JDownloader / AB hand-off
+- Downloads: persistent queue, torrent strip, catalogue and Kryoto downloads,
+  desktop notifications, resume prompt
+- Media: Home, Movies, TV Shows, Anime, My List, History, Search, TMDB / MAL /
+  ani.pm, episode selector, embedded playback (Qt WebEngine)
+- Settings (5 tabs), RAWG key flow with live test, update check, artwork sync
+- Tests and packaging: core test suite, Qt tests (149 tests pass in CI), portable
+  zip, Inno Setup installer and Linux tarball published on every `v*` tag
+
+## How to re-check
+
+```sh
+python -m pytest tests -q          # set QT_QPA_PLATFORM=offscreen when headless
+python -m compileall lgl           # import-level sanity across both frontends
+```
+
+Screenshots of the current Qt UI are in [`docs/screens`](screens).
