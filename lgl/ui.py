@@ -11804,17 +11804,19 @@ class Application(Gtk.Application):
 
     def do_startup(self) -> None:
         Gtk.Application.do_startup(self)
-        GLib.set_prgname("native-game-library")
+        GLib.set_prgname("lumora")
         if hasattr(Gdk, "set_program_class"):
-            Gdk.set_program_class("NativeGameLibrary")
+            Gdk.set_program_class("Lumora")
         GLib.set_application_name(APP_NAME)
         Gtk.Window.set_default_icon_name("applications-games")
         load_css()
 
+        # Copy pre-0.6.0 folders across before anything reads or writes
+        # the config, so a first-launch save cannot overwrite it.
+        platform_support.ensure_app_dirs()
         self.settings = Settings()
         self.client = ArchiveClient()
         self.download_dir = self._initial_download_dir()
-        platform_support.ensure_app_dirs()
         self.library_store = LibraryStore(
             path=platform_support.data_dir() / "library.json",
             download_root=self.download_dir,

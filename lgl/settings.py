@@ -1,7 +1,7 @@
 """Cross-platform user configuration.
 
-Linux: ``$XDG_CONFIG_HOME/linux-game-library/config.json``
-Windows: ``%APPDATA%\\NativeGameLibrary\\config.json``
+Linux: ``$XDG_CONFIG_HOME/lumora/config.json``
+Windows: ``%APPDATA%\\Lumora\\config.json``
 
 The file is deliberately small and human-readable. Only preferences are stored
 here; download queue state lives in the per-user data directory.
@@ -18,7 +18,7 @@ from typing import Any, Protocol
 from . import platform_support
 from .util import atomic_write_json, read_json
 
-APP_DIR = "linux-game-library"
+APP_DIR = "lumora"
 #: 4 added the provider API-key map.  Older documents load unchanged.
 CONFIG_VERSION = 4
 DEFAULT_WINDOW_SIZE = (1100, 720)
@@ -46,7 +46,10 @@ MAX_API_KEY = 256
 #: Providers whose credentials the settings store is allowed to hold.
 API_KEY_PROVIDERS = ("rawg", "tmdb", "mal")
 #: Service name used when the OS credential store is available.
-KEYRING_SERVICE = "linux-game-library"
+KEYRING_SERVICE = "Lumora"
+#: Pre-0.6.0 service names: keys are copied from these on first read so a
+#: renamed application does not ask the user to type their keys again.
+LEGACY_KEYRING_SERVICES = ("linux-game-library", "NativeGameLibrary")
 
 
 class KeyringLike(Protocol):
@@ -158,10 +161,38 @@ class Settings:
                 stored = None
             if stored:
                 return _clean_api_key(stored)
+            stored = self._key_from_legacy_service(provider)
+            if stored:
+                return _clean_api_key(stored)
         raw = self._data.get("api_keys")
         if not isinstance(raw, dict):
             return ""
         return _clean_api_key(raw.get(provider, ""))
+
+    def _key_from_legacy_service(self, provider: str) -> str:
+        """Copy a key saved under a pre-0.6.0 service name, if there is one.
+
+        The old entry is deliberately left in place: a user who rolls back to
+        the previous build still finds their key there.
+        """
+        if self._keyring is None:
+            return ""
+        for service in LEGACY_KEYRING_SERVICES:
+            try:
+                stored = self._keyring.get_password(service, provider)
+            except Exception:
+                continue
+            if not stored:
+                continue
+            cleaned = _clean_api_key(stored)
+            if not cleaned:
+                continue
+            try:
+                self._keyring.set_password(KEYRING_SERVICE, provider, cleaned)
+            except Exception:
+                pass
+            return cleaned
+        return ""
 
     def has_api_key(self, provider: str) -> bool:
         return bool(self.api_key(provider))
@@ -211,11 +242,12 @@ class Settings:
     def _drop_keyring_entry(self, provider: str) -> None:
         if self._keyring is None:
             return
-        try:
-            self._keyring.delete_password(KEYRING_SERVICE, provider)
-        except Exception:
-            # A missing entry is the state we want to reach, not a failure.
-            pass
+        for service in (KEYRING_SERVICE, *LEGACY_KEYRING_SERVICES):
+            try:
+                self._keyring.delete_password(service, provider)
+            except Exception:
+                # A missing entry is the state we want to reach, not a failure.
+                pass
 
     def clear_api_key(self, provider: str) -> None:
         self.set_api_key(provider, "")

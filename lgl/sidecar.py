@@ -39,7 +39,7 @@ from . import __version__
 from . import magnet as magnetlib
 from .util import AppError
 
-USER_AGENT = f"linux-game-library/{__version__} (personal desktop client)"
+USER_AGENT = f"Lumora/{__version__} (personal desktop client)"
 #: A sidecar is a small document; anything larger is not one.
 MAX_SIDECAR_BYTES = 512 * 1024
 DEFAULT_TIMEOUT = 15.0

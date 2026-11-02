@@ -37,15 +37,18 @@ core with the Linux GTK build, so the two look and behave the same:
 
 | Data | Path |
 |------|------|
-| Settings | `%APPDATA%\NativeGameLibrary\config.json` |
-| Library index | `%LOCALAPPDATA%\NativeGameLibrary\library.json` |
-| Download queue | `%LOCALAPPDATA%\NativeGameLibrary\downloads.json` |
-| Cache | `%LOCALAPPDATA%\NativeGameLibrary\Cache\` |
+| Settings | `%APPDATA%\Lumora\config.json` |
+| Library index | `%LOCALAPPDATA%\Lumora\library.json` |
+| Download queue | `%LOCALAPPDATA%\Lumora\downloads.json` |
+| Cache | `%LOCALAPPDATA%\Lumora\Cache\` |
 | Downloads | Your chosen folder (Settings → Download folder) |
 
-The application was renamed to Lumora in 0.2.6 but keeps using the
-`NativeGameLibrary` folders, so settings, libraries and queues from older
-builds carry over unchanged.
+Until 0.6.0 these folders were called `NativeGameLibrary`. The first launch
+after the upgrade copies the settings, library, queue and catalogue documents
+into `Lumora` and leaves the old folders untouched, so the previous build
+still works and rolling back is simply deleting the new folders. API keys are
+carried over from the old credential-manager service name too, and the old
+entry is kept for the same reason.
 
 ## API keys (optional)
 

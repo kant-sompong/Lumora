@@ -38,7 +38,7 @@ from .util import (
 
 COLLECTION = "native-linux-games-collection"
 BASE_URL = "https://archive.org"
-USER_AGENT = f"linux-game-library/{__version__} (personal desktop client)"
+USER_AGENT = f"Lumora/{__version__} (personal desktop client)"
 COLLECTION_TTL = 6 * 3600
 ITEM_TTL = 24 * 3600
 

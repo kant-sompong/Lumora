@@ -326,7 +326,7 @@ def _http_announce(url: str, query: str, timeout: float = 12.0) -> list[tuple[st
     separator = "&" if "?" in url else "?"
     request = urllib.request.Request(
         url + separator + query,
-        headers={"User-Agent": "NativeGameLibrary/1.0", "Accept": "*/*"},
+        headers={"User-Agent": "Lumora/1.0", "Accept": "*/*"},
     )
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
@@ -969,7 +969,7 @@ class _Peer:
             bencodelib.encode(
                 {
                     b"m": {b"ut_metadata": _UT_METADATA, b"ut_pex": _UT_PEX},
-                    b"v": b"NativeGameLibrary/1.0",
+                    b"v": b"Lumora/1.0",
                     b"p": self.task.port,
                 }
             ),

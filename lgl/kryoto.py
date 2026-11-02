@@ -56,7 +56,7 @@ KRYOTO_IMAGE_HOSTS = (
     "cdn.cloudflare.steamstatic.com",
     "cdn.akamai.steamstatic.com",
 )
-USER_AGENT = f"linux-game-library/{__version__} (personal desktop client)"
+USER_AGENT = f"Lumora/{__version__} (personal desktop client)"
 DEFAULT_TIMEOUT = 30.0
 DEFAULT_RETRIES = 2
 DEFAULT_PAGE_LIMIT = 20

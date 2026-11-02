@@ -21,8 +21,12 @@ IS_WINDOWS = sys.platform == "win32"
 IS_MACOS = sys.platform == "darwin"
 IS_LINUX = not IS_WINDOWS and not IS_MACOS
 
-APP_DIR_WINDOWS = "NativeGameLibrary"
-APP_DIR_XDG = "linux-game-library"
+#: Current folder names.  0.6.0 replaced the pre-rename names below.
+APP_DIR_WINDOWS = "Lumora"
+APP_DIR_XDG = "lumora"
+#: Read-only names used before 0.6.0; see :mod:`lgl.migration`.
+LEGACY_APP_DIR_WINDOWS = "NativeGameLibrary"
+LEGACY_APP_DIR_XDG = "linux-game-library"
 
 
 def _system(system: str | None) -> str:
@@ -38,53 +42,88 @@ def _home(env: Mapping[str, str]) -> Path:
     return Path(value).expanduser() if value else Path.home()
 
 
+def _app_dir(
+    kind: str,
+    windows_name: str,
+    xdg_name: str,
+    system: str | None,
+    env: Mapping[str, str] | None,
+) -> Path:
+    """Resolve one of the three per-user directories for any platform."""
+    system = _system(system)
+    env = _env(env)
+    if system.startswith("win"):
+        if kind == "config":
+            base = env.get("APPDATA")
+            root = Path(base) if base else _home(env) / "AppData" / "Roaming"
+            return root / windows_name
+        base = env.get("LOCALAPPDATA") or env.get("APPDATA")
+        root = Path(base) if base else _home(env) / "AppData" / "Local"
+        if kind == "data":
+            return root / windows_name
+        return root / windows_name / "Cache"
+    if system == "darwin":
+        if kind == "cache":
+            return _home(env) / "Library" / "Caches" / windows_name
+        return _home(env) / "Library" / "Application Support" / windows_name
+    if kind == "config":
+        base = env.get("XDG_CONFIG_HOME")
+        root = Path(base) if base else _home(env) / ".config"
+    elif kind == "cache":
+        base = env.get("XDG_CACHE_HOME")
+        root = Path(base) if base else _home(env) / ".cache"
+    else:
+        base = env.get("XDG_DATA_HOME")
+        root = Path(base) if base else _home(env) / ".local" / "share"
+    return root / xdg_name
+
+
 def config_dir(system: str | None = None, env: Mapping[str, str] | None = None) -> Path:
     """Per-user configuration directory.
 
-    Linux: ``$XDG_CONFIG_HOME/linux-game-library`` (default ``~/.config/...``)
-    Windows: ``%APPDATA%\\NativeGameLibrary``
-    macOS: ``~/Library/Application Support/NativeGameLibrary``
+    Linux: ``$XDG_CONFIG_HOME/lumora`` (default ``~/.config/lumora``)
+    Windows: ``%APPDATA%\\Lumora``
+    macOS: ``~/Library/Application Support/Lumora``
     """
-    system = _system(system)
-    env = _env(env)
-    if system.startswith("win"):
-        base = env.get("APPDATA")
-        root = Path(base) if base else _home(env) / "AppData" / "Roaming"
-        return root / APP_DIR_WINDOWS
-    if system == "darwin":
-        return _home(env) / "Library" / "Application Support" / APP_DIR_WINDOWS
-    base = env.get("XDG_CONFIG_HOME")
-    root = Path(base) if base else _home(env) / ".config"
-    return root / APP_DIR_XDG
+    return _app_dir("config", APP_DIR_WINDOWS, APP_DIR_XDG, system, env)
 
 
 def cache_dir(system: str | None = None, env: Mapping[str, str] | None = None) -> Path:
-    system = _system(system)
-    env = _env(env)
-    if system.startswith("win"):
-        base = env.get("LOCALAPPDATA") or env.get("APPDATA")
-        root = Path(base) if base else _home(env) / "AppData" / "Local"
-        return root / APP_DIR_WINDOWS / "Cache"
-    if system == "darwin":
-        return _home(env) / "Library" / "Caches" / APP_DIR_WINDOWS
-    base = env.get("XDG_CACHE_HOME")
-    root = Path(base) if base else _home(env) / ".cache"
-    return root / APP_DIR_XDG
+    return _app_dir("cache", APP_DIR_WINDOWS, APP_DIR_XDG, system, env)
 
 
 def data_dir(system: str | None = None, env: Mapping[str, str] | None = None) -> Path:
     """Per-user application data (queue state, favorites, exports)."""
-    system = _system(system)
-    env = _env(env)
-    if system.startswith("win"):
-        base = env.get("LOCALAPPDATA") or env.get("APPDATA")
-        root = Path(base) if base else _home(env) / "AppData" / "Local"
-        return root / APP_DIR_WINDOWS
-    if system == "darwin":
-        return _home(env) / "Library" / "Application Support" / APP_DIR_WINDOWS
-    base = env.get("XDG_DATA_HOME")
-    root = Path(base) if base else _home(env) / ".local" / "share"
-    return root / APP_DIR_XDG
+    return _app_dir("data", APP_DIR_WINDOWS, APP_DIR_XDG, system, env)
+
+
+# -- pre-0.6.0 locations, read only ---------------------------------------
+
+def legacy_config_dir(
+    system: str | None = None, env: Mapping[str, str] | None = None
+) -> Path:
+    """Where 0.5.0 and earlier kept ``config.json``."""
+    return _app_dir(
+        "config", LEGACY_APP_DIR_WINDOWS, LEGACY_APP_DIR_XDG, system, env
+    )
+
+
+def legacy_cache_dir(
+    system: str | None = None, env: Mapping[str, str] | None = None
+) -> Path:
+    """Where 0.5.0 and earlier kept cached artwork."""
+    return _app_dir(
+        "cache", LEGACY_APP_DIR_WINDOWS, LEGACY_APP_DIR_XDG, system, env
+    )
+
+
+def legacy_data_dir(
+    system: str | None = None, env: Mapping[str, str] | None = None
+) -> Path:
+    """Where 0.5.0 and earlier kept ``library.json`` and the queues."""
+    return _app_dir(
+        "data", LEGACY_APP_DIR_WINDOWS, LEGACY_APP_DIR_XDG, system, env
+    )
 
 
 def default_download_dir(system: str | None = None, env: Mapping[str, str] | None = None) -> Path:
@@ -100,6 +139,13 @@ def default_download_dir(system: str | None = None, env: Mapping[str, str] | Non
 
 
 def ensure_app_dirs() -> None:
+    """Create the per-user folders, copying pre-0.6.0 data across once."""
+    from . import migration
+
+    try:
+        migration.migrate_once()
+    except Exception:  # noqa: BLE001 - a broken migration must not block startup
+        pass
     for path in (config_dir(), cache_dir(), data_dir()):
         try:
             path.mkdir(parents=True, exist_ok=True)

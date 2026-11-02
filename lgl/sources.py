@@ -42,7 +42,7 @@ from . import metadata as meta
 from .filetypes import is_auxiliary
 from .util import AppError, human_size, strip_html, validate_identifier
 
-USER_AGENT = f"linux-game-library/{__version__} (personal desktop client)"
+USER_AGENT = f"Lumora/{__version__} (personal desktop client)"
 ARCHIVE_HOST = "archive.org"
 ARCHIVE_BASE = "https://archive.org"
 DEFAULT_COLLECTION = "native-linux-games-collection"

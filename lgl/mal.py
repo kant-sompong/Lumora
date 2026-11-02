@@ -30,7 +30,7 @@ API_BASE = "https://api.myanimelist.net/v2"
 #: Image hosts MAL serves artwork from.
 IMAGE_HOSTS = ("cdn.myanimelist.net", "myanimelist.net")
 CLIENT_ID_HEADER = "X-MAL-CLIENT-ID"
-USER_AGENT = "native-game-library (personal desktop client)"
+USER_AGENT = "Lumora (personal desktop client)"
 DEFAULT_TIMEOUT = 20.0
 MAX_BODY_BYTES = 4 * 1024 * 1024
 MAX_CLIENT_ID_LENGTH = 256

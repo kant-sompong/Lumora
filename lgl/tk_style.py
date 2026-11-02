@@ -269,7 +269,7 @@ def enable_native_dpi_awareness() -> None:
         import ctypes
 
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
-            "NativeGameLibrary"
+            "Lumora"
         )
     except Exception:
         pass

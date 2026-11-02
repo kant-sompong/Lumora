@@ -58,7 +58,7 @@ MAX_RETRIES = 2
 #: How many times the user may put a failed/cancelled task back in the queue.
 #: Automatic backoff inside one attempt is separate (see ``MAX_RETRIES``).
 DEFAULT_RETRY_LIMIT = 3
-USER_AGENT = f"linux-game-library/{__version__} (personal desktop client)"
+USER_AGENT = f"Lumora/{__version__} (personal desktop client)"
 DISK_RESERVE_BYTES = 64 * 1024 * 1024
 STATE_SAVE_INTERVAL = 2.0
 QUEUE_VERSION = 1

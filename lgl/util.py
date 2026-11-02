@@ -286,7 +286,7 @@ def check_download_dir(path: Path | str) -> Path:
 
 def cache_dir() -> Path:
     base = os.environ.get("XDG_CACHE_HOME") or str(Path.home() / ".cache")
-    p = Path(base) / "linux-game-library"
+    p = Path(base) / "lumora"
     p.mkdir(parents=True, exist_ok=True)
     return p
 

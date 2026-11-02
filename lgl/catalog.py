@@ -215,7 +215,7 @@ class SourcePolicy:
     name: str
     hosts: frozenset[str]
     permitted_reason: str
-    user_agent: str = f"linux-game-library/{__version__} (personal desktop client)"
+    user_agent: str = f"Lumora/{__version__} (personal desktop client)"
     timeout: float = 20.0
     max_bytes: int = 8 * 1024 * 1024
     max_redirects: int = 4

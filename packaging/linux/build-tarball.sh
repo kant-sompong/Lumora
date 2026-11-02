@@ -31,7 +31,7 @@ cp run.sh README.md .env.example "$STAGE/"
 mkdir -p "$STAGE/packaging/linux/icons"
 cp packaging/install-desktop.sh "$STAGE/packaging/"
 cp packaging/linux/build-tarball.sh "$STAGE/packaging/linux/"
-cp packaging/linux/io.github.nativegamelibrary.NativeGameLibrary.svg "$STAGE/packaging/linux/"
+cp packaging/linux/io.github.lumora.Lumora.svg "$STAGE/packaging/linux/"
 cp packaging/linux/icons/*.png "$STAGE/packaging/linux/icons/"
 
 find "$STAGE" -name '__pycache__' -type d -prune -exec rm -rf {} +

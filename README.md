@@ -262,14 +262,18 @@ Without a TMDB key the Media tab shows a short setup card instead of empty rows.
 
 | Data | Windows | Linux |
 | --- | --- | --- |
-| Settings | `%APPDATA%\NativeGameLibrary\config.json` | `$XDG_CONFIG_HOME/linux-game-library/config.json` |
-| Library index | `%LOCALAPPDATA%\NativeGameLibrary\library.json` | `$XDG_DATA_HOME/linux-game-library/library.json` |
-| Download queue | `%LOCALAPPDATA%\NativeGameLibrary\downloads.json` | `$XDG_DATA_HOME/linux-game-library/downloads.json` |
-| Cache | `%LOCALAPPDATA%\NativeGameLibrary\Cache\` | `$XDG_CACHE_HOME/linux-game-library/` |
+| Settings | `%APPDATA%\Lumora\config.json` | `$XDG_CONFIG_HOME/lumora/config.json` |
+| Library index | `%LOCALAPPDATA%\Lumora\library.json` | `$XDG_DATA_HOME/lumora/library.json` |
+| Download queue | `%LOCALAPPDATA%\Lumora\downloads.json` | `$XDG_DATA_HOME/lumora/downloads.json` |
+| Cache | `%LOCALAPPDATA%\Lumora\Cache\` | `$XDG_CACHE_HOME/lumora/` |
 | Downloads | Your chosen folder | Your chosen folder |
 
-The `NativeGameLibrary` folder names are kept on purpose: the app was renamed to
-Lumora in 0.2.6 and existing settings, libraries and queues carry over unchanged.
+Until 0.6.0 these folders were called `NativeGameLibrary` (Windows) and
+`linux-game-library` (Linux). The first launch after the upgrade copies the
+settings, library, queue and catalogue documents into the new folders and
+leaves the old ones untouched, so an older build still works and rolling back
+is simply deleting the new folders. The image cache is not copied: it is
+regenerable artwork and is rebuilt on demand.
 
 ---
 
@@ -287,7 +291,7 @@ python -m PyInstaller --noconfirm --clean packaging\windows\Lumora.spec
 Compress-Archive -Path dist\Lumora -DestinationPath dist\Lumora-Windows-x64.zip
 
 # Optional: the installer (requires Inno Setup 6)
-"C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DMyAppVersion=0.5.0 `
+"C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DMyAppVersion=0.6.0 `
   packaging\windows\Lumora.iss
 # → dist/Lumora-Setup-x64.exe
 ```
@@ -328,7 +332,7 @@ The core has its own tests, which need no display: the download queue (pause,
 cancel, retry, duplicate and path rules, queue persistence), archive URL and
 poster rules, folder scanning and the library index, checksum verification,
 source configuration, a full import run over a fake source, and the update
-check's version comparison. 149 tests in total.
+check's version comparison. 164 tests in total.
 
 ---
 

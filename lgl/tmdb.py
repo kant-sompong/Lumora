@@ -28,7 +28,7 @@ IMAGE_BASE = "https://image.tmdb.org/t/p"
 #: Only these hosts are ever contacted for metadata and images.
 TMDB_HOSTS = ("api.themoviedb.org",)
 IMAGE_HOSTS = ("image.tmdb.org",)
-USER_AGENT = "native-game-library (personal desktop client)"
+USER_AGENT = "Lumora (personal desktop client)"
 DEFAULT_TIMEOUT = 20.0
 MAX_BODY_BYTES = 4 * 1024 * 1024
 MAX_KEY_LENGTH = 256

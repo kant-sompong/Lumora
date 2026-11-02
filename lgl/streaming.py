@@ -374,7 +374,7 @@ def anilist_search(title: str, *, timeout: float = 15.0) -> int | None:
         headers={
             "Content-Type": "application/json",
             "Accept": "application/json",
-            "User-Agent": "native-game-library (personal desktop client)",
+            "User-Agent": "Lumora (personal desktop client)",
         },
         method="POST",
     )

@@ -70,7 +70,7 @@ MANAGERS = {
     },
 }
 
-_USER_AGENT = "NativeGameLibrary (external download manager hand-off)"
+_USER_AGENT = "Lumora (external download manager hand-off)"
 
 
 class ExternalDMError(RuntimeError):

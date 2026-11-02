@@ -7,25 +7,29 @@ ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 DATA_DIR="${XDG_DATA_HOME:-$HOME/.local/share}"
 APPS_DIR="$DATA_DIR/applications"
 ICON_DIR="$DATA_DIR/icons/hicolor"
-ENTRY="$APPS_DIR/io.github.nativegamelibrary.NativeGameLibrary.desktop"
+ENTRY="$APPS_DIR/io.github.lumora.Lumora.desktop"
 
 mkdir -p "$APPS_DIR"
 chmod +x "$ROOT/run.sh"
 
+# Drop the launcher entry installed by 0.5.x and earlier.  It pointed at this
+# same run.sh, so removing it cannot orphan an installed copy.
+rm -f "$APPS_DIR/io.github.nativegamelibrary.NativeGameLibrary.desktop"
+
 # Install the PNG icons into the per-user hicolor theme so the launcher is not
 # stuck with a generic icon. Missing icons are skipped, never fatal.
 for size in 48 64 128 256; do
-    source_png="$ROOT/packaging/linux/icons/native-game-library-$size.png"
+    source_png="$ROOT/packaging/linux/icons/lumora-$size.png"
     if [ -f "$source_png" ]; then
         target_dir="$ICON_DIR/${size}x${size}/apps"
         mkdir -p "$target_dir"
-        cp "$source_png" "$target_dir/io.github.nativegamelibrary.NativeGameLibrary.png"
+        cp "$source_png" "$target_dir/io.github.lumora.Lumora.png"
     fi
 done
-if [ -f "$ROOT/packaging/linux/io.github.nativegamelibrary.NativeGameLibrary.svg" ]; then
+if [ -f "$ROOT/packaging/linux/io.github.lumora.Lumora.svg" ]; then
     mkdir -p "$ICON_DIR/scalable/apps"
-    cp "$ROOT/packaging/linux/io.github.nativegamelibrary.NativeGameLibrary.svg" \
-        "$ICON_DIR/scalable/apps/io.github.nativegamelibrary.NativeGameLibrary.svg"
+    cp "$ROOT/packaging/linux/io.github.lumora.Lumora.svg" \
+        "$ICON_DIR/scalable/apps/io.github.lumora.Lumora.svg"
 fi
 
 # Desktop Entry Exec quoting: wrap the path in double quotes so spaces work.
@@ -46,7 +50,7 @@ Terminal=false
 Categories=Game;
 Keywords=games;archive;internet archive;linux;download;
 StartupNotify=true
-StartupWMClass=native-game-library
+StartupWMClass=lumora
 EOF
 
 chmod 0644 "$ENTRY"

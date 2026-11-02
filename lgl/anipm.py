@@ -34,7 +34,7 @@ from typing import Any, Callable, Mapping, Sequence
 from . import streaming
 
 API_BASE = "https://ani.pm/api/partner/v1"
-USER_AGENT = "native-game-library (personal desktop client)"
+USER_AGENT = "Lumora (personal desktop client)"
 DEFAULT_TIMEOUT = 20.0
 MAX_BODY_BYTES = 4 * 1024 * 1024
 MAX_QUERY_LENGTH = 200
