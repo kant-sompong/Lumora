@@ -14,8 +14,9 @@ to that ID.
 
 ---# 1. Reports
 ## 1.1 Fixes for the 0.6.1 review — 2026-11-03
-**Covers:** `main` after the review in 1.2; released in `v0.6.2`. Linux and
-Windows.
+**Covers:** `main` after the review in 1.2; the launcher and migration fixes
+shipped in `v0.6.2`, the media-search and library-layout work in `v0.6.3`.
+Linux and Windows.
 ### What changed
 - **B1 — a partial migration is retried.** `migrate_once` now records
   `status: "partial"` when any file failed and resumes on the next launch
@@ -67,6 +68,25 @@ Windows.
 - **Tidy:** `CatalogGame` is imported under `TYPE_CHECKING` in `artwork.py`;
   the duplicate `pixmap_from_bytes` import and FreeToGame's dead
   `canonical_url` attribute are gone.
+### Windows media and library changes (v0.6.3)
+- **The media lookup is the search bar.** The separate "Lookup…" button and its
+  title dialog are gone: one search resolves TMDB, MyAnimeList and AniList in
+  the same pass and offers the AniList match as a single "Play … on
+  <provider>" button, which is how the GTK build behaves with one field.
+- **The library grid follows its own width.** Columns were only recomputed on a
+  *page* resize, so opening the detail panel — a *viewport* resize — left the
+  grid with too many columns and the last card was clipped behind the panel.
+  It now re-flows on the viewport's own resize, uses 12/14 px gutters, and the
+  detail actions follow the details instead of being pushed to the bottom. The
+  GTK library flow gets the same tighter spacing.
+- **Catalogue imports report progress.** The Website Sources and Kryoto dialogs
+  show the importer's page and record counters plus a progress bar, instead of
+  one line that never changed during a paced multi-page walk. Verified against
+  live kryo.to: two pages, 50 records, counters advancing.
+- Checked offscreen at 1180×900: the grid re-flows, no column is clipped, and
+  the actions sit under the START WITH block. The renders had no fonts on this
+  host, so they prove geometry, not typography.
+
 ### How it was checked
 - `python -m compileall -q lgl packaging tests`: clean.
 - `QT_QPA_PLATFORM=offscreen python -m pytest tests -q` excluding the four Qt
@@ -235,7 +255,7 @@ commits ahead of 0.5.0 `main`. It is merged; `main` is 0.6.1.
 
 # 2. What to do
 
-**Last checked: 2026-11-03, version 0.6.2** (reports 1.1 and 1.2). Desktop checks still
+**Last checked: 2026-11-03, version 0.6.3** (reports 1.1 and 1.2). Desktop checks still
 need a machine with a display and Windows.
 
 ## 2.1 Fix the bugs from report 1.2
