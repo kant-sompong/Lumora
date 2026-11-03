@@ -12,6 +12,7 @@ from __future__ import annotations
 import re
 import threading
 import urllib.parse
+from collections.abc import Callable
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer
@@ -28,6 +29,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from . import platform_support
 from .catalog_store import CatalogGame, CatalogStore
 from .importer import ImportOptions, import_source
 from .qt_widgets import label, run_async
@@ -61,12 +63,22 @@ class CatalogDialog(QDialog):
         url: str = KRYOTO_URL,
         note: str = WEBSITE_NOTE,
         action: str = "Import catalogue",
+        catalog: CatalogStore | None = None,
+        on_imported: Callable[[int], None] | None = None,
     ) -> None:
         super().__init__(parent)
         self.setObjectName("sheet")
         self.setWindowTitle(title)
         self.resize(620, 300)
         self._busy = False
+        # Import into the store the rest of the window reads.  A fresh
+        # ``CatalogStore()`` has no path, so it saves nothing and every record
+        # it collected was lost the moment the import finished.
+        self.catalog = (
+            catalog if catalog is not None
+            else CatalogStore(platform_support.data_dir() / "catalog.json")
+        )
+        self._on_imported = on_imported if callable(on_imported) else None
 
         column = QVBoxLayout(self)
         column.setContentsMargins(24, 22, 24, 16)
@@ -116,7 +128,7 @@ class CatalogDialog(QDialog):
     # helpers ---------------------------------------------------------------
     def _summary(self) -> str:
         try:
-            count = CatalogStore().count_games()
+            count = self.catalog.count_games()
         except Exception:  # noqa: BLE001 - a broken store must not block import
             return "The local catalogue could not be read."
         if count:
@@ -140,23 +152,37 @@ class CatalogDialog(QDialog):
         self.status.setText(f"Inspecting {url}… this can take a while for a large catalogue.")
         self._poll.start()
 
-        def work() -> tuple[int, str]:
-            store = CatalogStore()
+        def work() -> tuple[int, str, str]:
+            store = self.catalog
             outcome, report = import_source(
                 store, url, options=ImportOptions(), progress=self._record_progress
             )
             name = getattr(report, "name", "") or getattr(outcome, "source_name", "")
-            return store.count_games(), str(name or "")
+            problem = ""
+            try:
+                if not store.save():
+                    problem = "the catalogue has no file to save to"
+            except OSError as exc:
+                problem = str(exc)
+            return store.count_games(), str(name or ""), problem
 
         def done(result: object) -> None:
             self._finish_progress()
             self._busy = False
             self.import_btn.setEnabled(True)
-            count, name = result  # type: ignore[misc]
+            count, name, problem = result  # type: ignore[misc]
             source = f" from {name}" if name else ""
+            if problem:
+                self.status.setText(
+                    f"Import finished{source}, but the catalogue could not be "
+                    f"saved: {problem}"
+                )
+                return
             self.status.setText(
                 f"Import finished{source}. {count:,} catalogue games are stored."
             )
+            if count and self._on_imported is not None:
+                self._on_imported(count)
 
         def failed(exc: object) -> None:
             self._finish_progress()

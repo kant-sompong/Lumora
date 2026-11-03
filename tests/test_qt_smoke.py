@@ -247,6 +247,48 @@ def test_library_grid_uses_tighter_gutters(app):
     page.deleteLater()
 
 
+def test_catalog_import_lands_in_the_window_store(app, tmp_path, monkeypatch):
+    """An import must reach the store Browse reads, not a throwaway one."""
+    from types import SimpleNamespace
+
+    from lgl.catalog_store import CatalogStore
+    from lgl.qt_catalog import CatalogDialog
+    from lgl.sources import SourceGame
+
+    qt_main.apply_theme(app, "dark")
+    store = CatalogStore(tmp_path / "catalog.json")
+    counts = []
+
+    def fake_import(target, url, options=None, progress=None):
+        assert target is store, "the dialog must import into the given store"
+        if progress is not None:
+            progress(SimpleNamespace(
+                phase="catalog", pages_processed=1, games_imported=2,
+                games_discovered=2, status="importing",
+            ))
+        target.upsert_game(SourceGame(
+            source_id="kryoto", game_id="g1", title="Hollow Knight", year="2017",
+        ))
+        target.upsert_game(SourceGame(
+            source_id="kryoto", game_id="g2", title="Celeste", year="2018",
+        ))
+        return SimpleNamespace(summary="done"), SimpleNamespace(name="Kryoto")
+
+    monkeypatch.setattr("lgl.qt_catalog.import_source", fake_import)
+    dialog = CatalogDialog(None, catalog=store, on_imported=counts.append)
+    dialog.start_import()
+    end = time.time() + 5
+    while not counts and time.time() < end:
+        app.processEvents()
+        time.sleep(0.01)
+
+    assert counts == [2]
+    assert "2 catalogue games are stored" in dialog.status.text()
+    # Saved, so a later window sees the same catalogue.
+    assert CatalogStore(tmp_path / "catalog.json").count_games() == 2
+    dialog.deleteLater()
+
+
 def test_catalog_dialog_reports_import_progress(app):
     from types import SimpleNamespace
 
@@ -264,3 +306,29 @@ def test_catalog_dialog_reports_import_progress(app):
     assert "75" in dialog.status.text()
     dialog._finish_progress()
     dialog.deleteLater()
+
+
+def test_browse_lists_imported_catalogue_records(app, tmp_path):
+    """Imported catalogue games are rows in Browse, like the GTK build."""
+    from lgl.catalog_store import CatalogStore
+    from lgl.qt_browse import BrowsePage
+    from lgl.sources import SourceGame
+
+    qt_main.apply_theme(app, "dark")
+    store = CatalogStore(tmp_path / "catalog.json")
+    store.upsert_game(SourceGame(
+        source_id="kryoto", game_id="g1", title="Hollow Knight", year="2017",
+        genres=("Action",), cover_url="https://example.org/hk.jpg",
+    ))
+    store.save()
+
+    page = BrowsePage(None, catalog=store)
+    assert page.reload_catalog() == 1
+    row = page.game("catalog:kryoto:g1")
+    assert row is not None and row.is_catalog
+    assert row.title == "Hollow Knight"
+    assert row.catalog_source == "kryoto"
+    # Reloading the archive collection must not drop the imported records.
+    page.set_games([])
+    assert page.game("catalog:kryoto:g1") is not None
+    page.deleteLater()

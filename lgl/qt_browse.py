@@ -767,6 +767,10 @@ class BrowsePage(QWidget):
         self._cache_root = cache_root
         self._formats_for = formats_for or (lambda _identifier: ())
         self._games: list[GameSummary] = []
+        #: The archive collection and the imported catalogue are kept apart:
+        #: either can be replaced without losing the other.
+        self._archive_games: list[GameSummary] = []
+        self._catalog_entries: list[tuple[GameSummary, str]] = []
         self._shown: list[GameSummary] = []
         self._cards: dict[str, QWidget] = {}
         self._pix: dict[str, QPixmap] = {}
@@ -906,7 +910,76 @@ class BrowsePage(QWidget):
         run_async(lambda: client.fetch_collection(force=force), done, failed)
 
     def set_games(self, games: Sequence[GameSummary]) -> None:
-        self._games = list(games)
+        """Replace the archive list; imported catalogue records stay listed."""
+        self._archive_games = list(games)
+        self._merge_catalog()
+
+    def reload_catalog(self, announce: bool = False) -> int:
+        """Re-read imported catalogue records and merge them into the list.
+
+        This is what the GTK build does after a website or Kryoto import, and
+        without it an import would be stored and still show nothing: Browse
+        only ever listed the archive collection.
+        """
+        self._catalog_entries = self._catalog_summaries()
+        self._merge_catalog()
+        count = len(self._catalog_entries)
+        if announce and count:
+            self._update_footer()
+        return count
+
+    def _catalog_summaries(self) -> list[tuple[GameSummary, str]]:
+        """One Browse row per imported record, plus its source game id."""
+        if self.catalog is None:
+            return []
+        try:
+            records = list(self.catalog.iter_games())
+        except Exception:  # noqa: BLE001 - a broken store must not break Browse
+            return []
+        entries: list[tuple[GameSummary, str]] = []
+        for record in records:
+            key = record.key
+            try:
+                source = self.catalog.get_source(record.source_id)
+            except Exception:  # noqa: BLE001
+                source = None
+            try:
+                size = self.catalog.estimated_size(key)
+            except Exception:  # noqa: BLE001
+                size = None
+            try:
+                state = self.catalog.download_state(key)
+            except Exception:  # noqa: BLE001
+                state = ""
+            entries.append((
+                GameSummary(
+                    identifier=f"catalog:{key}",
+                    title=record.title or record.game_id,
+                    year=record.year,
+                    downloads=0,
+                    item_size=size,
+                    creator=record.creator or record.developer or record.publisher,
+                    subjects=list(record.genres),
+                    catalog_key=key,
+                    catalog_source=(source.name if source is not None else "") or record.source_id,
+                    source_url=record.source_url,
+                    cover_url=record.cover_url,
+                    download_state=state,
+                ),
+                record.game_id or "",
+            ))
+        return entries
+
+    def _merge_catalog(self) -> None:
+        """Append catalogue records the archive list does not already hold."""
+        base = [game for game in self._archive_games if not game.is_catalog]
+        known = {game.identifier for game in base}
+        merged = list(base)
+        for game, game_id in self._catalog_entries:
+            if game_id and game_id in known:
+                continue
+            merged.append(game)
+        self._games = merged
         self.filters.set_genres(genre_counts(self._games), genre_total(self._games))
         self.refresh()
 
