@@ -1,7 +1,3 @@
-<p align="center">
-  <img src="docs/screens/browse-grid.png" alt="Lumora — Browse the Internet Archive collection" width="960">
-</p>
-
 <h1 align="center">Lumora</h1>
 
 <p align="center">
@@ -30,27 +26,6 @@ and keeps every file inside the folder you choose.
 Browse  →  Download  →  Library  →  Play
                      ↘  Movies & TV  →  Stream
 ```
-
-## Table of contents
-
-- [Screenshots](#screenshots)
-- [Windows build](#windows-build)
-- [Features](#features)
-- [Requirements](#requirements)
-- [Installation](#installation)
-- [Configuration](#configuration)
-- [Keyboard shortcuts](#keyboard-shortcuts)
-- [Where data is stored](#where-data-is-stored)
-- [Building from source](#building-from-source)
-- [Testing](#testing)
-- [Architecture](#architecture)
-- [Safety & limits](#safety--limits)
-- [Troubleshooting](#troubleshooting)
-- [Roadmap & known gaps](#roadmap--known-gaps)
-- [Contributing](#contributing)
-- [License](#license)
-
----
 
 ## Screenshots
 
@@ -106,13 +81,6 @@ sections, same theme tokens.
 | Browse | Library | Providers |
 | :---: | :---: | :---: |
 | ![Windows browse](docs/screens/windows-browse.png) | ![Windows library](docs/screens/windows-library.png) | ![Windows settings](docs/screens/windows-settings.png) |
-
-The portable build bundles Chromium (Qt WebEngine) for in-app playback and needs
-no Python installation:
-
-```text
-Lumora-Windows-x64.zip   →   Lumora\Lumora.exe
-```
 
 ---
 
@@ -332,7 +300,7 @@ The core has its own tests, which need no display: the download queue (pause,
 cancel, retry, duplicate and path rules, queue persistence), archive URL and
 poster rules, folder scanning and the library index, checksum verification,
 source configuration, a full import run over a fake source, and the update
-check's version comparison. 164 tests in total.
+check's version comparison.
 
 ---
 
@@ -403,7 +371,6 @@ the Windows build matches the Linux one.
 | HTTP 429 / slow metadata | Wait and press **Refresh**; request rates are bounded on purpose |
 | Media tab shows a setup card | Add a free TMDB key in Settings → Providers |
 | Playback opens in a browser | Running from source without Qt WebEngine — install `PySide6` **and** `PySide6-WebEngine`, or use the released ZIP |
-| SmartScreen warning | Unsigned PyInstaller build — *More info → Run anyway* |
 
 ---
 
