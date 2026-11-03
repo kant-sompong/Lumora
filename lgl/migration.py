@@ -15,6 +15,9 @@ folders:
 
 Every launch calls :func:`migrate_once`; after the first successful copy a
 marker file records what happened, which makes the call a no-op afterwards.
+A copy that fails part-way is recorded as ``partial`` instead, and the next
+launch retries only what is missing: a file that was open in the old build
+must not be lost forever because one lock failed on the first run.
 """
 
 from __future__ import annotations
@@ -53,6 +56,7 @@ class MigrationReport:
         text = f"Copied {count} {plural} from the previous Lumora folders."
         if self.errors:
             text += f" {len(self.errors)} could not be copied."
+            text += " Lumora will try again on the next start."
         return text
 
 
@@ -150,10 +154,14 @@ def migrate_once(
     legacy_config = platform_support.legacy_config_dir(system, env)
     legacy_data = platform_support.legacy_data_dir(system, env)
 
-    if marker_path_for(system, env).exists():
+    status = marker_status(system, env)
+    resuming = status == "partial"
+    if status and not resuming:
         report.reason = "Already migrated."
         return report
-    if (config / "config.json").exists() or (data / "library.json").exists():
+    # A partial migration must not be blocked by the files that did copy: the
+    # check below is only for a new build meeting data it did not put there.
+    if not resuming and ((config / "config.json").exists() or (data / "library.json").exists()):
         report.reason = (
             "The Lumora folders already hold settings or a library, so the old "
             "folders were left alone."
@@ -162,6 +170,9 @@ def migrate_once(
         return report
     if not legacy_config.is_dir() and not legacy_data.is_dir():
         report.reason = "No folders from an older version were found."
+        if resuming:
+            # Nothing left to retry, so stop calling this migration partial.
+            _write_marker(system, env, report)
         return report
 
     _migrate_dir(legacy_config, config, report.copied, report.skipped,
@@ -179,6 +190,15 @@ def marker_path_for(
     return platform_support.config_dir(system, env) / MARKER_NAME
 
 
+def marker_status(
+    system: str | None = None, env: Mapping[str, str] | None = None
+) -> str:
+    """The recorded status: ``copied``, ``skipped``, ``partial`` or ``""``."""
+    document = last_report(system, env)
+    status = document.get("status")
+    return status if isinstance(status, str) else ""
+
+
 def _write_marker(
     system: str | None, env: Mapping[str, str], report: MigrationReport
 ) -> None:
@@ -187,9 +207,17 @@ def _write_marker(
     A marker that cannot be written only costs one extra (harmless) check on
     the next start, so failure here is not an error for the user.
     """
+    # "partial" is the one status that is retried, so it is only written when
+    # something actually failed.
+    if report.errors:
+        status = "partial"
+    elif report.migrated:
+        status = "copied"
+    else:
+        status = "skipped"
     document = {
         "version": 1,
-        "status": "copied" if report.migrated else "skipped",
+        "status": status,
         "reason": report.reason,
         "from": {
             "config": str(platform_support.legacy_config_dir(system, env)),

@@ -1655,7 +1655,6 @@ class FreeToGameSource(WebsiteSource):
 
     id = "freetogame"
     name = "FreeToGame"
-    canonical_url = FREETOGAME_SITE + "/"
     adapter_version = "1"
     hosts = ("freetogame.com",)
     image_hosts = ("freetogame.com",)

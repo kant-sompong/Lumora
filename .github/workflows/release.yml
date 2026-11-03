@@ -40,6 +40,30 @@ jobs:
       - name: Run tests
         run: python -m pytest tests -q
 
+  linux-tests:
+    name: Tests (Linux, GTK)
+    runs-on: ubuntu-latest
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install GTK for the system Python
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            python3-gi python3-gi-cairo gir1.2-gtk-3.0 python3-pytest
+      - name: Compile everything
+        run: python3 -m compileall -q lgl packaging tests
+      - name: Run the core tests (no PySide6 on this runner)
+        run: |
+          python3 -m pytest tests -q \
+            --ignore=tests/test_qt_smoke.py \
+            --ignore=tests/test_qt_parity.py \
+            --ignore=tests/test_qt_downloads.py \
+            --ignore=tests/test_qt_archive.py
+      - name: Import the GTK frontend
+        run: python3 -c "import lgl.ui; print('lgl.ui imports on Linux')"
+
   windows:
     name: Windows portable zip
     needs: test

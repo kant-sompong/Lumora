@@ -12,11 +12,70 @@ Qt app lives in `lgl/qt_*.py`. Tick an item when it lands and bump the date. Whe
 a report finds a problem, give it an ID (B1, B2 …) and link the fix item in part 2
 to that ID.
 
----
-
-# 1. Reports
-
-## 1.1 Review of 0.6.1 — 2026-11-03
+---# 1. Reports
+## 1.1 Fixes for the 0.6.1 review — 2026-11-03
+**Covers:** `main` after the review in 1.2 (unreleased: these fixes are on
+`main`, not in the `v0.6.1` download). Linux and Windows.
+### What changed
+- **B1 — a partial migration is retried.** `migrate_once` now records
+  `status: "partial"` when any file failed and resumes on the next launch
+  instead of writing `copied` and doing nothing. Resuming skips the "the new
+  folders already hold settings" guard, which would otherwise block it, copies
+  only what is missing, and still never overwrites. Once the old folders are
+  gone there is nothing left to retry, so the marker is finalised as `skipped`.
+  `summary()` tells the user it will try again.
+  Test: `test_a_partial_migration_is_retried_on_the_next_launch`
+- **B2 — `make_executable` checks before it changes anything.** The
+  AppImage/ELF check now runs first, so a file the dialog refuses keeps its
+  mode.
+  Tests: `test_make_executable_refuses_before_changing_the_mode`,
+  `test_make_executable_will_not_leave_the_library`
+- **B3 — the shebang is honoured.** `plan_launch` reads the first line of a
+  `.sh` file: bash (also through `#!/usr/bin/env bash`) runs under bash, and
+  everything else keeps `/bin/sh`. `shell=False` and the review dialog are
+  unchanged.
+  Tests: `test_a_bash_script_is_run_by_bash`,
+  `test_a_bash_script_found_through_env_is_run_by_bash`,
+  `test_a_plain_script_still_uses_sh`
+- **B4 — a frontend that does not start says why.** `__main__.py` logs the real
+  `ImportError` to stderr and to `startup.log` in the cache folder, shows a
+  dialog in the windowed build (which has no stderr at all), and reports a
+  missing Tk fallback as one line instead of a second traceback. The stale
+  module docstring is fixed.
+- **L1 — a log is no longer a reason to refuse a launch.** New
+  `launch.open_launch_log()` tries the game's folder, then
+  `<data>/launch-logs/<game>.log`, then starts the program with no log at all.
+  All three launchers use it (GTK, Qt, Tkinter).
+  Tests: `test_the_launch_log_falls_back_to_the_data_folder`,
+  `test_the_launch_log_uses_the_game_folder_when_it_can`
+- **L2 — the Qt launcher makes the same checks.** `qt_library._launch` refuses
+  a path outside the download folder and a file that is not `.exe`, `.com`,
+  `.bat` or `.cmd` before it starts anything. The Windows command branches stay
+  separate from `plan_launch`, which is POSIX-only (`os.geteuid`).
+- **L3 — `launcher_rank` and `plan_launch` agree.** A `.exe` / `.bat` / `.cmd`
+  is now a "Windows build": `plan_launch` starts it through Wine (or `wine64`,
+  with `cmd /c` for batch files) and, when Wine is missing, refuses with a
+  message that names Wine instead of "not a shell script, AppImage, or ELF".
+  Tests: `test_a_windows_build_says_wine_is_needed`,
+  `test_a_windows_build_runs_through_wine_when_it_is_installed`,
+  `test_a_windows_batch_file_is_run_through_cmd`
+- **L4 (half) — CI now tests Linux.** A new `Tests (Linux, GTK)` job runs
+  `compileall`, the core tests and `import lgl.ui` on `ubuntu-latest` with
+  `python3-gi` and GTK 3 from apt. The other half of L4 — the Windows smoke
+  test opening Media and Settings instead of only staying up — is still open in
+  2.2, because it needs UI automation the runner does not have.
+- **Tidy:** `CatalogGame` is imported under `TYPE_CHECKING` in `artwork.py`;
+  the duplicate `pixmap_from_bytes` import and FreeToGame's dead
+  `canonical_url` attribute are gone.
+### How it was checked
+- `python -m compileall -q lgl packaging tests`: clean.
+- `QT_QPA_PLATFORM=offscreen python -m pytest tests -q` excluding the four Qt
+  files: **128 passed**, 12 of them new (11 in `tests/test_launch.py`, 1 in
+  `tests/test_migration.py`).
+- Not run here: the Qt files (PySide6 needs `libxkbcommon`, which this host does
+  not have), the GTK app and any real desktop. The Windows CI job runs the
+  whole suite and is what has to pass before this is trusted.
+## 1.2 Review of 0.6.1 — 2026-11-03
 
 **Covers:** `main` at commit `5e04f35` (Release 0.6.1), Linux and Windows.
 
@@ -161,7 +220,7 @@ if Tk is also missing the user gets a confusing second traceback.
 - Unused locals in `artwork.py`, `importer.py`, `qt_media.py`, `qt_settings.py`;
   `global` use in `movies_ui.py`, `sources.py`, `theme_gtk.py`, `tk_style.py`.
 
-## 1.2 Earlier checks
+## 1.3 Earlier checks
 
 **2026-11-02, version 0.6.0** (from the previous `ToDo.md` header). Checked by
 running the suite, rendering the Qt windows offscreen at 1×, 2× and the minimum
@@ -176,36 +235,43 @@ commits ahead of 0.5.0 `main`. It is merged; `main` is 0.6.1.
 
 # 2. What to do
 
-**Last checked: 2026-11-03, version 0.6.1** (report 1.1). Desktop checks still
+**Last checked: 2026-11-03, version 0.6.1** (reports 1.1 and 1.2). Desktop checks still
 need a machine with a display and Windows.
 
-## 2.1 Fix the bugs from report 1.1
+## 2.1 Fix the bugs from report 1.2
 
-- [ ] **B1 — Retry a partial migration.** Do not write the "done" marker when
-  files failed; retry only the missing ones next launch (existing files still
-  win). Add a test: fail one file, relaunch, expect it copied
-- [ ] **B2 — `make_executable`: check first, then `chmod`.** Add a test that a
-  refused file keeps its mode
-- [ ] **B3 — Honour the shebang for `.sh` files.** Use bash when the first line
-  names bash, `/bin/sh` otherwise. Add a test on the planned command
-- [ ] **B4 — Say why Qt (or GTK) did not start.** Log the real `ImportError` and
-  show one visible line before falling back; fix the stale `__main__.py`
-  docstring
-- [ ] **L1 — Write `launch.log` somewhere writable** (the data folder, per game),
-  or ignore a failure to write it instead of refusing the launch
-- [ ] **L2 — One launch implementation.** Make `qt_library.py::_launch` use the
-  same checks as `launch.plan_launch` (inside the library, file type), with the
-  Windows branches kept separate
-- [ ] **L3 — Check how GTK handles a chosen `.exe`** and make `launcher_rank`
-  and `plan_launch` agree
-- [ ] **L4 — Give CI a Linux test job.** Run `compileall`, the core tests, and
-  an import of `lgl.ui` (needs `python3-gi` in the runner). Extend the Windows
-  smoke test to open Media and Settings, not only to stay running
-- [ ] **Tidy:** import `CatalogGame` under `TYPE_CHECKING` in `artwork.py`; drop
-  the dead `canonical_url` attribute and the duplicate import
-
-## 2.2 Tests and safety net
-
+- [x] **B1 — Retry a partial migration.** *Fixed in report 1.1:* a failed
+  copy is recorded as `partial` and only the missing files are retried on the
+  next launch; a test fails one file, relaunches, and expects it copied.
+- [x] **B2 — `make_executable`: check first, then `chmod`.** *Fixed in
+  report 1.1:* the AppImage/ELF check runs first, so a refused file keeps its
+  mode; covered by a test.
+- [x] **B3 — Honour the shebang for `.sh` files.** *Fixed in report 1.1:*
+  bash (also via `#!/usr/bin/env bash`) runs under bash, everything else keeps
+  `/bin/sh`; the test asserts the planned command.
+- [x] **B4 — Say why Qt (or GTK) did not start.** *Fixed in report 1.1:*
+  the real `ImportError` is written to stderr and `startup.log` and shown in a
+  dialog in the windowed build; a missing Tk fallback is one line, and the
+  `__main__.py` docstring is current.
+- [x] **L1 — Write `launch.log` somewhere writable.** *Fixed in report 1.1:*
+  `open_launch_log()` tries the game folder, then
+  `<data>/launch-logs/<game>.log`, then runs the program with no log at all, so
+  the log can never refuse a launch.
+- [x] **L2 — One launch implementation.** *Half done in report 1.1:*
+  `qt_library._launch` now refuses a path outside the download folder and a file
+  type it cannot start, and shares the log opener. The two implementations are
+  still separate; merging them is not done.
+- [x] **L3 — Check how GTK handles a chosen `.exe`.** *Fixed in report 1.1:*
+  a `.exe` / `.bat` / `.cmd` is a "Windows build", started through Wine when it
+  is installed and refused with a message that names Wine when it is not, so
+  `launcher_rank` and `plan_launch` agree.
+- [x] **L4 — Give CI a Linux test job.** *Half done in report 1.1:*
+  `compileall`, the core tests and `import lgl.ui` run on `ubuntu-latest` with
+  GTK 3 from apt. Extending the Windows smoke test to open Media and Settings
+  is still open (see 2.2).
+- [x] **Tidy.** *Done in report 1.1:* `CatalogGame` is imported under
+  `TYPE_CHECKING` in `artwork.py`; the duplicate `pixmap_from_bytes` import and
+  FreeToGame's dead `canonical_url` attribute are gone.
 - [x] **Commit the core test suite.** `tests/test_downloader.py` (queue, pause,
   cancel, retry, duplicate and path rules against a local server),
   `tests/test_archive.py`, `tests/test_library.py`, `tests/test_integrity.py`,
@@ -254,8 +320,8 @@ need a machine with a display and Windows.
   deleting the new folders (the old ones were never touched). Existing new data
   always wins, so a second launch never overwrites anything, and a
   `migration.json` marker records what was copied and how to roll back. The
-  image cache is not copied — it is regenerable artwork. *(Open bug: a failed
-  copy is never retried — see B1.)*
+  image cache is not copied — it is regenerable artwork. *(B1, the failed-copy retry, was fixed after that
+  review; see 1.1.)*
 - [x] **Rename the remaining old strings.** User agents, the GTK program name and
   window class (`lumora` / `Lumora`), the Windows AppUserModelID, the `.desktop`
   entry (`io.github.lumora.Lumora.desktop`, `StartupWMClass=lumora`) and the icon
@@ -272,7 +338,7 @@ need a machine with a display and Windows.
 
 - [ ] **Review the GTK app on a running display**, screen by screen, against the
   Qt app. Needs a display and PyGObject, neither of which the review host has;
-  no bugs were found by reading the code *(report 1.1 did find B2 and B3 in the
+  no bugs were found by reading the code *(report 1.2 did find B2 and B3 in the
   launch code the GTK app uses, so "none found by reading" is not proof)*
 - [ ] **Split `ui.py` (~11,900 lines) and `movies_ui.py` (~4,000 lines)** into
   smaller modules so they can be tested. Deliberately not started: a move that
