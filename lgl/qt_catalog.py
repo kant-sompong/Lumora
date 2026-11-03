@@ -10,10 +10,11 @@ so an import done here is the same import the Linux build would make.
 from __future__ import annotations
 
 import re
+import threading
 import urllib.parse
 from pathlib import Path
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QDialog,
     QHBoxLayout,
@@ -21,6 +22,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QListWidget,
     QListWidgetItem,
+    QProgressBar,
     QPushButton,
     QVBoxLayout,
     QWidget,
@@ -88,6 +90,20 @@ class CatalogDialog(QDialog):
 
         self.status = label(self._summary(), "detailNote", wrap=True)
         column.addWidget(self.status)
+        # A catalogue can take minutes: the importer publishes a page/record
+        # count as it goes, and this bar shows it instead of one frozen line.
+        self.progress = QProgressBar()
+        self.progress.setRange(0, 0)
+        self.progress.setTextVisible(False)
+        self.progress.setFixedHeight(6)
+        self.progress.setAccessibleName("Catalogue import progress")
+        self.progress.setVisible(False)
+        column.addWidget(self.progress)
+        self._progress_lock = threading.Lock()
+        self._progress_snapshot: dict[str, object] = {}
+        self._poll = QTimer(self)
+        self._poll.setInterval(200)
+        self._poll.timeout.connect(self._show_progress)
         column.addStretch(1)
 
         bottom = QHBoxLayout()
@@ -117,15 +133,23 @@ class CatalogDialog(QDialog):
             return
         self._busy = True
         self.import_btn.setEnabled(False)
+        with self._progress_lock:
+            self._progress_snapshot = {}
+        self.progress.setRange(0, 0)
+        self.progress.setVisible(True)
         self.status.setText(f"Inspecting {url}… this can take a while for a large catalogue.")
+        self._poll.start()
 
         def work() -> tuple[int, str]:
             store = CatalogStore()
-            outcome, report = import_source(store, url, options=ImportOptions())
+            outcome, report = import_source(
+                store, url, options=ImportOptions(), progress=self._record_progress
+            )
             name = getattr(report, "name", "") or getattr(outcome, "source_name", "")
             return store.count_games(), str(name or "")
 
         def done(result: object) -> None:
+            self._finish_progress()
             self._busy = False
             self.import_btn.setEnabled(True)
             count, name = result  # type: ignore[misc]
@@ -135,11 +159,48 @@ class CatalogDialog(QDialog):
             )
 
         def failed(exc: object) -> None:
+            self._finish_progress()
             self._busy = False
             self.import_btn.setEnabled(True)
             self.status.setText(f"Import failed: {exc}")
 
         run_async(work, done, failed)
+
+    # progress --------------------------------------------------------------
+    def _record_progress(self, job: object) -> None:
+        """Keep the newest counters; the importer calls this from its thread."""
+        snapshot = {
+            "phase": str(getattr(job, "phase", "") or ""),
+            "pages": int(getattr(job, "pages_processed", 0) or 0),
+            "imported": int(getattr(job, "games_imported", 0) or 0),
+            "discovered": int(getattr(job, "games_discovered", 0) or 0),
+            "status": str(getattr(job, "status", "") or ""),
+        }
+        with self._progress_lock:
+            self._progress_snapshot = snapshot
+
+    def _show_progress(self) -> None:
+        """Paint the counters on the UI thread, at most five times a second."""
+        if not self._busy:
+            return
+        with self._progress_lock:
+            snapshot = dict(self._progress_snapshot)
+        if not snapshot:
+            return
+        pages = int(snapshot.get("pages", 0) or 0)
+        imported = int(snapshot.get("imported", 0) or 0)
+        discovered = int(snapshot.get("discovered", 0) or 0)
+        phase = "Fetching details" if snapshot.get("phase") == "enrichment" else "Reading the catalogue"
+        bits = [f"{phase}…", f"page {pages:,}"] if pages else [f"{phase}…"]
+        if imported:
+            bits.append(f"{imported:,} games imported")
+        elif discovered:
+            bits.append(f"{discovered:,} found")
+        self.status.setText(" · ".join(bits))
+
+    def _finish_progress(self) -> None:
+        self._poll.stop()
+        self.progress.setVisible(False)
 
 
 def catalog_identifier(key: str) -> str:

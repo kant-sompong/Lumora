@@ -14,7 +14,7 @@ import time
 from pathlib import Path
 from typing import Callable, Sequence
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QEvent, Qt, QTimer, Signal
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -146,6 +146,14 @@ def launch_candidates(folder: str | Path, title: str, limit: int = 40) -> list[P
 
 def _elided(text: str, width: int = 300) -> str:
     return text if len(text) <= 90 else text[:90] + "…"
+
+
+#: Gap between library cards.  Wide gutters left a shelf looking sparse, so
+#: the cards sit closer together and the cells fill the row.
+GRID_GAP = 12
+GRID_GAP_VERTICAL = 14
+#: Narrowest card the grid will place in a row.
+GRID_MIN_CELL = 232
 
 
 # --------------------------------------------------------------------------
@@ -472,6 +480,7 @@ class LibraryDetail(QFrame):
         outer.addWidget(scroll)
         column.setContentsMargins(20, 16, 20, 18)
         column.setSpacing(6)
+        self._column = column
 
         head = QHBoxLayout()
         head.addWidget(label("SELECTED GAME", "detailEyebrow"))
@@ -513,7 +522,8 @@ class LibraryDetail(QFrame):
         column.addWidget(self.launch_host)
         self.launch_note = label("", "detailNote", wrap=True)
         column.addWidget(self.launch_note)
-        column.addStretch(1)
+        # The actions follow the details.  A stretch here pushed every button to
+        # the bottom of the panel and left a tall empty band above them.
         column.addSpacing(12)
 
         for row_spec in (
@@ -540,6 +550,7 @@ class LibraryDetail(QFrame):
                 if name == "favorite":
                     self.favorite_btn = btn
             column.addLayout(line)
+        column.addStretch(1)
 
     def _row(self, text: str, key: str) -> QHBoxLayout:
         line = QHBoxLayout()
@@ -794,12 +805,17 @@ class LibraryPage(QWidget):
         layout.addWidget(self.stats)
 
         self.scroll, self._body, column = scroll_page()
+        # The grid's width changes when the detail panel opens or closes, and
+        # that is a viewport resize, not a page resize: without this the cards
+        # kept the old column count and the last one was clipped behind the
+        # panel.
+        self.scroll.viewport().installEventFilter(self)
         column.setContentsMargins(24, 4, 24, 20)
         self.grid_host = QWidget()
         self.grid = QGridLayout(self.grid_host)
         self.grid.setContentsMargins(0, 0, 0, 0)
-        self.grid.setHorizontalSpacing(16)
-        self.grid.setVerticalSpacing(20)
+        self.grid.setHorizontalSpacing(GRID_GAP)
+        self.grid.setVerticalSpacing(GRID_GAP_VERTICAL)
         column.addWidget(self.grid_host)
         self.list_host = QWidget()
         self.list_column = QVBoxLayout(self.list_host)
@@ -964,7 +980,7 @@ class LibraryPage(QWidget):
         if self._view == "grid":
             columns = self._columns()
             available = max(self.scroll.viewport().width() - 48, 200)
-            cell = max(180, (available - 16 * (columns - 1)) // columns)
+            cell = max(180, (available - GRID_GAP * (columns - 1)) // columns)
             for index, entry in enumerate(self._shown):
                 card: QWidget = LibraryCard(entry)
                 card.setMinimumWidth(min(200, cell))
@@ -1002,7 +1018,24 @@ class LibraryPage(QWidget):
 
     def _columns(self) -> int:
         width = max(self.scroll.viewport().width() - 48, 200)
-        return max(1, int((width + 16) // 246))
+        return max(1, int((width + GRID_GAP) // (GRID_MIN_CELL + GRID_GAP)))
+
+    def eventFilter(self, watched, event) -> bool:  # noqa: N802
+        if watched is self.scroll.viewport() and event.type() == QEvent.Resize:
+            self._schedule_render()
+        return super().eventFilter(watched, event)
+
+    def _schedule_render(self) -> None:
+        """Re-flow once, after the grid's own width settles."""
+        if getattr(self, "_render_pending", False):
+            return
+        self._render_pending = True
+
+        def run() -> None:
+            self._render_pending = False
+            self._render()
+
+        QTimer.singleShot(0, run)
 
     def resizeEvent(self, event) -> None:  # noqa: N802
         super().resizeEvent(event)
@@ -1011,9 +1044,7 @@ class LibraryPage(QWidget):
             self._last_width = width
             self._last_columns = self._columns()
             if self._cards:
-                from PySide6.QtCore import QTimer
-
-                QTimer.singleShot(0, self._render)
+                self._schedule_render()
 
     def _load_covers(self) -> None:
         for entry in self._shown:
