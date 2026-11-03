@@ -14,8 +14,8 @@ to that ID.
 
 ---# 1. Reports
 ## 1.1 Fixes for the 0.6.1 review — 2026-11-03
-**Covers:** `main` after the review in 1.2 (unreleased: these fixes are on
-`main`, not in the `v0.6.1` download). Linux and Windows.
+**Covers:** `main` after the review in 1.2; released in `v0.6.2`. Linux and
+Windows.
 ### What changed
 - **B1 — a partial migration is retried.** `migrate_once` now records
   `status: "partial"` when any file failed and resumes on the next launch
@@ -235,7 +235,7 @@ commits ahead of 0.5.0 `main`. It is merged; `main` is 0.6.1.
 
 # 2. What to do
 
-**Last checked: 2026-11-03, version 0.6.1** (reports 1.1 and 1.2). Desktop checks still
+**Last checked: 2026-11-03, version 0.6.2** (reports 1.1 and 1.2). Desktop checks still
 need a machine with a display and Windows.
 
 ## 2.1 Fix the bugs from report 1.2
