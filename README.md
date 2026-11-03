@@ -259,7 +259,7 @@ python -m PyInstaller --noconfirm --clean packaging\windows\Lumora.spec
 Compress-Archive -Path dist\Lumora -DestinationPath dist\Lumora-Windows-x64.zip
 
 # Optional: the installer (requires Inno Setup 6)
-"C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DMyAppVersion=0.6.2 `
+"C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DMyAppVersion=0.6.3 `
   packaging\windows\Lumora.iss
 # → dist/Lumora-Setup-x64.exe
 ```
