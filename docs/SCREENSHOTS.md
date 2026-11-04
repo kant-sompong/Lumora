@@ -49,6 +49,8 @@ The default view: cover grid, filters on the left, details on the right.
 The Qt 6 frontend shares the whole Python core with the Linux build, so the rail,
 header, sections and theme tokens match.
 
-| Browse | Library | Providers |
+| Browse with a selected game | Library with a selected game | Providers |
 | :---: | :---: | :---: |
-| ![Windows browse](screens/windows-browse.png) | ![Windows library](screens/windows-library.png) | ![Windows settings](screens/windows-settings.png) |
+| ![Windows browse](screens/qt-browse-catalogue.png) | ![Windows library](screens/qt-library-selection.png) | ![Windows settings](screens/windows-settings.png) |
+
+![Downloads](screens/qt-downloads.png)

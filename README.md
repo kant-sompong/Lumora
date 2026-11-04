@@ -12,13 +12,13 @@
   <a href="#license"><img alt="License" src="https://img.shields.io/badge/license-MIT-3fb950?style=flat-square"></a>
 </p>
 
-<img src="docs/screens/browse-grid.png" width="100%" alt="Lumora's Browse page: a cover grid of Internet Archive games with filters for genre, size, year and format">
+<img src="docs/screens/qt-browse-catalogue.png" width="100%" alt="Lumora's Browse page: a cover grid of Internet Archive games with filters for genre, size, year and format, and a details panel for the selected game">
 
 <p align="center"><sub>Browse the collection, filter it, and download in one click — the same window on Linux and Windows.</sub></p>
 
 | Library | Downloads | Movies &amp; TV |
 | :---: | :---: | :---: |
-| ![Library with a selected game](docs/screens/library-detail.png) | ![Download queue](docs/screens/downloads.png) | ![Media home](docs/screens/media-home.png) |
+| ![Library with a selected game](docs/screens/qt-library-selection.png) | ![Download queue](docs/screens/qt-downloads.png) | ![Media home](docs/screens/media-home.png) |
 
 ## Features
 
