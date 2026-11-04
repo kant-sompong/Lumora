@@ -725,6 +725,7 @@ class BrowseDetail(QFrame):
         thumb.setObjectName("shotThumb")
         thumb.setCursor(Qt.PointingHandCursor)
         thumb.setToolTip("Open this screenshot")
+        thumb.setAccessibleName("Open this screenshot")
         thumb.setIcon(QIcon(pix.scaled(150, 84, Qt.KeepAspectRatio, Qt.SmoothTransformation)))
         thumb.setIconSize(QSize(150, 84))
         thumb.setFixedSize(150, 84)

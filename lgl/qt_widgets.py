@@ -251,6 +251,9 @@ class IconButton(QAbstractButton):
         self.setCursor(Qt.PointingHandCursor)
         if tip:
             self.setToolTip(tip)
+            # The icon is painted, so nothing names this button for a screen
+            # reader unless we do it here.
+            self.setAccessibleName(tip)
         self.setAttribute(Qt.WA_Hover, True)
 
     def set_icon(self, name: str) -> None:
@@ -489,6 +492,7 @@ class DirectionButton(QPushButton):
         self.setFixedSize(38, 34)
         self.setCursor(Qt.PointingHandCursor)
         self.setToolTip(tip)
+        self.setAccessibleName(tip)
         self._down = False
 
     def set_down(self, down: bool) -> None:
@@ -523,7 +527,9 @@ class ViewScaleButton(IconButton):
     def set_list(self, is_list: bool) -> None:
         self.setChecked(is_list)
         self.set_icon("grid" if is_list else "list")
-        self.setToolTip("Show covers" if is_list else "Show as a list")
+        switching_to = "Show covers" if is_list else "Show as a list"
+        self.setToolTip(switching_to)
+        self.setAccessibleName(switching_to)
 
 
 #: Kept under the old name for imports written against earlier builds.

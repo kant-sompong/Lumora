@@ -1962,7 +1962,9 @@ class LibraryTile(Gtk.FlowBoxChild):
         image = Gtk.Image.new_from_icon_name(name, Gtk.IconSize.BUTTON)
         image.set_halign(Gtk.Align.CENTER)
         self._star.set_image(image)
-        self._star.set_tooltip_text("Remove from favorites" if active else "Add to favorites")
+        tooltip = "Remove from favorites" if active else "Add to favorites"
+        self._star.set_tooltip_text(tooltip)
+        self._star.get_accessible().set_name(tooltip)
 
     def sync_star(self) -> None:
         self._updating = True
@@ -6367,6 +6369,7 @@ class MainWindow(Gtk.ApplicationWindow):
         refresh_btn = Gtk.Button()
         refresh_btn.set_relief(Gtk.ReliefStyle.NONE)
         refresh_btn.set_tooltip_text("Refresh (rescan library, reload collection)")
+        refresh_btn.get_accessible().set_name("Refresh (rescan library, reload collection)")
         refresh_btn.add(Gtk.Image.new_from_icon_name("view-refresh-symbolic", _ICON))
         refresh_btn.connect("clicked", lambda *_: self._combined_refresh())
         refresh_btn.set_valign(Gtk.Align.CENTER)
