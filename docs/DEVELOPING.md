@@ -110,9 +110,9 @@ Issues and pull requests are welcome. Please:
 - include relevant logs, with API keys redacted
 - run `python -m pytest tests -q` before opening a pull request
 
-Open work and the dated review reports live in [reports.md](reports.md): tick an
-item there when it lands, and add a new dated report above the older ones instead
-of rewriting them.
+Open work and the roadmap checklist live in [thing.md](thing.md): tick an
+item there when it lands, and add a dated note under it instead of rewriting the
+entry it replaces.
 
 Screenshots live in [`docs/screens`](screens) — regenerating them for a UI
 change makes review much easier, and updating [SCREENSHOTS.md](SCREENSHOTS.md)

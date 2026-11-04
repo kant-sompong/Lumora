@@ -5,6 +5,13 @@
 
 > **Important:** This is a planning document, not proof that every listed feature is implemented in the current code. Verify each item against the repository before changing code, and update the checklist only after testing it.
 
+> **Audited 2026-11-04 at `bb40d44`.** A tick means the item was confirmed in the
+> code below and, where a test covers it, by `pytest tests` (**128 passed**; the
+> four `tests/test_qt_*.py` modules could not be collected on the audit host
+> because PySide6's Qt libraries are missing). An unticked box is either missing
+> or only half there — the note says which.
+
+
 ## Goals
 
 - Keep the Linux and Windows editions as consistent as their platforms allow.
@@ -19,43 +26,43 @@ Check the current implementation and mark each item accurately.
 
 ### Game Library
 
-- [ ] Browse and search game catalog sources.
-- [ ] Sort and filter games.
-- [ ] Grid and list views.
-- [ ] Game details, metadata, and artwork.
-- [ ] Favorites and collections.
-- [ ] Track download and installation status.
-- [ ] Import and export library data.
-- [ ] Detect duplicates and validate downloaded files.
+- [x] Browse and search game catalog sources.
+- [x] Sort and filter games.
+- [x] Grid and list views.
+- [x] Game details, metadata, and artwork.
+- [ ] Favorites and collections. — partial: favourites are stored and sort first; there is no collection concept in `library_store.py`.
+- [x] Track download and installation status.
+- [x] Import and export library data.
+- [x] Detect duplicates and validate downloaded files.
 
 ### Downloads
 
-- [ ] Queue and manage downloads.
-- [ ] Pause, resume, cancel, and retry.
-- [ ] Resume interrupted downloads where supported.
-- [ ] Show progress, speed, and remaining time.
-- [ ] Check available disk space.
-- [ ] Handle network errors and invalid download sources safely.
-- [ ] Integrate optional external download tools where supported.
+- [x] Queue and manage downloads.
+- [x] Pause, resume, cancel, and retry.
+- [x] Resume interrupted downloads where supported.
+- [ ] Show progress, speed, and remaining time. — partial: progress and speed are reported (`Task.speed`); no remaining-time estimate.
+- [x] Check available disk space.
+- [x] Handle network errors and invalid download sources safely.
+- [x] Integrate optional external download tools where supported.
 
 ### Movies, TV, and Anime
 
-- [ ] Movie and TV metadata integration.
-- [ ] Anime metadata integration.
-- [ ] Provider selection and playback.
-- [ ] Posters, backdrops, descriptions, ratings, and episode details.
-- [ ] Favorites, watchlist, and viewing history.
-- [ ] Playback error handling and recovery.
-- [ ] Subtitle and audio selection where supported.
+- [x] Movie and TV metadata integration.
+- [x] Anime metadata integration.
+- [x] Provider selection and playback.
+- [x] Posters, backdrops, descriptions, ratings, and episode details.
+- [ ] Favorites, watchlist, and viewing history. — partial: watchlist and history are stored (`media_history.py`); no separate favourites list for media.
+- [ ] Playback error handling and recovery. — partial: provider and embed failures are surfaced; recovery means switching provider, there is no automatic retry.
+- [ ] Subtitle and audio selection where supported. — partial: provider-level sub/dub choice (`streaming.LANGUAGES`); no in-player track selection.
 
 ### Cross-Platform Support
 
-- [ ] Linux UI and workflows.
-- [ ] Windows 10/11 UI and workflows.
-- [ ] Consistent navigation and feature availability.
-- [ ] Settings and provider configuration.
-- [ ] Safe persistence of user preferences.
-- [ ] Platform-specific testing and documentation.
+- [x] Linux UI and workflows.
+- [ ] Windows 10/11 UI and workflows. — partial: the Qt app is built and unit-tested in CI; not run on physical Windows hardware during this audit.
+- [ ] Consistent navigation and feature availability. — partial: `tests/test_qt_parity.py` pins the shared structure, but the gaps above apply to both frontends.
+- [x] Settings and provider configuration.
+- [x] Safe persistence of user preferences.
+- [ ] Platform-specific testing and documentation. — partial: CI builds and tests both editions and `docs/` covers both; no Windows hardware pass.
 
 ---
 
