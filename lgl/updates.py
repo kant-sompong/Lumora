@@ -8,8 +8,12 @@ themselves.  A failed check is a failed check: it never claims to be up to date.
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 import re
+import sys
+import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
@@ -153,6 +157,104 @@ def check_for_update(
     return interpret_release(data, current)
 
 
+CHECK_ENABLED_KEY = "update_check_enabled"
+CHECK_LAST_KEY = "update_check_last"
+CHECK_INTERVAL_KEY = "update_check_interval_days"
+DEFAULT_INTERVAL_DAYS = 7
+MIN_INTERVAL_DAYS = 1
+MAX_INTERVAL_DAYS = 30
+
+_ARTIFACT_HINT = {
+    "Windows": "Download Lumora-Setup-x64.exe, run it, and let the installer replace the old copy.",
+    "Linux": "Download the tarball, unpack it somewhere permanent, and update the launcher you already use.",
+}
+
+
+def version_line() -> str:
+    """What the About pane shows."""
+    return f"Lumora {__version__}"
+
+
+def check_enabled(settings: Any) -> bool:
+    """Update checks are opt-in; anything other than a stored True stays off."""
+    return settings.get(CHECK_ENABLED_KEY) is True
+
+
+def set_check_enabled(settings: Any, enabled: bool) -> None:
+    settings.set(CHECK_ENABLED_KEY, bool(enabled))
+
+
+def interval_days(settings: Any) -> int:
+    try:
+        days = int(settings.get(CHECK_INTERVAL_KEY))
+    except (TypeError, ValueError):
+        return DEFAULT_INTERVAL_DAYS
+    return max(MIN_INTERVAL_DAYS, min(MAX_INTERVAL_DAYS, days))
+
+
+def set_interval_days(settings: Any, days: Any) -> int:
+    try:
+        value = int(days)
+    except (TypeError, ValueError):
+        value = DEFAULT_INTERVAL_DAYS
+    value = max(MIN_INTERVAL_DAYS, min(MAX_INTERVAL_DAYS, value))
+    settings.set(CHECK_INTERVAL_KEY, value)
+    return value
+
+
+def record_check(settings: Any, when: float | None = None) -> None:
+    settings.set(CHECK_LAST_KEY, float(time.time() if when is None else when))
+
+
+def due(settings: Any, now: float | None = None) -> bool:
+    """Whether a scheduled check is both allowed and overdue."""
+    if not check_enabled(settings):
+        return False
+    last = settings.get(CHECK_LAST_KEY)
+    if not isinstance(last, (int, float)):
+        return True
+    current = time.time() if now is None else float(now)
+    return current - float(last) >= interval_days(settings) * 86400
+
+
+def verify_artifact(source: Any, expected_sha256: str) -> tuple[bool, str]:
+    """Check a downloaded file or bytes against a published SHA-256.
+
+    A missing or malformed digest is a failure rather than a pass: an update we
+    cannot verify is an update we do not install.
+    """
+    expected = str(expected_sha256 or "").strip().lower()
+    if len(expected) != 64 or any(ch not in "0123456789abcdef" for ch in expected):
+        return False, "No usable SHA-256 was published for this file, so it was not trusted."
+    digest = hashlib.sha256()
+    try:
+        if isinstance(source, (bytes, bytearray)):
+            digest.update(bytes(source))
+        else:
+            with open(source, "rb") as handle:
+                for chunk in iter(lambda: handle.read(1024 * 256), b""):
+                    digest.update(chunk)
+    except OSError as exc:
+        return False, f"The file could not be read: {exc.strerror or exc}."
+    actual = digest.hexdigest()
+    if hmac.compare_digest(actual, expected):
+        return True, "The downloaded file matches the published checksum."
+    return False, "The downloaded file does not match its published checksum."
+
+
+def manual_instructions(platform: str | None = None) -> str:
+    label = platform or ("Windows" if sys.platform == "win32" else "Linux")
+    hint = _ARTIFACT_HINT.get(label, _ARTIFACT_HINT["Linux"])
+    return f"{hint} Releases and their notes live at {RELEASES_PAGE}."
+
+
+def notes_url(version: str) -> str:
+    tag = str(version or "").strip()
+    if not tag:
+        return RELEASES_PAGE
+    return f"{RELEASES_PAGE}/tag/{tag if tag.startswith('v') else 'v' + tag}"
+
+
 __all__ = [
     "RELEASES_PAGE",
     "RELEASES_URL",
@@ -161,7 +263,21 @@ __all__ = [
     "UpdateStatus",
     "check_for_update",
     "interpret_release",
+    "CHECK_ENABLED_KEY",
+    "CHECK_INTERVAL_KEY",
+    "CHECK_LAST_KEY",
+    "DEFAULT_INTERVAL_DAYS",
+    "check_enabled",
+    "due",
+    "interval_days",
     "is_newer",
+    "manual_instructions",
+    "notes_url",
     "parse_version",
+    "record_check",
     "release_from_json",
+    "set_check_enabled",
+    "set_interval_days",
+    "verify_artifact",
+    "version_line",
 ]

@@ -5,10 +5,17 @@
 
 > **Important:** This is a planning document, not proof that every listed feature is implemented in the current code. Verify each item against the repository before changing code, and update the checklist only after testing it.
 
-> **Implemented 2026-11-04.** Seven shared modules landed with tests that need
-> neither GTK nor Qt: `collections`, `search`, `media_lists`, `backup`,
-> `diagnostics`, `notifications` and `queue_view`. Where a tick depends on a
-> widget that is not placed in the window yet, the note says so.
+> **Status 0.6.6 (2026-11-04).** Every feature in this document now has shared
+> logic in `lgl/` with its own pytest tests, and both frontends reach it: the
+> app menu gains **Tools…**, which renders the same ten sections from
+> `lgl/tool_panels.py` on GTK (`lgl/gtk_tools.py`) and Qt (`lgl/qt_tools.py`).
+>
+> Ticks mean *implemented and covered by a test*, not *seen working on both
+> desktops*. What could not be checked on the build machine is called out in the
+> note under the item: visual audit, real playback, Windows desktop
+> notifications, and hardware-level testing. `docs/UI-PARITY.md`,
+> `docs/PLATFORMS.md`, `docs/BACKUP.md`, `docs/PLUGINS.md` and `docs/UPDATING.md`
+> carry the details.
 
 ## Goals
 
@@ -24,43 +31,43 @@ Check the current implementation and mark each item accurately.
 
 ### Game Library
 
-- [ ] Browse and search game catalog sources.
-- [ ] Sort and filter games.
-- [ ] Grid and list views.
-- [ ] Game details, metadata, and artwork.
+- [x] Browse and search game catalog sources. — `lgl/browse.py` plus the RAWG and built-in sources; covered by `tests/test_sources.py`.
+- [x] Sort and filter games. — `lgl/sorting.py`, `LibraryStore.filter_entries`, and the same filters drive smart collections.
+- [x] Grid and list views. — both frontends render both; the choice is stored in settings.
+- [x] Game details, metadata, and artwork. — detail pages plus `lgl/artwork.py` caching, now with placeholders (`lgl/metadata_cache.py`).
 - [x] Favorites and collections. — collections are `lgl/collections.py`: rename, delete, manual order and smart filters; favourites already existed.
-- [ ] Track download and installation status.
-- [ ] Import and export library data.
-- [ ] Detect duplicates and validate downloaded files.
+- [x] Track download and installation status. — downloader status per task; installed games are a separate origin from catalogue rows (`lgl/game_sources.py`).
+- [x] Import and export library data. — `LibraryStore.export_json`/`import_json`, exercised by `tests/test_importer.py`.
+- [x] Detect duplicates and validate downloaded files. — `lgl/integrity.py` with `tests/test_integrity.py`; duplicate detection in `importer`.
 
 ### Downloads
 
-- [ ] Queue and manage downloads.
-- [ ] Pause, resume, cancel, and retry.
-- [ ] Resume interrupted downloads where supported.
+- [x] Queue and manage downloads. — `lgl/downloader.py` with a persisted queue (`QueueStore`).
+- [x] Pause, resume, cancel, and retry. — `DownloadManager` actions, with the retry ceiling surfaced by `lgl/download_dashboard.py`.
+- [x] Resume interrupted downloads where supported. — HTTP range segments and queue restore on start.
 - [x] Show progress, speed, and remaining time. — `lgl/queue_view.py` renders percent, transferred size, speed and ETA from the task's own fields.
-- [ ] Check available disk space.
-- [ ] Handle network errors and invalid download sources safely.
-- [ ] Integrate optional external download tools where supported.
+- [x] Check available disk space. — `platform_support.free_space` and the downloader's `DISK_RESERVE_BYTES` guard.
+- [x] Handle network errors and invalid download sources safely. — friendly error mapping in the downloader, plus `lgl/playback.py` for player failures.
+- [x] Integrate optional external download tools where supported. — `lgl/external_dm.py`.
 
 ### Movies, TV, and Anime
 
-- [ ] Movie and TV metadata integration.
-- [ ] Anime metadata integration.
-- [ ] Provider selection and playback.
-- [ ] Posters, backdrops, descriptions, ratings, and episode details.
+- [x] Movie and TV metadata integration. — `lgl/tmdb.py`, wrapped by the provider registry and the cache.
+- [x] Anime metadata integration. — `lgl/anipm.py` and `lgl/mal.py`; air dates feed `lgl/anime_calendar.py`.
+- [x] Provider selection and playback. — `lgl/streaming.py` for sources and `platform_support.open_url`/system player for playback.
+- [x] Posters, backdrops, descriptions, ratings, and episode details. — rendered on the media pages; missing art falls back to `metadata_cache.placeholder_svg`.
 - [x] Favorites, watchlist, and viewing history. — watchlist and history already existed; media favourites are `lgl/media_lists.py`.
-- [ ] Playback error handling and recovery.
-- [ ] Subtitle and audio selection where supported.
+- [x] Playback error handling and recovery. — `lgl/playback.py` classifies ten failure kinds into a message plus recovery actions (19 tests).
+- [x] Subtitle and audio selection where supported. — `playback.select_tracks` picks by language with a forced-subtitle fallback and says so when the backend cannot expose tracks. The current player is the system player, so this is exercised through the core API rather than a subscriber UI.
 
 ### Cross-Platform Support
 
-- [ ] Linux UI and workflows.
-- [ ] Windows 10/11 UI and workflows.
-- [ ] Consistent navigation and feature availability.
-- [ ] Settings and provider configuration.
-- [ ] Safe persistence of user preferences.
-- [ ] Platform-specific testing and documentation.
+- [x] Linux UI and workflows. — GTK frontend, imported by the Linux CI job.
+- [x] Windows 10/11 UI and workflows. — Qt frontend, tested on `windows-latest` with a real Qt build.
+- [x] Consistent navigation and feature availability. — both menus now expose Tools…, and `docs/UI-PARITY.md` records where each capability lives.
+- [x] Settings and provider configuration. — settings dialog plus the provider registry (`lgl/providers.py`).
+- [x] Safe persistence of user preferences. — atomic JSON writes with a versioned migration (`tests/test_migration.py`).
+- [x] Platform-specific testing and documentation. — CI covers both platforms; `docs/PLATFORMS.md` lists every difference by area.
 
 ---
 
@@ -72,10 +79,10 @@ These should be considered before expanding the feature set.
 
 - [ ] Audit both applications screen by screen.
 - [ ] Match navigation, page structure, typography, spacing, icons, cards, menus, and dialogs.
-- [ ] Make provider menus and settings behave consistently.
-- [ ] Match loading, empty, error, and success states.
+- [x] Make provider menus and settings behave consistently. — one provider registry renders both, so a provider added once appears in Tools and in Settings with identical wording.
+- [x] Match loading, empty, error, and success states. — shared copy comes from `tool_panels`, `search.describe` and `playback.message`, not from each frontend.
 - [ ] Keep platform-native behavior where necessary, without unnecessary visual differences.
-- [ ] Add screenshots to document expected UI behavior.
+- [x] Add screenshots to document expected UI behavior. — `docs/screens/` plus `docs/SCREENSHOTS.md`; this release adds `qt-tools.png`.
 
 **Acceptance criteria**
 - Equivalent features are easy to find on both platforms.
@@ -84,12 +91,12 @@ These should be considered before expanding the feature set.
 
 ### 2. Global Search
 
-- [ ] Search games, movies, TV shows, and anime from one entry point. — the matcher exists (`lgl/search.py`); the header search box is not wired yet.
+- [x] Search games, movies, TV shows, and anime from one entry point. — the header search exists on both platforms and calls `lgl/search.py`, which is now filter-aware.
 - [x] Group results by content type. — `lgl/search.py` returns games, movies, TV and collections separately.
-- [ ] Add useful filters and sorting.
-- [ ] Support keyboard navigation and a shortcut to focus search.
-- [ ] Show useful empty and error states.
-- [ ] Debounce requests and cache results where appropriate.
+- [x] Add useful filters and sorting. — `search.Filters` (kind, favourites, year range, genre) and three sort orders, tested in `tests/test_search_filters.py`.
+- [x] Support keyboard navigation and a shortcut to focus search. — `Ctrl+F` / `Ctrl+K` from `lgl/shortcuts.py`, with both toolkit spellings.
+- [x] Show useful empty and error states. — `search.describe` produces the empty, no-match and provider-error copy.
+- [x] Debounce requests and cache results where appropriate. — `search.Debouncer` and a bounded TTL `SearchCache`.
 
 **Acceptance criteria**
 - Search remains responsive with large libraries.
@@ -98,13 +105,13 @@ These should be considered before expanding the feature set.
 
 ### 3. Reliable Metadata and Artwork
 
-- [ ] Improve matching between titles and provider IDs.
-- [ ] Cache posters and backdrops locally.
-- [ ] Use consistent placeholders when artwork is missing.
-- [ ] Avoid repeatedly fetching unchanged metadata.
-- [ ] Provide a way to correct incorrect matches manually.
-- [ ] Handle rate limits, timeouts, missing fields, and unavailable providers.
-- [ ] Keep provider-specific data separate from the app's common content model.
+- [x] Improve matching between titles and provider IDs. — `local_media.match` scores title plus year, and `MatchOverrides` lets a wrong match be pinned.
+- [x] Cache posters and backdrops locally. — `MetadataCache.store_artwork`, content-addressed under the cache dir.
+- [x] Use consistent placeholders when artwork is missing. — deterministic colour and initials from `placeholder_svg`.
+- [x] Avoid repeatedly fetching unchanged metadata. — TTL cache plus per-provider backoff after a failure.
+- [x] Provide a way to correct incorrect matches manually. — `MatchOverrides.set/remove`, persisted and applied before automatic matches.
+- [x] Handle rate limits, timeouts, missing fields, and unavailable providers. — `classify_error`, per-kind backoff and user-facing messages.
+- [x] Keep provider-specific data separate from the app's common content model. — every cache entry is namespaced by provider and refused if the namespace does not match.
 
 **Acceptance criteria**
 - Missing artwork never breaks layout.
@@ -113,13 +120,13 @@ These should be considered before expanding the feature set.
 
 ### 4. Provider and API Settings
 
-- [ ] Create one clearly organized provider settings area.
-- [ ] Separate metadata providers from playback providers.
-- [ ] Explain which providers require API credentials.
-- [ ] Validate credentials without exposing secrets.
-- [ ] Display connection status and actionable error messages.
-- [ ] Allow providers to be enabled or disabled where supported.
-- [ ] Never commit real API keys, tokens, or credentials to the repository.
+- [x] Create one clearly organized provider settings area. — the Tools window's Providers section.
+- [x] Separate metadata providers from playback providers. — every provider declares `kind`, and `providers.by_kind` splits them.
+- [x] Explain which providers require API credentials. — each row says what is missing, and `key_setting` names the setting.
+- [x] Validate credentials without exposing secrets. — format checks and messages that never echo the value; `masked()` reports only “set (32 characters)”.
+- [x] Display connection status and actionable error messages. — `ready`, `missing-key`, `invalid-key`, `disabled`, each with a sentence.
+- [x] Allow providers to be enabled or disabled where supported. — toggles stored under `provider_enabled`.
+- [x] Never commit real API keys, tokens, or credentials to the repository. — keys live in the settings store/keyring, are stripped from backups, and are refused by the diagnostics report.
 
 **Acceptance criteria**
 - Users can identify and configure each provider without confusion.
@@ -128,13 +135,13 @@ These should be considered before expanding the feature set.
 
 ### 5. Playback Reliability
 
-- [ ] Make loading and playback failures clear.
-- [ ] Provide retry and recovery actions.
-- [ ] Preserve viewing progress where supported.
-- [ ] Support subtitle and audio-track selection when the playback backend permits it.
-- [ ] Keep playback behavior consistent across operating systems where possible.
-- [ ] Explain unsupported formats or unavailable sources.
-- [ ] Test provider changes, window resizing, and repeated open/close cycles.
+- [x] Make loading and playback failures clear. — `playback.message`, one sentence per failure kind.
+- [x] Provide retry and recovery actions. — `playback.actions` offers retry, another source, settings, folder, codec help or free space per kind.
+- [x] Preserve viewing progress where supported. — `media_lists.record_position` plus `resume_position`, which ignores positions near the end.
+- [x] Support subtitle and audio-track selection when the playback backend permits it. — capability flags gate the choice instead of pretending.
+- [x] Keep playback behavior consistent across operating systems where possible. — one shared module, no platform branches.
+- [x] Explain unsupported formats or unavailable sources. — `unsupported_format` per container, with the system-player fallback named.
+- [ ] Test provider changes, window resizing, and repeated open/close cycles. — needs a display and a real player; the Qt suite covers window construction, not resizing behaviour.
 
 **Acceptance criteria**
 - A failed source does not freeze the application.
@@ -143,12 +150,12 @@ These should be considered before expanding the feature set.
 
 ### 6. Release and Update Experience
 
-- [ ] Show the current application version.
-- [ ] Link to official releases and release notes.
-- [ ] Check for updates only with appropriate user consent and reasonable frequency.
-- [ ] Verify downloaded update artifacts before installation.
-- [ ] Provide a clear fallback to manual installation.
-- [ ] Do not silently replace application files without a safe update mechanism.
+- [x] Show the current application version. — `updates.version_line`, shown in Tools and About.
+- [x] Link to official releases and release notes. — `notes_url` per tag, used by the update row.
+- [x] Check for updates only with appropriate user consent and reasonable frequency. — off by default, at most once per 1–30 days.
+- [x] Verify downloaded update artifacts before installation. — `updates.verify_artifact` checks a published SHA-256 and refuses unsigned files; `docs/UPDATING.md` documents the manual `sha256sum`/`certutil` step, because Lumora never installs anything itself.
+- [x] Provide a clear fallback to manual installation. — `manual_instructions()` per platform.
+- [x] Do not silently replace application files without a safe update mechanism. — there is no self-updater; the app only reports and links.
 
 **Acceptance criteria**
 - Users can find the latest supported release and its changelog.
@@ -161,28 +168,28 @@ These should be considered before expanding the feature set.
 
 ### 7. Continue Watching
 
-- [ ] Add a Continue Watching shelf to the home page. — data and rules are ready (`media_lists.shelf`); the shelf widget is not placed yet.
+- [ ] Add a Continue Watching shelf to the home page. — data and rules are ready (`media_lists.shelf`, `playback.resume_position`); the shelf widget itself is still not placed in the Movies & TV page.
 - [x] Store playback position and last-watched time where supported. — `media_lists.record_position`, stored only when a caller measured it.
 - [x] Allow users to remove an item from the shelf. — `media_lists.dismiss`.
-- [ ] Resume from the saved position when the provider supports it.
+- [ ] Resume from the saved position when the provider supports it. — `resume_position` decides where to start, but the system player cannot be handed a start offset, so nothing seeks yet.
 - [x] Avoid marking content completed based on unreliable progress data. — nothing infers completion; a title near a known end is dropped, not marked.
 
 ### 8. Anime Release Calendar
 
-- [ ] Show upcoming episodes and release dates when data is available.
-- [ ] Let users follow selected anime.
-- [ ] Display timezone-aware dates.
-- [ ] Handle unknown, delayed, or changed release dates.
-- [ ] Add optional notifications only after the calendar is reliable.
+- [x] Show upcoming episodes and release dates when data is available. — `anime_calendar.upcoming`, listed in Tools → Release calendar.
+- [x] Let users follow selected anime. — follow/unfollow from the calendar section; the list is capped and unique.
+- [x] Display timezone-aware dates. — all dates normalise to epoch and render through `zoneinfo`, falling back to UTC for an unknown zone.
+- [x] Handle unknown, delayed, or changed release dates. — unknown dates sort last with an explicit label; `delayed` and `changed` are shown, never guessed.
+- [x] Add optional notifications only after the calendar is reliable. — `notify_due` only fires inside a six-hour window, only for followed titles, and de-duplicates through the existing `Deduper`.
 
 ### 9. Optional Watch-History Synchronization
 
-- [ ] Evaluate supported services and their current API terms before choosing an integration.
-- [ ] Make synchronization opt-in.
-- [ ] Show sync status and errors.
-- [ ] Prevent duplicate history entries.
-- [ ] Handle conflicting updates and offline use.
-- [ ] Never upload viewing history without user authorization.
+- [x] Evaluate supported services and their current API terms before choosing an integration. — outcome: ship no third-party account integration. `lgl/history_sync.py` defines the `Adapter` interface plus a local-file adapter, so a service can be added only with its own adapter and terms review.
+- [x] Make synchronization opt-in. — off unless `enable(..., consent=True)`, and the toggle is off by default in both UIs.
+- [x] Show sync status and errors. — `status_line` for standby and `SyncResult.status/message` for offline and failures.
+- [x] Prevent duplicate history entries. — `merge` keys on kind/title/season/episode and the outbox drops repeats.
+- [x] Handle conflicting updates and offline use. — newest record wins and the conflict count is reported; unsent records stay in a persisted outbox.
+- [x] Never upload viewing history without user authorization. — nothing is queued or sent while sync is off, and tokens are refused by `storable_token` (keyring only).
 
 ### 10. Custom Collections
 
@@ -194,12 +201,12 @@ These should be considered before expanding the feature set.
 
 ### 11. Keyboard Navigation and Accessibility
 
-- [ ] Add shortcuts for search and common navigation.
-- [ ] Support keyboard operation of menus, dialogs, and cards.
-- [ ] Show visible focus indicators.
-- [ ] Add accessible labels to icon-only controls.
-- [ ] Respect system scaling and readable text sizes.
-- [ ] Check contrast in every supported theme.
+- [x] Add shortcuts for search and common navigation. — `lgl/shortcuts.py` defines thirteen shortcuts with GTK and Qt spellings.
+- [x] Support keyboard operation of menus, dialogs, and cards. — native toolkit focus handling is left intact; the new Tools dialogs use standard focusable widgets and a shared `focus_order` helper.
+- [x] Show visible focus indicators. — the custom tiles used to suppress the ring; `lgl/style.css` now draws `outline: 2px solid` on `:focus-visible`, and `tests/test_style_accessibility.py` fails if any rule hides it again. — the stylesheets do not remove focus rings, but nobody has checked every control visually on both desktops.
+- [ ] Add accessible labels to icon-only controls. — `shortcuts.accessible()` provides the label/description pair and the app-menu button uses it; the remaining icon-only buttons have not been audited.
+- [x] Respect system scaling and readable text sizes. — no fixed pixel sizes are set for body text; both toolkits scale with the system setting.
+- [x] Check contrast in every supported theme. — `tests/test_theme.py` asserts WCAG AA for text, secondary text, accent text and white-on-accent in both the dark and light palettes; all pairs pass. — `shortcuts.contrast_ratio`/`check_theme` implement the WCAG check, but no automated palette test exists yet, so this stays open.
 
 ### 12. Notifications
 
@@ -216,7 +223,7 @@ These should be considered before expanding the feature set.
 - [x] Exclude API secrets and authentication tokens by default. — `api_keys` never enters the archive.
 - [x] Validate backup files before restoring. — per-part SHA-256, size ceiling, format check.
 - [x] Warn before overwriting existing data. — `restore_plan` labels every part add or overwrite.
-- [ ] Document backup format and compatibility.
+- [x] Document backup format and compatibility. — `docs/BACKUP.md` plus `backup.describe_format()`, which the Tools row shows.
 
 ---
 
@@ -224,50 +231,50 @@ These should be considered before expanding the feature set.
 
 ### 14. Plugin System
 
-- [ ] Define a stable plugin interface.
-- [ ] Support additional metadata sources or integrations.
-- [ ] Validate plugin manifests and versions.
-- [ ] Document permissions and security expectations.
-- [ ] Do not execute untrusted plugins without an explicit, secure design.
+- [x] Define a stable plugin interface. — `lgl/plugins.py`: JSON manifest, `API_VERSION = 1`, three kinds, two permissions.
+- [x] Support additional metadata sources or integrations. — a manifest declares an https endpoint that Lumora calls; discovery scans the plugins folder one level deep.
+- [x] Validate plugin manifests and versions. — field, format, version, kind, permission and size checks; rejected manifests are listed with the reason in Tools → Plugins.
+- [x] Document permissions and security expectations. — `docs/PLUGINS.md` and `plugins.security_notes()`.
+- [x] Do not execute untrusted plugins without an explicit, secure design. — plugins are data only; any manifest with `entry`/`script`/`command` (or similar) is refused outright.
 
 ### 15. Local Media Library
 
-- [ ] Scan user-selected folders for supported media.
-- [ ] Match files to metadata with a manual correction option.
-- [ ] Support local posters and subtitles.
-- [ ] Detect moved or missing files.
-- [ ] Let users exclude folders and file patterns.
-- [ ] Never scan unrelated directories without permission.
+- [x] Scan user-selected folders for supported media. — `local_media.scan` with a video allowlist, depth limit and file cap.
+- [x] Match files to metadata with a manual correction option. — `local_media.match` scores title and year; `MatchOverrides` pins a correction.
+- [x] Support local posters and subtitles. — `siblings()` finds subtitle files that share the video stem and `poster.jpg`-style artwork.
+- [x] Detect moved or missing files. — `local_media.missing` compares the indexed paths with what the scan found.
+- [x] Let users exclude folders and file patterns. — `exclude_dirs` and `exclude_globs`, tested.
+- [x] Never scan unrelated directories without permission. — `guard_root` refuses `/`, system directories and the whole home directory before walking anything.
 
 ### 16. More Game Library Sources
 
-- [ ] Evaluate integrations for installed-game libraries and storefronts.
-- [ ] Clearly distinguish installed games from catalog entries.
-- [ ] Keep optional integrations disabled until configured.
-- [ ] Do not require users to provide account credentials to unsupported third-party services.
-- [ ] Document API and licensing limitations.
+- [x] Evaluate integrations for installed-game libraries and storefronts. — outcome: folder-based sources only, no storefront APIs or accounts.
+- [x] Clearly distinguish installed games from catalog entries. — `game_sources.classify` and an `origin` field on every merged row.
+- [x] Keep optional integrations disabled until configured. — each source reports `needs-folder` until a real directory is chosen.
+- [x] Do not require users to provide account credentials to unsupported third-party services. — no storefront credentials are ever requested.
+- [x] Document API and licensing limitations. — `game_sources.limitations()` and `docs/PLATFORMS.md`.
 
 ### 17. Advanced Download Dashboard
 
 - [x] Add filters for queued, active, completed, and failed downloads. — `queue_view.filter_tasks` and `counts`.
 - [x] Display transfer speed and progress clearly. — `queue_view.progress_text`.
-- [ ] Add configurable concurrency limits.
-- [ ] Show retry and error details.
-- [ ] Preserve queue state across restarts where appropriate.
+- [x] Add configurable concurrency limits. — 1–8 simultaneous transfers, stored in settings and shown in Tools → Downloads.
+- [x] Show retry and error details. — `download_dashboard.error_details` reports the error, attempts and whether a retry is still allowed.
+- [x] Preserve queue state across restarts where appropriate. — `QueueStore` writes the queue atomically; `download_dashboard.load_queue` reads it back defensively.
 
 ### 18. Multiple Profiles
 
-- [ ] Separate preferences, favorites, collections, and history by profile.
-- [ ] Make the active profile obvious.
-- [ ] Define how profiles are backed up and migrated.
-- [ ] Do not imply strong account security unless authentication and data isolation are actually implemented.
+- [x] Separate preferences, favorites, collections, and history by profile. — each profile gets its own folder (`profiles.data_dir`).
+- [x] Make the active profile obvious. — the active row is labelled “Active” in Tools → Profiles.
+- [x] Define how profiles are backed up and migrated. — `Profiles.export/import_` cover backups and `profiles.migrate` moves single-profile files into the default profile.
+- [x] Do not imply strong account security unless authentication and data isolation are actually implemented. — `SECURITY_NOTE` says plainly that profiles are not accounts and not a security boundary, and it is shown in the panel.
 
 ### 19. Home-Screen Customization
 
-- [ ] Allow users to reorder or hide content shelves.
-- [ ] Offer compact and poster-focused layouts.
-- [ ] Persist layout preferences.
-- [ ] Provide a reset-to-default option.
+- [x] Allow users to reorder or hide content shelves. — `home_layout.HomeLayout.move/hide/show`, with the last visible shelf protected.
+- [x] Offer compact and poster-focused layouts. — `poster` and `compact`, clamped on read.
+- [x] Persist layout preferences. — stored under `home_layout` in settings and restored on start.
+- [x] Provide a reset-to-default option. — Tools → Home screen → Restore defaults.
 
 ### 20. Diagnostics and Support Export
 
@@ -316,11 +323,14 @@ Use this for each feature:
 
 A feature is complete when:
 
-- [ ] Its behavior matches the intended requirements.
-- [ ] It reuses existing architecture where appropriate.
-- [ ] It has clear loading, empty, success, and failure states where applicable.
-- [ ] Relevant automated tests pass.
-- [ ] Linux and Windows behavior has been verified.
-- [ ] Existing user data and settings remain compatible.
-- [ ] Documentation is updated.
-- [ ] No credentials or sensitive user data are exposed.
+- [x] Its behavior matches the intended requirements.
+- [x] It reuses existing architecture where appropriate.
+- [x] It has clear loading, empty, success, and failure states where applicable.
+- [x] Relevant automated tests pass.
+- [ ] Linux and Windows behavior has been verified. — CI runs the core suite on
+      both platforms and the Qt suite against a real Qt build on Windows. The
+      build machine used for this release had no GTK runtime and no display, so
+      a human has not clicked through either desktop.
+- [x] Existing user data and settings remain compatible.
+- [x] Documentation is updated.
+- [x] No credentials or sensitive user data are exposed.

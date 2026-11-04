@@ -54,3 +54,9 @@ header, sections and theme tokens match.
 | ![Windows browse](screens/qt-browse-catalogue.png) | ![Windows library](screens/qt-library-selection.png) | ![Windows settings](screens/windows-settings.png) |
 
 ![Downloads](screens/qt-downloads.png)
+
+## Tools window (Windows)
+
+`docs/screens/qt-tools.png` — the shared tools window, captured from the Qt build
+with `QT_QPA_PLATFORM=offscreen`. Every platform renders the same sections from
+`lgl/tool_panels.py`.

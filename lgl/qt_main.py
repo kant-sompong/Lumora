@@ -426,6 +426,9 @@ class Window(QMainWindow):
         updates = QAction("Check for updates…", self)
         updates.triggered.connect(self.check_updates)
         menu.addAction(updates)
+        tools = QAction("Tools…", self)
+        tools.triggered.connect(self.show_tools)
+        menu.addAction(tools)
         settings = QAction("Settings…", self)
         settings.triggered.connect(self.show_settings)
         menu.addAction(settings)
@@ -461,6 +464,12 @@ class Window(QMainWindow):
             self.show_view("browse")
         else:
             self.browse.refresh()
+
+    def show_tools(self) -> None:
+        """Open the tools window: providers, downloads, backup, profiles and more."""
+        from .qt_tools import show_tools
+
+        show_tools(self.settings, self)
 
     def show_settings(self, tab: str = "general") -> None:
         dialog = SettingsDialog(self._settings, self)

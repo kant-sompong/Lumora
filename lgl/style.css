@@ -580,6 +580,14 @@ flowboxchild.library-tile {
   background-image: none;
 }
 
+/* Keyboard users need to see where they are: the custom tiles above suppress the
+   default ring, so they draw their own when reached with the keyboard. */
+flowboxchild.library-tile:focus-visible,
+.browse-tile:focus-visible {
+  outline: 2px solid;
+  outline-offset: 2px;
+}
+
 .cover-card {
   padding: 0;
   border-radius: 8px;

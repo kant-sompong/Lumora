@@ -64,6 +64,16 @@ def sanitize_settings(
     return cleaned, removed
 
 
+def describe_format() -> str:
+    """One paragraph a user can read before trusting a backup file."""
+    return (
+        "A backup is a zip archive. manifest.json lists every part with its size and SHA-256, "
+        "followed by library.json, collections.json, settings.json and history.json. "
+        "API keys are stripped from settings.json and never written. Restoring verifies every "
+        "hash before touching anything, and refuses parts written by a newer format version."
+    )
+
+
 def _digest(payload: bytes) -> str:
     return hashlib.sha256(payload).hexdigest()
 
@@ -231,6 +241,8 @@ def write_document(path: Path, document: Mapping[str, Any]) -> None:
 
 
 __all__ = [
+    "describe_format",
+
     "BACKUP_FORMAT",
     "BACKUP_VERSION",
     "DEFAULT_PARTS",

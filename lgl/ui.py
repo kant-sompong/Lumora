@@ -6430,6 +6430,7 @@ class MainWindow(Gtk.ApplicationWindow):
         menu.append(maintenance_item)
 
         menu.append(Gtk.SeparatorMenuItem())
+        add_item("Tools…", self.show_tools)
         add_item("Settings…", lambda: self.show_settings())
         add_item("About Lumora", self.show_about)
         menu.show_all()
@@ -9113,6 +9114,13 @@ class MainWindow(Gtk.ApplicationWindow):
         """Activate the in-app Movies & TV destination."""
         self._apply_view("media")
 
+
+    def show_tools(self) -> None:
+        """Open the tools window: providers, downloads, backup, profiles and more."""
+        from . import gtk_tools
+
+        window = gtk_tools.show_tools(self, self.settings)
+        self._tools_window = window
 
     def show_about(self) -> None:
         dialog = Gtk.AboutDialog(transient_for=self, modal=True)
