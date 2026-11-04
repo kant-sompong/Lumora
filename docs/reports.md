@@ -16,7 +16,57 @@ to that ID.
 
 # 1. Reports
 
-Newest report first by date; numbers are stable, so 1.4 sits on top.
+Newest report first by date; numbers are stable, so 1.5 sits on top.
+
+## 1.5 The Windows catalogue import was thrown away — 2026-11-04 (on 0.6.3)
+
+**Covers:** `main` after 0.6.3, Windows Qt only. Found while re-checking the
+catalogue import that report 1.1 called done.
+
+### How it was checked
+
+- `pytest tests -q` with PySide6 and its Qt libraries present: **183 passed**,
+  two of them new here.
+- A live import through the real dialog against kryo.to: two pages, 50 records.
+- The path was walked again after the fix: 50 records in `catalog.json` on disk,
+  and Browse listed 50.
+
+### The bug
+
+**W1 — `CatalogDialog` imported into a store that could never save anything.**
+Both `_summary()` and the import worker built `CatalogStore()` with no path. The
+importer filled that throw-away store, `count_games()` read it back, and the
+dialog announced "Import finished. 50 catalogue games are stored" — while
+nothing had been written and Browse, which reads the window's own store, never
+changed. The status line before an import was equally wrong in the other
+direction: a fresh pathless store is always empty, so it always said "No
+catalogue games stored yet".
+
+- *Effect:* on Windows, Website Sources and Kryoto imports did nothing except
+  show progress. The progress counters added in report 1.1 made this look like
+  it worked.
+- *Cause worth remembering:* the GTK app imports into `self.catalog`, the store
+  the rest of the window reads. Porting the dialog to Qt lost that wiring, and
+  no test imported a catalogue and then looked at the listing.
+- *Fix:* the dialog takes the window's store (`catalog=`) and an `on_imported`
+  callback, calls `save()` and says so when the save fails instead of reporting
+  a count. `BrowsePage` gained `reload_catalog()`, `_catalog_summaries()` and
+  `_merge_catalog()`; `qt_main` passes both, shows a toast with the new total
+  and switches to Browse, the way the GTK build does after Kryoto.
+  Tests: `test_catalog_import_lands_in_the_window_store`,
+  `test_browse_lists_imported_catalogue_records`
+
+### Not covered
+
+A real Windows desktop (the dialog is driven offscreen); the Website Sources
+address rather than kryo.to (the fake importer in the tests returns early);
+importing into a catalogue that already holds games, since both tests import
+once and read the listing back.
+
+### State
+
+Fixed on `main`, **not released**: 0.6.3 is the newest tag, so the fix reaches
+users with the next release.
 
 ## 1.4 Linux GTK app run for real — 2026-11-04 (on 0.6.1)
 
@@ -368,8 +418,10 @@ commits ahead of 0.5.0 `main`. It is merged; `main` is 0.6.1.
 
 # 2. What to do
 
-**Last checked: 2026-11-03, version 0.6.3** (reports 1.1 and 1.2). Desktop checks still
-need a machine with a display and Windows.
+**Last checked: 2026-11-04, version 0.6.3** (reports 1.1, 1.2 and 1.5). The W1 fix
+is on `main` but is not in a release yet, so 0.6.3 as published still loses a
+Windows catalogue import. Desktop checks still need a machine with a display and
+Windows.
 
 ## 2.1 Fix the bugs from report 1.2
 
@@ -429,6 +481,9 @@ need a machine with a display and Windows.
 
 ## 2.3 Windows (Qt) gaps
 
+- [x] **W1 — Keep the imported catalogue.** *Fixed after report 1.5:* the dialog
+  imports into the window's store, saves it, reports a save it could not do, and
+  tells Browse to reload and jump there. Covered by two Qt tests
 - [x] **Library detail: JDownloader / AB Download Manager hand-off.** Both
   buttons send the game's own magnet and source page through the documented
   local APIs in `external_dm`, and report a refusal
@@ -527,7 +582,7 @@ Verified present in the code and in the v0.5.0 release:
 - Media: Home, Movies, TV Shows, Anime, My List, History, Search, TMDB / MAL /
   ani.pm, episode selector, embedded playback (Qt WebEngine)
 - Settings (5 tabs), RAWG key flow with live test, update check, artwork sync
-- Tests and packaging: core test suite, Qt tests (149 tests pass in CI), portable
+- Tests and packaging: core test suite, Qt tests (183 in the suite, run in CI), portable
   zip, Inno Setup installer and Linux tarball published on every `v*` tag
 
 Added by 0.6.0:
