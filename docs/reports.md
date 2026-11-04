@@ -65,8 +65,7 @@ once and read the listing back.
 
 ### State
 
-Fixed on `main`, **not released**: 0.6.3 is the newest tag, so the fix reaches
-users with the next release.
+Fixed on `main`; shipped in **0.6.4**.
 
 ## 1.4 Linux GTK app run for real — 2026-11-04 (on 0.6.1)
 
@@ -418,10 +417,8 @@ commits ahead of 0.5.0 `main`. It is merged; `main` is 0.6.1.
 
 # 2. What to do
 
-**Last checked: 2026-11-04, version 0.6.3** (reports 1.1, 1.2 and 1.5). The W1 fix
-is on `main` but is not in a release yet, so 0.6.3 as published still loses a
-Windows catalogue import. Desktop checks still need a machine with a display and
-Windows.
+**Last checked: 2026-11-04, version 0.6.4** (reports 1.1, 1.2 and 1.5). Desktop
+checks still need a machine with a display and Windows.
 
 ## 2.1 Fix the bugs from report 1.2
 
@@ -483,7 +480,8 @@ Windows.
 
 - [x] **W1 — Keep the imported catalogue.** *Fixed after report 1.5:* the dialog
   imports into the window's store, saves it, reports a save it could not do, and
-  tells Browse to reload and jump there. Covered by two Qt tests
+  tells Browse to reload and jump there. Covered by two Qt tests. Ships in
+  0.6.4
 - [x] **Library detail: JDownloader / AB Download Manager hand-off.** Both
   buttons send the game's own magnet and source page through the documented
   local APIs in `external_dm`, and report a refusal
