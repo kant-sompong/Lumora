@@ -16,7 +16,111 @@ to that ID.
 
 # 1. Reports
 
-## 1.1 Review of 0.6.1 — 2026-11-03
+## 1.1 Linux GTK app run for real — 2026-11-04
+
+**Covers:** `main` at `5e04f35` (0.6.1): `lgl/ui.py`, `lgl/movies_ui.py`. This
+is the first time the GTK app was actually started in these reviews (report 1.2
+could only read it).
+
+### How it was checked
+
+- The real GTK 3.24 app (Python 3.12 + PyGObject 3.48, WebKit2 4.1) on a virtual
+  X display (Xvfb, 1600×1100) **with a compositor (`xcompmgr`)**, using a
+  throw-away `HOME` / XDG folders.
+- Seeded data: a cached catalogue of 12 fake games (the sandbox cannot reach
+  archive.org, so covers fall back to monograms), 3 fake downloaded games, and a
+  local test HTTP server.
+- A driver visited Browse, Library, Downloads and Media, typed a search, changed
+  the sort and direction, rescanned the library, ran a **real download through
+  the app's own download manager**, opened Settings (General, Locations,
+  Providers, Shortcuts) and About, in dark and light: 21 steps per theme, with a
+  screenshot of each screen.
+- Setup on Ubuntu 24.04: `apt install gir1.2-gtk-3.0 gir1.2-webkit2-4.1 python3-gi
+  python3-gi-cairo adwaita-icon-theme xvfb xcompmgr imagemagick`, then
+  `xvfb-run -s "-screen 0 1600x1100x24"` with `xcompmgr &` running, and
+  `import -window root shot.png` for screenshots. In the sandbox the default
+  `python3` was 3.13 while PyGObject was built for 3.12, so `/usr/bin/python3.12`
+  had to be used.
+
+### Result
+
+0 failed steps, 0 uncaught Python exceptions, **0 lines on stderr** (no GTK
+warnings), and the 5 MiB test download completed at exactly 5,242,880 bytes. The
+GTK app does not crash through any of these paths. The Linux layout (left rail,
+back/forward arrows, search pill, Browse filter column) now matches the Qt app.
+
+### Not covered
+
+A real desktop (theme, fonts, HiDPI, Wayland, pointer behaviour); the real
+archive.org catalogue and covers (no network); video playback in the embedded
+player; the actions behind the Providers and Media settings (pages were only
+opened); the launch dialogs (the functions behind them were tested directly).
+
+### Problems found and reproduced
+
+| ID | Where | Severity |
+|----|-------|----------|
+| G1 | `ui.py` `LibraryView`, `self._flow.set_valign(Gtk.Align.FILL)` (~line 3165) | Medium (visible) |
+| G2 | `ui.py` header search pill, hide logic (~line 7421) | Low (cosmetic) |
+| G3 | `ui.py` Browse filter column, "Availability" section (~line 6943) | Low (cosmetic) |
+| L3 | `launch.py`, `.exe` offered but refused | Medium (dead end) |
+
+**G1 — Library tiles stretch to the full window height when there are few
+games.** With 3 games the cover floats in the middle of a tall tile, the title
+sits about 120 px below it, and the selected highlight covers a full-height
+column. The Qt app and the Browse grid (12 games, two rows) look correct. An
+older real-desktop screenshot of the Library shows the same stretch, so this is
+not a sandbox artefact.
+
+- *Cause:* the flow is set to `valign = FILL` on purpose; a code comment says
+  this was done because transparent margins "left an unpainted band that
+  rendered black on some compositors".
+- *Fix, verified in memory (repo not changed):* keep `FILL` on the flow and call
+  `child.set_valign(Gtk.Align.START)` on every `FlowBoxChild`. The render then
+  shows covers top-aligned with the title directly below. Re-check on a real
+  compositor that the black band does not come back.
+
+**G2 — An empty capsule stays in the middle of the header on Library, Downloads
+and Media.** The search entry and its "Ctrl K" hint are hidden when you leave
+Browse, but the box that holds them (`pill`, CSS class `search-pill`, set as the
+header's custom title) is not.
+
+- *Fix, verified in memory:* hide and show `self._search.get_parent()` instead.
+  With the whole pill hidden the stray shape is gone.
+
+**G3 — The "Availability" heading has nothing under it except "Reset all
+filters".** Nothing in `ui.py` ever adds options to that section. Rename the
+heading, drop it, or add the options.
+
+**L3 (was "not checked" in report 1.2) — `.exe` files are offered as start
+files but can never be launched on Linux.** `launcher_rank('Gamma.exe',
+title='Gamma Game')` returns 20 (offered); `plan_launch` then refuses with
+"This file is not a shell script, AppImage, or ELF executable. It was not
+launched." The GTK dialog calls `launch()` straight after the review dialog
+(`ui.py` ~8809), so the user confirms and then gets an error.
+
+**B2 and B3 apply to the GTK app.** `ui.py` (~8801, ~8809) calls
+`make_executable(path, download_dir)` and then `launch(path, download_dir)`, the
+same functions as in report 1.2, so the execute-bit-before-check bug (B2) and
+the always-`/bin/sh` script bug (B3) are in the real Linux launch flow.
+
+### Not confirmed (check on a real desktop)
+
+- **Settings → General toggles.** In my render the two switches (Desktop
+  notifications, Rescan library on startup) are not drawn: that area is a single
+  flat colour, and the dialog also shows black margins. The widgets exist, are
+  mapped and checked, and the stylesheet colours checked switches with the
+  accent, so this is probably a quirk of a setup with no window manager. It
+  cannot be ruled out as a real bug.
+- **Media home** shows blank panels with no message in the sandbox (no network,
+  no TMDB key). Worth checking what a first-run user without a key sees.
+
+### Rendering artefacts to ignore
+
+Without a compositor, a black rectangle and black frames appeared in the first
+screenshots. They disappeared with `xcompmgr` running, so they are not app bugs.
+
+## 1.2 Review of 0.6.1 — 2026-11-03 (code and Qt; GTK not run)
 
 **Covers:** `main` at commit `5e04f35` (Release 0.6.1), Linux and Windows.
 
@@ -161,7 +265,7 @@ if Tk is also missing the user gets a confusing second traceback.
 - Unused locals in `artwork.py`, `importer.py`, `qt_media.py`, `qt_settings.py`;
   `global` use in `movies_ui.py`, `sources.py`, `theme_gtk.py`, `tk_style.py`.
 
-## 1.2 Earlier checks
+## 1.3 Earlier checks
 
 **2026-11-02, version 0.6.0** (from the previous `ToDo.md` header). Checked by
 running the suite, rendering the Qt windows offscreen at 1×, 2× and the minimum
@@ -176,10 +280,10 @@ commits ahead of 0.5.0 `main`. It is merged; `main` is 0.6.1.
 
 # 2. What to do
 
-**Last checked: 2026-11-03, version 0.6.1** (report 1.1). Desktop checks still
-need a machine with a display and Windows.
+**Last checked: 2026-11-04, version 0.6.1** (reports 1.1 and 1.2). The GTK app was
+run on a virtual display; checks on a real desktop and on Windows are still open.
 
-## 2.1 Fix the bugs from report 1.1
+## 2.1 Fix the bugs from report 1.2
 
 - [ ] **B1 — Retry a partial migration.** Do not write the "done" marker when
   files failed; retry only the missing ones next launch (existing files still
@@ -196,11 +300,21 @@ need a machine with a display and Windows.
 - [ ] **L2 — One launch implementation.** Make `qt_library.py::_launch` use the
   same checks as `launch.plan_launch` (inside the library, file type), with the
   Windows branches kept separate
-- [ ] **L3 — Check how GTK handles a chosen `.exe`** and make `launcher_rank`
-  and `plan_launch` agree
+- [ ] **L3 — `.exe` files are offered but can never be launched (confirmed, report
+  1.1).** Hide them on Linux or add a real Wine/Proton launch, and make
+  `launcher_rank` and `plan_launch` agree
 - [ ] **L4 — Give CI a Linux test job.** Run `compileall`, the core tests, and
   an import of `lgl.ui` (needs `python3-gi` in the runner). Extend the Windows
-  smoke test to open Media and Settings, not only to stay running
+  smoke test to open Media and Settings, not only to stay running. Add the
+  headless GTK run from report 1.1 (Xvfb + xcompmgr) as a smoke job
+- [ ] **G1 — Library tiles stretched.** Set `valign = START` on every
+  `FlowBoxChild` (keep `FILL` on the flow), then re-check on a real compositor
+  that the black band the old workaround avoided does not return
+- [ ] **G2 — Hide the whole header search pill** off Browse, not just the entry
+  and the hint
+- [ ] **G3 — Fix the empty "Availability" heading** in the Browse filters
+- [ ] **Check on a real Linux desktop:** the Settings → General toggles, the Media
+  home on first run without a TMDB key, and the Library after G1
 - [ ] **Tidy:** import `CatalogGame` under `TYPE_CHECKING` in `artwork.py`; drop
   the dead `canonical_url` attribute and the duplicate import
 
@@ -272,8 +386,9 @@ need a machine with a display and Windows.
 
 - [ ] **Review the GTK app on a running display**, screen by screen, against the
   Qt app. Needs a display and PyGObject, neither of which the review host has;
-  no bugs were found by reading the code *(report 1.1 did find B2 and B3 in the
-  launch code the GTK app uses, so "none found by reading" is not proof)*
+  no bugs were found by reading the code *(report 1.2 did find B2 and B3 in the
+  launch code the GTK app uses, so "none found by reading" is not proof; a run on a virtual display, report 1.1, found G1–G3 and
+  confirmed B2 and B3 apply to GTK)*
 - [ ] **Split `ui.py` (~11,900 lines) and `movies_ui.py` (~4,000 lines)** into
   smaller modules so they can be tested. Deliberately not started: a move that
   large cannot be checked without a display, and a half-moved GTK app is worse
