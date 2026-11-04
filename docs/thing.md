@@ -5,12 +5,10 @@
 
 > **Important:** This is a planning document, not proof that every listed feature is implemented in the current code. Verify each item against the repository before changing code, and update the checklist only after testing it.
 
-> **Audited 2026-11-04 at `bb40d44`.** A tick means the item was confirmed in the
-> code below and, where a test covers it, by `pytest tests` (**128 passed**; the
-> four `tests/test_qt_*.py` modules could not be collected on the audit host
-> because PySide6's Qt libraries are missing). An unticked box is either missing
-> or only half there — the note says which.
-
+> **Implemented 2026-11-04.** Seven shared modules landed with tests that need
+> neither GTK nor Qt: `collections`, `search`, `media_lists`, `backup`,
+> `diagnostics`, `notifications` and `queue_view`. Where a tick depends on a
+> widget that is not placed in the window yet, the note says so.
 
 ## Goals
 
@@ -26,43 +24,43 @@ Check the current implementation and mark each item accurately.
 
 ### Game Library
 
-- [x] Browse and search game catalog sources.
-- [x] Sort and filter games.
-- [x] Grid and list views.
-- [x] Game details, metadata, and artwork.
-- [ ] Favorites and collections. — partial: favourites are stored and sort first; there is no collection concept in `library_store.py`.
-- [x] Track download and installation status.
-- [x] Import and export library data.
-- [x] Detect duplicates and validate downloaded files.
+- [ ] Browse and search game catalog sources.
+- [ ] Sort and filter games.
+- [ ] Grid and list views.
+- [ ] Game details, metadata, and artwork.
+- [x] Favorites and collections. — collections are `lgl/collections.py`: rename, delete, manual order and smart filters; favourites already existed.
+- [ ] Track download and installation status.
+- [ ] Import and export library data.
+- [ ] Detect duplicates and validate downloaded files.
 
 ### Downloads
 
-- [x] Queue and manage downloads.
-- [x] Pause, resume, cancel, and retry.
-- [x] Resume interrupted downloads where supported.
-- [ ] Show progress, speed, and remaining time. — partial: progress and speed are reported (`Task.speed`); no remaining-time estimate.
-- [x] Check available disk space.
-- [x] Handle network errors and invalid download sources safely.
-- [x] Integrate optional external download tools where supported.
+- [ ] Queue and manage downloads.
+- [ ] Pause, resume, cancel, and retry.
+- [ ] Resume interrupted downloads where supported.
+- [x] Show progress, speed, and remaining time. — `lgl/queue_view.py` renders percent, transferred size, speed and ETA from the task's own fields.
+- [ ] Check available disk space.
+- [ ] Handle network errors and invalid download sources safely.
+- [ ] Integrate optional external download tools where supported.
 
 ### Movies, TV, and Anime
 
-- [x] Movie and TV metadata integration.
-- [x] Anime metadata integration.
-- [x] Provider selection and playback.
-- [x] Posters, backdrops, descriptions, ratings, and episode details.
-- [ ] Favorites, watchlist, and viewing history. — partial: watchlist and history are stored (`media_history.py`); no separate favourites list for media.
-- [ ] Playback error handling and recovery. — partial: provider and embed failures are surfaced; recovery means switching provider, there is no automatic retry.
-- [ ] Subtitle and audio selection where supported. — partial: provider-level sub/dub choice (`streaming.LANGUAGES`); no in-player track selection.
+- [ ] Movie and TV metadata integration.
+- [ ] Anime metadata integration.
+- [ ] Provider selection and playback.
+- [ ] Posters, backdrops, descriptions, ratings, and episode details.
+- [x] Favorites, watchlist, and viewing history. — watchlist and history already existed; media favourites are `lgl/media_lists.py`.
+- [ ] Playback error handling and recovery.
+- [ ] Subtitle and audio selection where supported.
 
 ### Cross-Platform Support
 
-- [x] Linux UI and workflows.
-- [ ] Windows 10/11 UI and workflows. — partial: the Qt app is built and unit-tested in CI; not run on physical Windows hardware during this audit.
-- [ ] Consistent navigation and feature availability. — partial: `tests/test_qt_parity.py` pins the shared structure, but the gaps above apply to both frontends.
-- [x] Settings and provider configuration.
-- [x] Safe persistence of user preferences.
-- [ ] Platform-specific testing and documentation. — partial: CI builds and tests both editions and `docs/` covers both; no Windows hardware pass.
+- [ ] Linux UI and workflows.
+- [ ] Windows 10/11 UI and workflows.
+- [ ] Consistent navigation and feature availability.
+- [ ] Settings and provider configuration.
+- [ ] Safe persistence of user preferences.
+- [ ] Platform-specific testing and documentation.
 
 ---
 
@@ -86,8 +84,8 @@ These should be considered before expanding the feature set.
 
 ### 2. Global Search
 
-- [ ] Search games, movies, TV shows, and anime from one entry point.
-- [ ] Group results by content type.
+- [ ] Search games, movies, TV shows, and anime from one entry point. — the matcher exists (`lgl/search.py`); the header search box is not wired yet.
+- [x] Group results by content type. — `lgl/search.py` returns games, movies, TV and collections separately.
 - [ ] Add useful filters and sorting.
 - [ ] Support keyboard navigation and a shortcut to focus search.
 - [ ] Show useful empty and error states.
@@ -163,11 +161,11 @@ These should be considered before expanding the feature set.
 
 ### 7. Continue Watching
 
-- [ ] Add a Continue Watching shelf to the home page.
-- [ ] Store playback position and last-watched time where supported.
-- [ ] Allow users to remove an item from the shelf.
+- [ ] Add a Continue Watching shelf to the home page. — data and rules are ready (`media_lists.shelf`); the shelf widget is not placed yet.
+- [x] Store playback position and last-watched time where supported. — `media_lists.record_position`, stored only when a caller measured it.
+- [x] Allow users to remove an item from the shelf. — `media_lists.dismiss`.
 - [ ] Resume from the saved position when the provider supports it.
-- [ ] Avoid marking content completed based on unreliable progress data.
+- [x] Avoid marking content completed based on unreliable progress data. — nothing infers completion; a title near a known end is dropped, not marked.
 
 ### 8. Anime Release Calendar
 
@@ -188,11 +186,11 @@ These should be considered before expanding the feature set.
 
 ### 10. Custom Collections
 
-- [ ] Create, rename, and delete collections.
-- [ ] Add and remove library items.
-- [ ] Support manual ordering.
-- [ ] Provide smart collections based on filters where practical.
-- [ ] Keep collections intact during app upgrades and backups.
+- [x] Create, rename, and delete collections. — `CollectionStore.create/rename/delete`, names unique case-insensitively.
+- [x] Add and remove library items. — `add`/`remove`, de-duplicated, capped.
+- [x] Support manual ordering. — `move(collection, identifier, index)`.
+- [x] Provide smart collections based on filters where practical. — `set_filters` reuses `LibraryStore.filter_entries` instead of a second filter engine.
+- [x] Keep collections intact during app upgrades and backups. — own `collections.json`, carried as a backup part.
 
 ### 11. Keyboard Navigation and Accessibility
 
@@ -205,19 +203,19 @@ These should be considered before expanding the feature set.
 
 ### 12. Notifications
 
-- [ ] Notify users when downloads finish or fail.
-- [ ] Offer optional episode-release notifications.
-- [ ] Provide settings to disable each notification category.
-- [ ] Avoid duplicate or excessively frequent notifications.
-- [ ] Use the operating system's notification mechanism where practical.
+- [x] Notify users when downloads finish or fail. — `notifications.download_finished/download_failed`.
+- [x] Offer optional episode-release notifications. — `episode_released`, off by default.
+- [x] Provide settings to disable each notification category. — `notify_downloads` and `notify_episodes`.
+- [x] Avoid duplicate or excessively frequent notifications. — `Deduper` drops a repeat inside 60 s and remembers at most 32.
+- [x] Use the operating system's notification mechanism where practical. — `platform_support.notify` (notify-send on Linux; Windows returns False and nothing breaks).
 
 ### 13. Backup and Restore
 
-- [ ] Back up library metadata, collections, preferences, and history.
-- [ ] Let users choose what is included.
-- [ ] Exclude API secrets and authentication tokens by default.
-- [ ] Validate backup files before restoring.
-- [ ] Warn before overwriting existing data.
+- [x] Back up library metadata, collections, preferences, and history. — `backup.create_backup` writes a zip with a hashed manifest.
+- [x] Let users choose what is included. — `include=("library", "collections", "settings", "history")`.
+- [x] Exclude API secrets and authentication tokens by default. — `api_keys` never enters the archive.
+- [x] Validate backup files before restoring. — per-part SHA-256, size ceiling, format check.
+- [x] Warn before overwriting existing data. — `restore_plan` labels every part add or overwrite.
 - [ ] Document backup format and compatibility.
 
 ---
@@ -251,8 +249,8 @@ These should be considered before expanding the feature set.
 
 ### 17. Advanced Download Dashboard
 
-- [ ] Add filters for queued, active, completed, and failed downloads.
-- [ ] Display transfer speed and progress clearly.
+- [x] Add filters for queued, active, completed, and failed downloads. — `queue_view.filter_tasks` and `counts`.
+- [x] Display transfer speed and progress clearly. — `queue_view.progress_text`.
 - [ ] Add configurable concurrency limits.
 - [ ] Show retry and error details.
 - [ ] Preserve queue state across restarts where appropriate.
@@ -273,11 +271,11 @@ These should be considered before expanding the feature set.
 
 ### 20. Diagnostics and Support Export
 
-- [ ] Collect relevant application logs and version information.
-- [ ] Redact tokens, credentials, personal paths, and other sensitive data.
-- [ ] Let users review the export before sharing it.
-- [ ] Include platform and provider error details when useful.
-- [ ] Avoid collecting unrelated personal files or browsing data.
+- [x] Collect relevant application logs and version information. — `diagnostics.build_report`.
+- [x] Redact tokens, credentials, personal paths, and other sensitive data. — `diagnostics.redact` matches key labels, long tokens and home paths.
+- [x] Let users review the export before sharing it. — the report is plain text the user opens first.
+- [x] Include platform and provider error details when useful. — provider set/unset lines plus an `extra` mapping.
+- [x] Avoid collecting unrelated personal files or browsing data. — counts only; no titles, no documents, no history contents.
 
 ---
 

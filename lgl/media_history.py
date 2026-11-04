@@ -37,6 +37,10 @@ def _valid_key(value: Any) -> str:
     return f"{kind}:{int(number)}"
 
 
+#: Public alias so other stores can validate keys without copying the rule.
+valid_key = _valid_key
+
+
 def _entry(raw: Any) -> dict[str, Any] | None:
     if not isinstance(raw, Mapping):
         return None
