@@ -3158,8 +3158,8 @@ class LibraryView(Gtk.Box):
         self._flow.set_selection_mode(Gtk.SelectionMode.SINGLE)
         self._flow.set_activate_on_single_click(True)
         self._flow.set_homogeneous(True)
-        self._flow.set_column_spacing(16)
-        self._flow.set_row_spacing(18)
+        self._flow.set_column_spacing(12)
+        self._flow.set_row_spacing(14)
         self._flow.set_min_children_per_line(2)
         self._flow.set_max_children_per_line(6)
         # The flow fills the viewport and gets its breathing room from CSS

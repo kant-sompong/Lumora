@@ -20,10 +20,13 @@ import threading
 import time
 import urllib.parse
 from dataclasses import dataclass, replace
-from typing import Any, Mapping, Sequence
+from typing import TYPE_CHECKING, Any, Mapping, Sequence
 
 from .catalog_store import CatalogStore
 from .sources import SourceError, SourceGame
+
+if TYPE_CHECKING:  # annotations only: the import would be circular at runtime
+    from .catalog_store import CatalogGame
 
 #: Hosts that serve a provider's images.  They are approved for the record's
 #: source only after a sync actually used one.

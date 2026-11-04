@@ -198,6 +198,42 @@ def test_a_failed_file_is_reported_without_stopping_the_rest(tmp_path, monkeypat
     ).exists()
 
 
+def test_a_partial_migration_is_retried_on_the_next_launch(tmp_path, monkeypatch):
+    """A file that could not be copied must not be given up on (B1)."""
+    env = linux_env(tmp_path)
+    write_legacy_linux(tmp_path, env)
+    real_copy2 = shutil.copy2
+    failing = {"on": True}
+
+    def flaky(source, target, *args, **kwargs):
+        if failing["on"] and str(source).endswith("downloads.json"):
+            raise OSError("the file is open in another program")
+        return real_copy2(source, target, *args, **kwargs)
+
+    monkeypatch.setattr(shutil, "copy2", flaky)
+    first = migration.migrate_once(system="linux", env=env)
+
+    assert first.errors
+    assert not (platform_support.data_dir("linux", env) / "downloads.json").exists()
+    marker = json.loads(migration.marker_path_for("linux", env).read_text())
+    assert marker["status"] == "partial"
+    assert "try again" in first.summary()
+
+    failing["on"] = False
+    second = migration.migrate_once(system="linux", env=env)
+
+    assert second.errors == []
+    assert (platform_support.data_dir("linux", env) / "downloads.json").is_file()
+    # Only the file that failed is copied again; what already arrived is left alone.
+    assert second.copied == ["data/downloads.json"]
+    marker = json.loads(migration.marker_path_for("linux", env).read_text())
+    assert marker["status"] == "copied"
+
+    third = migration.migrate_once(system="linux", env=env)
+    assert third.migrated is False
+    assert third.reason == "Already migrated."
+
+
 def test_windows_folders_migrate_from_native_game_library(tmp_path):
     env = windows_env(tmp_path)
     old_config = Path(env["APPDATA"]) / "NativeGameLibrary"

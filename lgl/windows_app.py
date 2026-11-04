@@ -47,7 +47,7 @@ from .compatibility import STATUSES as COMPATIBILITY_STATUSES
 from .downloader import DownloadManager, DownloadStatus, TaskSnapshot
 from .filetypes import is_shell
 from .integrity import IntegrityResult, IntegrityStatus, verify_file
-from .launch import plan_launch
+from .launch import open_launch_log, plan_launch
 from .launch import launch as launch_reviewed_file
 from .library import MANIFEST_NAME, LocalFile, game_folder, scan_game_folder, write_manifest
 from .library_store import (
@@ -3958,26 +3958,29 @@ class WindowsApp:
                 "Only .exe, .com, .bat, and .cmd files are launched from this app. "
                 "The file was not started."
             )
-        log_path = path.parent / "launch.log"
+        log_file, log_path = open_launch_log(path.parent)
         try:
-            with open(log_path, "a", encoding="utf-8") as log:
-                log.write(
+            if log_file is not None:
+                log_file.write(
                     f"\n=== {time.strftime('%Y-%m-%d %H:%M:%S')} launching "
                     f"{path.name} ({kind}) ===\n"
                 )
-                log.write("command: " + " ".join(command) + "\n")
-                log.flush()
-                process = subprocess.Popen(
-                    command,
-                    cwd=str(path.parent),
-                    shell=False,
-                    stdin=subprocess.DEVNULL,
-                    stdout=log,
-                    stderr=subprocess.STDOUT,
-                    **platform_support.detached_kwargs(),
-                )
+                log_file.write("command: " + " ".join(command) + "\n")
+                log_file.flush()
+            process = subprocess.Popen(
+                command,
+                cwd=str(path.parent),
+                shell=False,
+                stdin=subprocess.DEVNULL,
+                stdout=log_file if log_file is not None else subprocess.DEVNULL,
+                stderr=subprocess.STDOUT,
+                **platform_support.detached_kwargs(),
+            )
         except OSError as exc:
             raise LaunchError(f"Could not start the program: {exc}") from exc
+        finally:
+            if log_file is not None:
+                log_file.close()
         return process.pid, log_path
 
     # -- duplicates --------------------------------------------------------

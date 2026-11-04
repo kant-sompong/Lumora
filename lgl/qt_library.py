@@ -8,11 +8,13 @@ actions.
 
 from __future__ import annotations
 
+import os
+import subprocess
 import time
 from pathlib import Path
 from typing import Callable, Sequence
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QEvent, Qt, QTimer, Signal
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -37,6 +39,7 @@ from PySide6.QtWidgets import (
 
 from . import external_dm, integrity, platform_support
 from .archive import ArchiveClient, ArchiveItem
+from .launch import open_launch_log
 from .library import MANIFEST_NAME, scan_game_folder
 from .library_store import LibraryEntry, LibraryStore, SORT_DEFAULT_DESCENDING, STATUSES
 from .qt_icons import icon, paint_icon
@@ -60,7 +63,7 @@ from .qt_widgets import (
     search_icon,
     space,
 )
-from .util import human_size
+from .util import human_size, is_within
 
 #: Sort choices in the order the GTK view offers them.
 LIBRARY_SORTS = (
@@ -143,6 +146,14 @@ def launch_candidates(folder: str | Path, title: str, limit: int = 40) -> list[P
 
 def _elided(text: str, width: int = 300) -> str:
     return text if len(text) <= 90 else text[:90] + "…"
+
+
+#: Gap between library cards.  Wide gutters left a shelf looking sparse, so
+#: the cards sit closer together and the cells fill the row.
+GRID_GAP = 12
+GRID_GAP_VERTICAL = 14
+#: Narrowest card the grid will place in a row.
+GRID_MIN_CELL = 232
 
 
 # --------------------------------------------------------------------------
@@ -469,6 +480,7 @@ class LibraryDetail(QFrame):
         outer.addWidget(scroll)
         column.setContentsMargins(20, 16, 20, 18)
         column.setSpacing(6)
+        self._column = column
 
         head = QHBoxLayout()
         head.addWidget(label("SELECTED GAME", "detailEyebrow"))
@@ -510,7 +522,8 @@ class LibraryDetail(QFrame):
         column.addWidget(self.launch_host)
         self.launch_note = label("", "detailNote", wrap=True)
         column.addWidget(self.launch_note)
-        column.addStretch(1)
+        # The actions follow the details.  A stretch here pushed every button to
+        # the bottom of the panel and left a tall empty band above them.
         column.addSpacing(12)
 
         for row_spec in (
@@ -537,6 +550,7 @@ class LibraryDetail(QFrame):
                 if name == "favorite":
                     self.favorite_btn = btn
             column.addLayout(line)
+        column.addStretch(1)
 
     def _row(self, text: str, key: str) -> QHBoxLayout:
         line = QHBoxLayout()
@@ -791,12 +805,17 @@ class LibraryPage(QWidget):
         layout.addWidget(self.stats)
 
         self.scroll, self._body, column = scroll_page()
+        # The grid's width changes when the detail panel opens or closes, and
+        # that is a viewport resize, not a page resize: without this the cards
+        # kept the old column count and the last one was clipped behind the
+        # panel.
+        self.scroll.viewport().installEventFilter(self)
         column.setContentsMargins(24, 4, 24, 20)
         self.grid_host = QWidget()
         self.grid = QGridLayout(self.grid_host)
         self.grid.setContentsMargins(0, 0, 0, 0)
-        self.grid.setHorizontalSpacing(16)
-        self.grid.setVerticalSpacing(20)
+        self.grid.setHorizontalSpacing(GRID_GAP)
+        self.grid.setVerticalSpacing(GRID_GAP_VERTICAL)
         column.addWidget(self.grid_host)
         self.list_host = QWidget()
         self.list_column = QVBoxLayout(self.list_host)
@@ -961,7 +980,7 @@ class LibraryPage(QWidget):
         if self._view == "grid":
             columns = self._columns()
             available = max(self.scroll.viewport().width() - 48, 200)
-            cell = max(180, (available - 16 * (columns - 1)) // columns)
+            cell = max(180, (available - GRID_GAP * (columns - 1)) // columns)
             for index, entry in enumerate(self._shown):
                 card: QWidget = LibraryCard(entry)
                 card.setMinimumWidth(min(200, cell))
@@ -999,7 +1018,24 @@ class LibraryPage(QWidget):
 
     def _columns(self) -> int:
         width = max(self.scroll.viewport().width() - 48, 200)
-        return max(1, int((width + 16) // 246))
+        return max(1, int((width + GRID_GAP) // (GRID_MIN_CELL + GRID_GAP)))
+
+    def eventFilter(self, watched, event) -> bool:  # noqa: N802
+        if watched is self.scroll.viewport() and event.type() == QEvent.Resize:
+            self._schedule_render()
+        return super().eventFilter(watched, event)
+
+    def _schedule_render(self) -> None:
+        """Re-flow once, after the grid's own width settles."""
+        if getattr(self, "_render_pending", False):
+            return
+        self._render_pending = True
+
+        def run() -> None:
+            self._render_pending = False
+            self._render()
+
+        QTimer.singleShot(0, run)
 
     def resizeEvent(self, event) -> None:  # noqa: N802
         super().resizeEvent(event)
@@ -1008,13 +1044,9 @@ class LibraryPage(QWidget):
             self._last_width = width
             self._last_columns = self._columns()
             if self._cards:
-                from PySide6.QtCore import QTimer
-
-                QTimer.singleShot(0, self._render)
+                self._schedule_render()
 
     def _load_covers(self) -> None:
-        from .qt_widgets import pixmap_from_bytes
-
         for entry in self._shown:
             card = self._cards.get(entry.identifier)
             if card is None or getattr(card, "_cover_asked", False):
@@ -1340,34 +1372,51 @@ class LibraryPage(QWidget):
         dialog = LaunchDialog(path, entry.title or entry.identifier, self)
         if dialog.exec() != QDialog.Accepted:
             return
+        # The same two checks the GTK launcher makes, so a path from the detail
+        # panel cannot start something outside the library: this frontend has
+        # its own Windows command branches, because launch.plan_launch is
+        # POSIX-only (os.geteuid, execute bits).
+        if not is_within(path, self.download_dir):
+            self._toast(
+                "The file is outside the selected download folder. It was not launched.",
+                error=True,
+            )
+            return
+        suffix = path.suffix.lower()
+        if suffix not in (".exe", ".com", ".bat", ".cmd"):
+            self._toast(
+                "Only .exe, .com, .bat, and .cmd files are started from here. "
+                "The file was not started.",
+                error=True,
+            )
+            return
+        if suffix in (".bat", ".cmd"):
+            command = [os.environ.get("COMSPEC", "cmd.exe"), "/c", str(path)]
+        else:
+            command = [str(path)]
+        log_file, _log_path = open_launch_log(path.parent)
         try:
-            if path.suffix.lower() in (".bat", ".cmd"):
-                import os
-                import subprocess
-
-                command = [os.environ.get("COMSPEC", "cmd.exe"), "/c", str(path)]
-            else:
-                import subprocess
-
-                command = [str(path)]
-            log_path = path.parent / "launch.log"
-            with open(log_path, "a", encoding="utf-8") as log:
-                log.write(
+            if log_file is not None:
+                log_file.write(
                     f"\n=== {time.strftime('%Y-%m-%d %H:%M:%S')} launching {path.name} ===\n"
                 )
-                log.flush()
-                process = subprocess.Popen(
-                    command,
-                    cwd=str(path.parent),
-                    shell=False,
-                    stdin=subprocess.DEVNULL,
-                    stdout=log,
-                    stderr=subprocess.STDOUT,
-                    **platform_support.detached_kwargs(),
-                )
+                log_file.write("command: " + " ".join(command) + "\n")
+                log_file.flush()
+            process = subprocess.Popen(
+                command,
+                cwd=str(path.parent),
+                shell=False,
+                stdin=subprocess.DEVNULL,
+                stdout=log_file if log_file is not None else subprocess.DEVNULL,
+                stderr=subprocess.STDOUT,
+                **platform_support.detached_kwargs(),
+            )
         except OSError as exc:
             self._toast(f"Could not start the program: {exc}", error=True)
             return
+        finally:
+            if log_file is not None:
+                log_file.close()
         self._toast(f"Started {path.name} (pid {process.pid}).")
 
     # helpers ---------------------------------------------------------------

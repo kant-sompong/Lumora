@@ -119,6 +119,7 @@ class Window(QMainWindow):
         self.browse.files_download_requested.connect(self._files_download_requested)
         self.browse.catalog_download_requested.connect(self._catalog_download_requested)
         self.browse.count_changed.connect(self._browse_count_changed)
+        self.browse.reload_catalog()
         self.stack.addWidget(self.browse)
 
         self.library = LibraryPage(store, self._settings, client, self.download_dir)
@@ -436,15 +437,30 @@ class Window(QMainWindow):
     def show_sources(self) -> None:
         from .qt_catalog import CatalogDialog
 
-        CatalogDialog(self).exec()
+        CatalogDialog(
+            self, catalog=self.catalog, on_imported=self._catalog_imported
+        ).exec()
 
     def show_kryoto_catalog(self) -> None:
         from .qt_catalog import KRYOTO_NOTE, KRYOTO_URL, CatalogDialog
 
         CatalogDialog(
             self, title="Kryoto Catalog", url=KRYOTO_URL, note=KRYOTO_NOTE,
-            action="Import all",
+            action="Import all", catalog=self.catalog,
+            on_imported=self._catalog_imported,
         ).exec()
+
+    def _catalog_imported(self, count: int) -> None:
+        """Show what an import added, the way the GTK build does after Kryoto."""
+        listed = self.browse.reload_catalog()
+        if listed:
+            self.toast.show_message(
+                f"Browse now lists {listed:,} imported catalogue game(s).", ms=4000
+            )
+        if self._current != "browse":
+            self.show_view("browse")
+        else:
+            self.browse.refresh()
 
     def show_settings(self, tab: str = "general") -> None:
         dialog = SettingsDialog(self._settings, self)

@@ -237,13 +237,16 @@ def test_artwork_sync_reports_an_empty_catalogue():
     assert summary["added"] == 0
 
 
-def test_library_exposes_the_magnet_action_and_media_the_lookup(app):
+def test_library_exposes_the_magnet_action_and_media_a_search_driven_lookup(app):
     from lgl.qt_library import LibraryPage
     from lgl.qt_media import MediaPage
 
     assert hasattr(LibraryPage, "magnet_requested")
     assert hasattr(LibraryPage, "external_requested")
-    assert hasattr(MediaPage, "lookup_anime")
+    # The lookup is the search field now (Linux parity): no separate button or
+    # second title box, just the match the search resolved.
+    assert hasattr(MediaPage, "_play_anilist_match")
+    assert not hasattr(MediaPage, "lookup_anime")
 
 
 def test_update_check_and_installer_are_wired(app):

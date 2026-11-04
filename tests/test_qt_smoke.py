@@ -199,3 +199,136 @@ def test_download_runs_to_completion_and_row_updates(app, tmp_path, server):
     assert task_id in window.downloads._rows
     assert window.downloads._rows[task_id].detail.text().startswith("Saved to")
     window.close()
+
+
+def test_media_lookup_lives_in_the_search_bar(app):
+    """Searching is the lookup: there is no second title box in the media bar."""
+    from lgl.qt_media import MediaPage
+
+    qt_main.apply_theme(app, "dark")
+    page = MediaPage(None)
+    assert not hasattr(page, "lookup_btn")
+    assert page.anilist_btn.isHidden()
+    page.deleteLater()
+
+
+def test_search_anilist_match_is_one_button(app):
+    from lgl.qt_media import MediaPage
+
+    qt_main.apply_theme(app, "dark")
+    page = MediaPage(None)
+    page._anilist_match = ("Example Anime", 42)
+    page.anilist_btn.setText("Play “Example Anime” on ani.pm (AniList)")
+    page.anilist_btn.setVisible(True)
+    assert not page.anilist_btn.isHidden()
+    assert "Example Anime" in page.anilist_btn.text()
+    page.deleteLater()
+
+
+def test_library_detail_actions_follow_the_details(app):
+    """No stretch above the buttons: they sit under the details, not at the bottom."""
+    from lgl.qt_library import LibraryPage
+
+    qt_main.apply_theme(app, "dark")
+    page = LibraryPage(None)
+    column = page.detail._column
+    assert column.itemAt(column.count() - 1).spacerItem() is not None
+    page.deleteLater()
+
+
+def test_library_grid_uses_tighter_gutters(app):
+    from lgl import qt_library
+
+    qt_main.apply_theme(app, "dark")
+    page = qt_library.LibraryPage(None)
+    assert page.grid.horizontalSpacing() == qt_library.GRID_GAP
+    assert page.grid.verticalSpacing() == qt_library.GRID_GAP_VERTICAL
+    assert qt_library.GRID_GAP < 16
+    page.deleteLater()
+
+
+def test_catalog_import_lands_in_the_window_store(app, tmp_path, monkeypatch):
+    """An import must reach the store Browse reads, not a throwaway one."""
+    from types import SimpleNamespace
+
+    from lgl.catalog_store import CatalogStore
+    from lgl.qt_catalog import CatalogDialog
+    from lgl.sources import SourceGame
+
+    qt_main.apply_theme(app, "dark")
+    store = CatalogStore(tmp_path / "catalog.json")
+    counts = []
+
+    def fake_import(target, url, options=None, progress=None):
+        assert target is store, "the dialog must import into the given store"
+        if progress is not None:
+            progress(SimpleNamespace(
+                phase="catalog", pages_processed=1, games_imported=2,
+                games_discovered=2, status="importing",
+            ))
+        target.upsert_game(SourceGame(
+            source_id="kryoto", game_id="g1", title="Hollow Knight", year="2017",
+        ))
+        target.upsert_game(SourceGame(
+            source_id="kryoto", game_id="g2", title="Celeste", year="2018",
+        ))
+        return SimpleNamespace(summary="done"), SimpleNamespace(name="Kryoto")
+
+    monkeypatch.setattr("lgl.qt_catalog.import_source", fake_import)
+    dialog = CatalogDialog(None, catalog=store, on_imported=counts.append)
+    dialog.start_import()
+    end = time.time() + 5
+    while not counts and time.time() < end:
+        app.processEvents()
+        time.sleep(0.01)
+
+    assert counts == [2]
+    assert "2 catalogue games are stored" in dialog.status.text()
+    # Saved, so a later window sees the same catalogue.
+    assert CatalogStore(tmp_path / "catalog.json").count_games() == 2
+    dialog.deleteLater()
+
+
+def test_catalog_dialog_reports_import_progress(app):
+    from types import SimpleNamespace
+
+    from lgl.qt_catalog import CatalogDialog
+
+    qt_main.apply_theme(app, "dark")
+    dialog = CatalogDialog(None)
+    assert dialog.progress.isHidden()
+    dialog._busy = True
+    dialog._record_progress(SimpleNamespace(
+        phase="catalog", pages_processed=3, games_imported=75,
+        games_discovered=75, status="importing",
+    ))
+    dialog._show_progress()
+    assert "75" in dialog.status.text()
+    dialog._finish_progress()
+    dialog.deleteLater()
+
+
+def test_browse_lists_imported_catalogue_records(app, tmp_path):
+    """Imported catalogue games are rows in Browse, like the GTK build."""
+    from lgl.catalog_store import CatalogStore
+    from lgl.qt_browse import BrowsePage
+    from lgl.sources import SourceGame
+
+    qt_main.apply_theme(app, "dark")
+    store = CatalogStore(tmp_path / "catalog.json")
+    store.upsert_game(SourceGame(
+        source_id="kryoto", game_id="g1", title="Hollow Knight", year="2017",
+        genres=("Action",), cover_url="https://example.org/hk.jpg",
+    ))
+    store.save()
+
+    page = BrowsePage(None, catalog=store)
+    assert page.reload_catalog() == 1
+    row = page.game("catalog:kryoto:g1")
+    assert row is not None and row.is_catalog
+    assert row.title == "Hollow Knight"
+    assert row.catalog_source == "kryoto"
+    # Reloading the archive collection must not drop the imported records.
+    page.set_games([])
+    assert page.game("catalog:kryoto:g1") is not None
+    page.deleteLater()
