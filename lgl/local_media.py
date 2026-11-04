@@ -83,11 +83,29 @@ class ScanResult:
         return len(self.files)
 
 
+def refused_system_paths() -> set[str]:
+    """Paths that are never a media folder, including this machine's own."""
+    labels = set(_REFUSED_ROOTS)
+    for key in ("SystemRoot", "windir", "ProgramFiles", "ProgramFiles(x86)", "ProgramData"):
+        value = os.environ.get(key)
+        if value:
+            labels.add(str(value).replace("\\", "/").rstrip("/").lower())
+    return labels
+
+
 def guard_root(path: Path | str) -> tuple[bool, str]:
-    """Refuse to walk a directory that is not a media folder."""
+    """Refuse to walk a directory that is not a media folder.
+
+    A filesystem root is refused structurally rather than by name: on Windows
+    ``os.path.abspath("/")`` is the current drive root (``C:\\``), whose name is
+    just ``c:`` once the separator is stripped, and any other drive letter would
+    not match a fixed list at all.
+    """
     target = Path(os.path.abspath(str(path)))
+    if target.parent == target:
+        return False, "That is a system directory, not a media folder."
     normalised = str(target).replace("\\", "/").rstrip("/").lower() or "/"
-    if normalised in _REFUSED_ROOTS:
+    if normalised in refused_system_paths():
         return False, "That is a system directory, not a media folder."
     try:
         home = Path.home()

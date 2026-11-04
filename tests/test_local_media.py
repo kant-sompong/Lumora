@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 import pytest
@@ -35,6 +36,22 @@ def test_guard_refuses_system_and_home_directories(tmp_path):
     target = tmp_path / "Movies"
     target.mkdir()
     assert lm.guard_root(target) == (True, "")
+
+
+def test_filesystem_root_is_refused_by_structure_not_by_name():
+    """Windows drive roots do not spell themselves "c:/" after normalisation."""
+    root = Path(os.path.abspath(os.sep))
+    assert root.parent == root, "expected a real filesystem root"
+    ok, why = lm.guard_root(root)
+    assert ok is False and "system" in why
+
+
+def test_this_machines_system_directories_are_refused(tmp_path, monkeypatch):
+    fake_windows = tmp_path / "Windows"
+    fake_windows.mkdir()
+    monkeypatch.setenv("SystemRoot", str(fake_windows))
+    ok, why = lm.guard_root(fake_windows)
+    assert ok is False and "system" in why
 
 
 def test_scan_finds_videos_subtitles_and_posters(tmp_path):

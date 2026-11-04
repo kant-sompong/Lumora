@@ -26,6 +26,14 @@ codec support is whatever the operating system has:
 failure, and `playback.actions()` offers "Show in folder" so the same file can be
 tried in another player.
 
+## Timezones
+
+Episode times are converted with `zoneinfo`. Linux and macOS read the system
+timezone database; **Windows ships none**, so the app depends on the `tzdata`
+package. Release builds bundle it and CI fails the build if the `tzdata`
+directory is missing, because the fallback is silent: without it every release
+time would be shown in UTC.
+
 ## Accessibility
 
 The shortcuts table (`lgl/shortcuts.py`) carries both accelerator spellings, and
