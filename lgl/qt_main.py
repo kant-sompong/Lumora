@@ -426,6 +426,9 @@ class Window(QMainWindow):
         updates = QAction("Check for updates…", self)
         updates.triggered.connect(self.check_updates)
         menu.addAction(updates)
+        calendar = QAction("Release calendar…", self)
+        calendar.triggered.connect(self.show_calendar)
+        menu.addAction(calendar)
         tools = QAction("Tools…", self)
         tools.triggered.connect(self.show_tools)
         menu.addAction(tools)
@@ -464,6 +467,12 @@ class Window(QMainWindow):
             self.show_view("browse")
         else:
             self.browse.refresh()
+
+    def show_calendar(self) -> None:
+        """Open the release calendar: what airs or releases on which day."""
+        from .qt_calendar import show_calendar
+
+        show_calendar(self.settings, self)
 
     def show_tools(self) -> None:
         """Open the tools window: providers, downloads, backup, profiles and more."""

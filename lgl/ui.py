@@ -6433,6 +6433,7 @@ class MainWindow(Gtk.ApplicationWindow):
         menu.append(maintenance_item)
 
         menu.append(Gtk.SeparatorMenuItem())
+        add_item("Release calendar…", self.show_calendar)
         add_item("Tools…", self.show_tools)
         add_item("Settings…", lambda: self.show_settings())
         add_item("About Lumora", self.show_about)
@@ -9117,6 +9118,12 @@ class MainWindow(Gtk.ApplicationWindow):
         """Activate the in-app Movies & TV destination."""
         self._apply_view("media")
 
+
+    def show_calendar(self) -> None:
+        """Open the release calendar: what airs or releases on which day."""
+        from . import gtk_calendar
+
+        self._calendar_window = gtk_calendar.show_calendar(self, self.settings)
 
     def show_tools(self) -> None:
         """Open the tools window: providers, downloads, backup, profiles and more."""
