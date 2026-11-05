@@ -1,5 +1,8 @@
 """The GTK tools window: the same sections the Qt window shows.
 
+Written against GTK 3, the toolkit the rest of the Linux app uses.  GTK 3 and 4
+cannot be loaded into one process, so this file must not ask for 4.0.
+
 Layout and wording come from :mod:`lgl.tool_panels`; this file only draws rows
 and forwards actions, which is what keeps the two platforms behaving alike.
 
@@ -16,7 +19,7 @@ from typing import Any, Sequence
 
 import gi
 
-gi.require_version("Gtk", "4.0")
+gi.require_version("Gtk", "3.0")
 from gi.repository import GLib, Gtk  # noqa: E402
 
 from . import __version__, backup, diagnostics, platform_support, updates, tool_panels  # noqa: E402
@@ -79,28 +82,36 @@ class ToolsWindow(Gtk.Window):
         outer.set_margin_end(12)
 
         self._status = Gtk.Label(label="", xalign=0)
-        self._status.set_wrap(True)
-        self._status.add_css_class("dim-label")
+        self._status.set_line_wrap(True)
+        self._status.set_max_width_chars(60)
+        self._status.get_style_context().add_class("dim-label")
 
         self._stack = Gtk.Stack()
-        switcher = Gtk.StackSwitcher(stack=self._stack)
-        outer.append(switcher)
-        outer.append(Gtk.Separator())
+        # Ten pages do not fit as tabs in a window this wide, so they go in a
+        # sidebar on the left.
+        sidebar = Gtk.StackSidebar()
+        sidebar.set_stack(self._stack)
+        sidebar.set_size_request(220, -1)
         scroller = Gtk.ScrolledWindow()
-        scroller.set_vexpand(True)
-        scroller.set_child(self._stack)
-        outer.append(scroller)
-        outer.append(self._status)
+        scroller.set_hexpand(True)
+        scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        scroller.add(self._stack)
+        middle = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        middle.pack_start(sidebar, False, False, 0)
+        middle.pack_start(scroller, True, True, 0)
+        outer.pack_start(middle, True, True, 0)
+        outer.pack_start(self._status, False, False, 0)
 
         buttons = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         buttons.set_halign(Gtk.Align.END)
         close = Gtk.Button(label="Close")
         close.connect("clicked", lambda *_: self.close())
-        buttons.append(close)
-        outer.append(buttons)
+        buttons.pack_start(close, False, False, 0)
+        outer.pack_start(buttons, False, False, 0)
 
-        self.set_child(outer)
+        self.add(outer)
         self.reload()
+        outer.show_all()
 
     # -- rendering ------------------------------------------------------
     def reload(self) -> None:
@@ -114,13 +125,12 @@ class ToolsWindow(Gtk.Window):
             backup_dir=platform_support.data_dir(),
             diagnostics_path=platform_support.data_dir() / "support-report.txt",
         )
-        child = self._stack.get_first_child()
-        while child is not None:
-            following = child.get_next_sibling()
+        for child in self._stack.get_children():
             self._stack.remove(child)
-            child = following
         for section in panel.sections:
-            self._stack.add_titled(self._page(section), section.key, section.title)
+            page = self._page(section)
+            page.show_all()
+            self._stack.add_titled(page, section.key, section.title)
 
     def _page(self, section: tool_panels.Section) -> Gtk.Widget:
         body = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
@@ -130,11 +140,12 @@ class ToolsWindow(Gtk.Window):
         body.set_margin_end(14)
         if section.description:
             note = Gtk.Label(label=section.description, xalign=0)
-            note.set_wrap(True)
-            note.add_css_class("dim-label")
-            body.append(note)
+            note.set_line_wrap(True)
+            note.set_max_width_chars(60)
+            note.get_style_context().add_class("dim-label")
+            body.pack_start(note, False, False, 0)
         for row in section.rows:
-            body.append(self._row(row))
+            body.pack_start(self._row(row), False, False, 0)
         return body
 
     def _row(self, row: tool_panels.Row) -> Gtk.Widget:
@@ -142,38 +153,42 @@ class ToolsWindow(Gtk.Window):
         text = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
         text.set_hexpand(True)
         label = Gtk.Label(label=row.label, xalign=0)
-        label.set_wrap(True)
-        text.append(label)
+        label.set_line_wrap(True)
+        label.set_max_width_chars(60)
+        text.pack_start(label, False, False, 0)
         description = row.description or (row.value if row.kind == tool_panels.INFO else "")
         if description:
             note = Gtk.Label(label=description, xalign=0)
-            note.set_wrap(True)
-            note.add_css_class("dim-label")
-            text.append(note)
-        line.append(text)
+            note.set_line_wrap(True)
+            note.set_max_width_chars(60)
+            note.get_style_context().add_class("dim-label")
+            text.pack_start(note, False, False, 0)
+        line.pack_start(text, True, True, 0)
 
         if row.kind == tool_panels.TOGGLE and row.action:
             switch = Gtk.Switch()
             switch.set_active(bool(row.state))
             switch.set_valign(Gtk.Align.CENTER)
             switch.connect("state-set", self._on_toggle, row.action)
-            line.append(switch)
+            line.pack_end(switch, False, False, 0)
         elif row.kind == tool_panels.CHOICE and row.action:
             labels = [text for _value, text in row.options]
             values = [value for value, _text in row.options]
-            dropdown = Gtk.DropDown.new_from_strings(labels)
+            dropdown = Gtk.ComboBoxText()
+            for text_label in labels:
+                dropdown.append_text(text_label)
             if row.value in values:
-                dropdown.set_selected(values.index(row.value))
-            dropdown.connect("notify::selected", self._on_choice, row.action, values)
-            line.append(dropdown)
+                dropdown.set_active(values.index(row.value))
+            dropdown.connect("changed", self._on_choice, row.action, values)
+            line.pack_end(dropdown, False, False, 0)
         elif row.kind == tool_panels.BUTTON and row.action:
             button = Gtk.Button(label=row.value or row.label)
             button.connect("clicked", self._on_button, row.action)
-            line.append(button)
+            line.pack_end(button, False, False, 0)
         elif row.value:
             value = Gtk.Label(label=row.value, xalign=1)
-            value.add_css_class("dim-label")
-            line.append(value)
+            value.get_style_context().add_class("dim-label")
+            line.pack_end(value, False, False, 0)
         return line
 
     # -- actions --------------------------------------------------------
@@ -181,8 +196,8 @@ class ToolsWindow(Gtk.Window):
         self._dispatch(action, bool(state))
         return False
 
-    def _on_choice(self, dropdown, _param, action, values):
-        index = dropdown.get_selected()
+    def _on_choice(self, dropdown, action, values):
+        index = dropdown.get_active()
         if 0 <= index < len(values):
             self._dispatch(action, values[index])
 
@@ -254,6 +269,7 @@ class ToolsWindow(Gtk.Window):
 
 def show_tools(parent: Any, settings: Any, **kwargs: Any) -> ToolsWindow:
     window = ToolsWindow(settings, transient_for=parent if isinstance(parent, Gtk.Window) else None, **kwargs)
+    window.show_all()
     window.present()
     return window
 
