@@ -71,6 +71,15 @@ The owner's words: "tell what anime/tv/movie episode come out what day".
    `none 0` after choosing Off. **Qt: not run.**
 8. [ ] Custom Home Sections — create homepage shelves using saved filters.
 9. [ ] Recently Viewed History — quickly revisit previously opened titles.
+   Shared: `lgl/recently_viewed.py` (atomic JSON beside the library index, capped at 100,
+   de-duplicated per kind and key, junk-tolerant) with 9 tests in `tests/test_recently_viewed.py`.
+   Qt: `Recently viewed…` in the app menu; rows open the game or media page; recorded from the
+   library detail panel and the Movies & TV detail page. Two window tests pass; the window was
+   rendered offscreen on 2026-11-05 (`shots-qt/recently-viewed.png`) — this VM has no fonts, so
+   the labels draw as boxes, but the rows and buttons are there.
+   GTK: `lgl/gtk_recent.py` (same list, Clear button) and recording from the game detail panel;
+   the window does not jump to a title yet and has **not** been run (no PyGObject here).
+   Still open: GTK navigation and a display run on either desktop.
 10. [ ] Smart Search Suggestions — show suggestions, filters and matching titles while typing.
 
 ### 3.2 Movies, TV and anime

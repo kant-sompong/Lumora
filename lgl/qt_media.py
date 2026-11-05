@@ -31,6 +31,7 @@ from PySide6.QtWidgets import (
 )
 
 from . import mal, media_history, platform_support, streaming, tmdb
+from . import recently_viewed
 from .qt_icons import icon, paint_icon
 from .qt_widgets import (
     CoverArt,
@@ -925,6 +926,10 @@ class MediaPage(QWidget):
             cards.append(self._detail_card)
         return cards
 
+    def card(self, key: str) -> Card | None:
+        """The loaded card with ``key``, or ``None`` if this page never saw it."""
+        return next((card for card in self._all_cards() if card.key == key), None)
+
     def _load_image(self, url: str, key: str, apply: Callable[[QPixmap | None], None] | None) -> None:
         if not url:
             return
@@ -1119,6 +1124,14 @@ class MediaPage(QWidget):
         if not isinstance(card, Card):
             return
         self._detail_card = card
+        recently_viewed.record(
+            recently_viewed.default_path(),
+            kind=card.kind,
+            key=card.key,
+            title=card.title,
+            subtitle=card.meta,
+            poster_url=card.poster_url,
+        )
         self.detail_hero.show_card(card, in_list=self._in_list(card.key))
         self.detail_hero.details.setText("TMDB page")
         self.detail_hero.details.setVisible(card.kind != "anime")
