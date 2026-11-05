@@ -29,6 +29,7 @@ from . import (
     profiles as profiles_mod,
     providers,
     updates,
+    view_prefs,
 )
 
 INFO = "info"
@@ -98,6 +99,7 @@ def build(
     panel.sections.append(_downloads(settings))
     panel.sections.append(_notifications(settings))
     panel.sections.append(_home(settings))
+    panel.sections.append(_interface(settings))
     panel.sections.append(_profiles(settings, profile_store))
     panel.sections.append(_library(settings, media_roots))
     panel.sections.append(_calendar(settings, upcoming))
@@ -188,6 +190,67 @@ def _home(settings: Any) -> Section:
             )
         )
     section.rows.append(Row(label="Restore defaults", kind=BUTTON, action="home.reset"))
+    return section
+
+
+def _interface(settings: Any) -> Section:
+    section = Section("interface", "Interface", "Density, accent, motion and what a title page shows.")
+    section.rows.append(
+        Row(
+            label="Compact layout",
+            kind=TOGGLE,
+            state=view_prefs.compact(settings),
+            description="Denser rows and smaller covers, for long lists.",
+            action="view.compact",
+        )
+    )
+    section.rows.append(
+        Row(
+            label="Accent colour",
+            kind=CHOICE,
+            value=view_prefs.accent(settings),
+            options=view_prefs.ACCENT_CHOICES,
+            description="Used for highlights, links and selection. Labels switch to dark text when white would not read.",
+            action="view.accent",
+        )
+    )
+    section.rows.append(
+        Row(
+            label="Page transitions",
+            kind=CHOICE,
+            value=view_prefs.transitions(settings),
+            options=tuple((choice, choice.capitalize()) for choice in view_prefs.TRANSITION_CHOICES),
+            description="Off also removes the fade when a cover loads.",
+            action="view.transitions",
+        )
+    )
+    section.rows.append(
+        Row(
+            label="Artwork backgrounds",
+            kind=TOGGLE,
+            state=view_prefs.artwork_backgrounds(settings),
+            description="Blurred poster artwork behind a title page.",
+            action="view.artwork",
+        )
+    )
+    section.rows.append(
+        Row(
+            label="Spoiler-free mode",
+            kind=TOGGLE,
+            state=view_prefs.spoiler_free(settings),
+            description="Hides episode descriptions and anything that gives a plot away.",
+            action="view.spoilers",
+        )
+    )
+    section.rows.append(
+        Row(
+            label="Quick preview",
+            kind=TOGGLE,
+            state=view_prefs.quick_preview(settings),
+            description="A small popover with rating and synopsis on selection.",
+            action="view.preview",
+        )
+    )
     return section
 
 
@@ -379,6 +442,28 @@ def apply(
             if not ok:
                 return "At least one shelf has to stay visible."
             return f"{home_layout.label(shelf)} {'shown' if wanted else 'hidden'}."
+        if action == "view.compact":
+            wanted = bool(value)
+            view_prefs.set_compact(settings, wanted)
+            return f"Compact layout {'on' if wanted else 'off'}."
+        if action == "view.accent":
+            chosen = view_prefs.set_accent(settings, value)
+            return f"Accent set to {chosen}."
+        if action == "view.transitions":
+            chosen = view_prefs.set_transitions(settings, value)
+            return f"Page transitions {chosen}."
+        if action == "view.artwork":
+            wanted = bool(value)
+            view_prefs.set_artwork(settings, wanted)
+            return f"Artwork backgrounds {'on' if wanted else 'off'}."
+        if action == "view.spoilers":
+            wanted = bool(value)
+            view_prefs.set_spoilers(settings, wanted)
+            return f"Spoiler-free mode {'on' if wanted else 'off'}."
+        if action == "view.preview":
+            wanted = bool(value)
+            view_prefs.set_preview(settings, wanted)
+            return f"Quick preview {'on' if wanted else 'off'}."
         if action == "home.reset":
             home_layout.HomeLayout(settings).reset()
             return "Home screen restored to defaults."

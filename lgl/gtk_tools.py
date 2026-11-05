@@ -69,6 +69,7 @@ class ToolsWindow(Gtk.Window):
             self.set_transient_for(transient_for)
             self.set_modal(True)
         self.settings = settings
+        self._parent = transient_for
         self.profile_store = profile_store
         self.media_roots = list(media_roots)
         self._plugins = list(plugins)
@@ -228,6 +229,10 @@ class ToolsWindow(Gtk.Window):
         )
         self._say(message)
         self.reload()
+        # Interface rows take effect immediately in the window behind this one.
+        refresh = getattr(self._parent, "apply_interface_prefs", None)
+        if callable(refresh):
+            refresh()
 
     def _run_in_thread(self, work, done) -> None:
         def runner() -> None:
