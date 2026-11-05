@@ -200,3 +200,33 @@ def test_the_launch_log_uses_the_game_folder_when_it_can(tmp_path, monkeypatch):
     finally:
         if handle is not None:
             handle.close()
+
+
+def test_a_windows_build_runs_directly_on_windows(tmp_path, monkeypatch):
+    from lgl import launch
+
+    monkeypatch.setattr(launch, "_on_windows", lambda: True)
+    target = tmp_path / "Game.exe"
+    target.write_bytes(b"MZ")
+    assert launch.plan_launch(target, tmp_path).command == [str(target)]
+
+
+def test_a_batch_file_uses_comspec_on_windows(tmp_path, monkeypatch):
+    from lgl import launch
+
+    monkeypatch.setattr(launch, "_on_windows", lambda: True)
+    monkeypatch.setenv("COMSPEC", r"C:\Windows\System32\cmd.exe")
+    target = tmp_path / "play.bat"
+    target.write_text("@echo off\n", encoding="utf-8")
+    plan = launch.plan_launch(target, tmp_path)
+    assert plan.command[0].endswith("cmd.exe")
+    assert plan.command[1] == "/c"
+
+
+def test_is_root_is_false_where_geteuid_is_missing(monkeypatch):
+    import os as os_module
+
+    from lgl import launch
+
+    monkeypatch.delattr(os_module, "geteuid", raising=False)
+    assert launch._is_root() is False
