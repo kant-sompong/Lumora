@@ -33,11 +33,13 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from . import recently_viewed
 from . import __version__, magnet as magnetlib, platform_support, theme
 from .archive import ArchiveClient, build_download_url
 from .catalog_store import CatalogStore
 from .downloader import DownloadManager, TaskSnapshot
 from .library_store import LibraryStore
+from .qt_recent import RecentlyViewedDialog
 from .qt_browse import BrowsePage
 from .qt_downloads import (
     DownloadBridge,
@@ -429,6 +431,9 @@ class Window(QMainWindow):
         calendar = QAction("Release calendar…", self)
         calendar.triggered.connect(self.show_calendar)
         menu.addAction(calendar)
+        viewed = QAction("Recently viewed…", self)
+        viewed.triggered.connect(self.show_recent)
+        menu.addAction(viewed)
         tools = QAction("Tools…", self)
         tools.triggered.connect(self.show_tools)
         menu.addAction(tools)
@@ -479,6 +484,22 @@ class Window(QMainWindow):
         from .qt_tools import show_tools
 
         show_tools(self.settings, self)
+
+    def show_recent(self) -> None:
+        dialog = RecentlyViewedDialog(recently_viewed.default_path(), self)
+        dialog.open_requested.connect(self.open_recent)
+        dialog.exec()
+
+    def open_recent(self, kind: str, key: str) -> None:
+        """Go to a title picked in the Recently viewed window."""
+        if kind == "game":
+            self.show_view("library")
+            self.library.select(key)
+            return
+        card = self.media.card(key)
+        self.show_view("media")
+        if card is not None:
+            self.media.open_card(card)
 
     def show_settings(self, tab: str = "general") -> None:
         dialog = SettingsDialog(self._settings, self)

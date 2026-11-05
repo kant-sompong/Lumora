@@ -37,7 +37,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from . import external_dm, integrity, platform_support
+from . import external_dm, integrity, platform_support, recently_viewed
 from .archive import ArchiveClient, ArchiveItem
 from .launch import launch as launch_program
 from .launch import plan_launch
@@ -1097,6 +1097,13 @@ class LibraryPage(QWidget):
         if entry is not None:
             self.detail.show_entry(entry, self._pix.get(identifier))
             self.detail.show()
+            recently_viewed.record(
+                recently_viewed.default_path(),
+                kind="game",
+                key=entry.identifier,
+                title=entry.title,
+                subtitle=entry.display_subtitle(),
+            )
 
     def clear_selection(self) -> None:
         card = self._cards.get(self._selected)
