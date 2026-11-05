@@ -197,6 +197,39 @@ def _small_button(label: str, tooltip: str | None = None) -> Gtk.Button:
     return button
 
 
+def apply_search_visibility(pill: Gtk.Widget | None, view: str | None) -> bool:
+    """Show the search pill only where it searches something.
+
+    Only Browse queries the collection; Library, Downloads and Media have their
+    own controls.  Hiding just the entry left an empty capsule sitting in the
+    middle of those pages' headers, so the whole pill is what gets hidden.
+    """
+    visible = (view or "archive") == "archive"
+    if pill is not None:
+        # set_visible(False) alone is undone by the next show_all(), which put the
+        # capsule back on Library/Downloads/Media, so the pill is also marked
+        # no-show-all for as long as it is hidden.
+        pill.set_no_show_all(not visible)
+        pill.set_visible(visible)
+    return visible
+
+
+def _filter_footer(on_reset: Callable[..., None]) -> Gtk.Box:
+    """The reset control, on its own.
+
+    It used to sit under an "Availability" heading with nothing else beneath it,
+    which read as a section that had failed to load.
+    """
+    footer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+    footer.get_style_context().add_class("filter-group")
+    reset = Gtk.Button(label="Reset all filters")
+    reset.get_style_context().add_class("link-button")
+    reset.set_halign(Gtk.Align.START)
+    reset.connect("clicked", lambda *_: on_reset())
+    footer.pack_start(reset, False, False, 0)
+    return footer
+
+
 def _section_label(text: str) -> Gtk.Label:
     label = Gtk.Label(label=text.upper(), xalign=0)
     label.get_style_context().add_class("section-label")
@@ -1774,6 +1807,9 @@ class LibraryTile(Gtk.FlowBoxChild):
             else self._measure_cover(entry.cover_path)
         )
         self.get_style_context().add_class("library-tile")
+        # The flow itself fills the viewport, but a tile keeps its own height:
+        # with only a few games the rows used to stretch to the window bottom.
+        self.set_valign(Gtk.Align.START)
 
         card = Gtk.Box(
             orientation=(
@@ -6364,6 +6400,7 @@ class MainWindow(Gtk.ApplicationWindow):
         self._search_hint.set_valign(Gtk.Align.CENTER)
         pill.pack_end(self._search_hint, False, False, 0)
         header.set_custom_title(pill)
+        self._search_pill = pill
 
         # Refresh button (swirl icon) next to the burger menu.
         refresh_btn = Gtk.Button()
@@ -6943,13 +6980,9 @@ class MainWindow(Gtk.ApplicationWindow):
             section.pack_start(row, False, False, 0)
             body.pack_start(section, False, False, 0)
 
-        # Availability ------------------------------------------------------
-        availability = self._filter_section("Availability")
-        reset = Gtk.Button(label="Reset all filters")
-        reset.get_style_context().add_class("link-button")
-        reset.connect("clicked", lambda *_: self._reset_archive_filters())
-        availability.pack_start(reset, False, False, 0)
-        body.pack_start(availability, False, False, 0)
+        # Reset sits in its own footer: there is no availability filter here, so
+        # a heading above one link was an empty section.
+        body.pack_start(_filter_footer(self._reset_archive_filters), False, False, 0)
 
         scroller.add(body)
         column.pack_start(scroller, True, True, 0)
@@ -7421,8 +7454,7 @@ class MainWindow(Gtk.ApplicationWindow):
             except (OSError, ValueError):
                 pass
         # Only Browse searches the collection; the other pages keep their own.
-        self._search.set_visible(name == "archive")
-        self._search_hint.set_visible(name == "archive")
+        apply_search_visibility(self._search_pill, name)
         # Movies & TV has its own Back button, so the game history arrows
         # would only sit there confusingly (they cannot affect playback).
         nav = getattr(self, "_history_nav", None)

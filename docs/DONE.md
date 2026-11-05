@@ -23,6 +23,19 @@ Last updated: 2026-11-05 (Lumora 0.6.6). What is still open is in [TODO.md](TODO
 - 0.6.5: shared core for collections, backups, diagnostics and notifications.
 - 0.6.6: one Tools window for both desktops (providers, downloads, notifications, home screen, profiles, local files and game sources, release calendar, watch-history sync, plugins, updates/backup/support), metadata cache, search filters/sorting/debounce, playback recovery, shortcuts, keyboard focus rings, palette contrast test, new docs (BACKUP, UPDATING, PLUGINS, PLATFORMS, UI-PARITY). Fixed three Windows CI failures (drive-root guard, bundled tzdata, one follow-on) and named the header icon buttons for screen readers.
 
+## Done on 2026-11-05 (Buffy / Codebuff), branch `fix/gtk-tools-window-gtk3`
+- Fixed and **ran** G1, G2, G3 from TODO.md section 2 (`a36468f`, `b37b3d6`), each with a test in `tests/test_gtk_layout.py` that runs against a real X display and real widget allocations.
+  - G1: tiles keep their own height (336 px in a 650 px flow, 800 px window); the flow still fills.
+  - G2: the whole search pill is hidden, and no-show-all — a plain `set_visible(False)` was undone by `show_all()`, which the screenshot caught and the widget log did not.
+  - G3: the empty "Availability" heading is gone; "Reset all filters" stands alone.
+- Ran the real GTK app headless (Xvfb :99 + xcompmgr, GTK 3.24.41) through Browse, Library, Downloads, Media, Settings and the Tools window, with pixel captures. No traceback. About and a real download were not exercised.
+- Checked the Settings → General toggles functionally (state, `config.json`, survives reopening) and the Media home on first run without a TMDB key (setup card). Their visual look could not be judged in the sandbox: no Adwaita theme CSS and broken fontconfig, so the switch crop renders unstyled.
+- Rewrote `docs/ROADMAP.md` from the code (updater, storefront folders vs accounts, plugins, sync, GTK 3 only).
+- Made the Linux CI job run the GTK tests under `xvfb-run`, so the layout tests stop skipping. Verified locally as the same pytest command with `DISPLAY=:99`; the `xvfb-run` wrapper itself only runs on the GitHub runner.
+- Full suite on GTK 3.24: **354 passed, 6 skipped** (Qt skipped, no PySide6 in the sandbox).
+- Sandbox recipe used: GTK 3, Xvfb, xcompmgr and pycairo extracted into a home prefix from Ubuntu 24.04 debs (no root), `/usr/bin/python3.12`, and a small `LD_PRELOAD` shim so the X server could find `xkbcomp`. Not part of the repo; a fresh sandbox needs it again.
+- Tools window actions, run for real on GTK 3: `backup.create` wrote a 604-byte `lumora-backup.zip`, `diagnostics.create` wrote a 274-byte `support-report.txt`, and `updates.check` reached the live GitHub API and answered "Lumora 0.6.6 is the latest release." Profile and plugin actions were not triggered.
+
 ## Lessons
 - 0.6.6 was never run on Linux before release; CI only imported the GTK frontend. A headless run caught the crash.
 - Codebuff's test counts (406, then 412) were not re-run by Claude.
