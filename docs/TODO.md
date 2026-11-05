@@ -13,7 +13,7 @@ This file is a hand-over note for a new session (human or AI). Read it, then DON
 - Never use a token pasted in chat. Revoke any exposed token at github.com/settings/tokens.
 
 ## 1. Needs the owner's decision
-- [ ] Review and merge branch `fix/gtk-tools-window-gtk3` (commit 40cd056): ports the Tools window to GTK 3, sidebar instead of 10 tabs, wrapped labels so switches stay on screen, test `tests/test_gtk_tools.py`. Try Tools… from the menu on the real desktop first.
+- [x] Review and merge branch `fix/gtk-tools-window-gtk3` (commit 40cd056): ports the Tools window to GTK 3, sidebar instead of 10 tabs, wrapped labels so switches stay on screen, test `tests/test_gtk_tools.py`. Merged in 0.6.7 (PR #9) after 412 tests passed here; still not opened on a real desktop.
 - [ ] Review and merge branch `chore/remove-generated-and-duplicate-files` (commit 7b7d158): removes 164 files (127 tracked `__pycache__`, 33 raw `docs/Screenshot_*.png`, old `screenshots/`). The 24 images in `docs/screens/` are kept.
 - [ ] Decide whether to trim the gallery in `docs/SCREENSHOTS.md` (24 images).
 - [ ] Decide whether to shrink the repo (about 580 MiB, mostly old screenshots in history). That needs a history rewrite, which breaks clones and branches. Do not do it without an explicit yes.
