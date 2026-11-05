@@ -205,6 +205,56 @@ def default_cache_path() -> Path:
 FILTERS = (("all", "Everything"), ("following", "Following"), (KIND_ANIME, "Anime"), (KIND_TV, "TV"), (KIND_MOVIE, "Movies"))
 
 
+def due_for_notification(
+    entries: Sequence[Entry],
+    followed: Sequence[str],
+    *,
+    now: float,
+    window: float = 6 * 3600,
+) -> list[Entry]:
+    """Followed entries airing within ``window`` of ``now``, soonest first.
+
+    Shared by both frontends and by the notification tests, so the "is this out
+    today" rule lives in one place instead of in each window.
+    """
+    chosen = set(followed)
+    due = [
+        entry
+        for entry in entries
+        if entry.key in chosen and entry.air_at is not None
+        and -window <= entry.air_at - now <= window
+    ]
+    due.sort(key=lambda entry: entry.air_at or 0.0)
+    return due
+
+
+def notify_due(
+    settings: Any,
+    entries: Sequence[Entry],
+    *,
+    notify: Callable[[Any, str], Any] | None = None,
+    now: float | None = None,
+    dedupe: Any = None,
+) -> int:
+    """Send one desktop notification per followed title airing today.
+
+    ``notify(settings, title)`` is the frontend's sender; a missing sender or a
+    switched-off notification category simply sends nothing.
+    """
+    from . import anime_calendar, notifications
+
+    if notify is None or not notifications.enabled(settings, notifications.NOTIFY_EPISODES):
+        return 0
+    current = time.time() if now is None else float(now)
+    followed = anime_calendar.follows(settings)
+    sent = 0
+    for entry in due_for_notification(entries, followed, now=current):
+        title = f"{entry.title} episode {entry.episode}" if entry.episode else entry.title
+        if notify(settings, title):
+            sent += 1
+    return sent
+
+
 def select(entries: Sequence[Entry], choice: str, followed: Sequence[str] = ()) -> list[Entry]:
     """Entries for one filter choice, soonest first (undated ones last)."""
     chosen = set(followed)
@@ -299,5 +349,5 @@ def load_feed(
 
 __all__ = [
     "CACHE_TTL", "FeedResult", "KINDS", "KIND_ANIME", "KIND_MOVIE", "KIND_TV",
-    "FILTERS", "anilist_post", "default_cache_path", "fetch_anime", "fetch_movies", "fetch_tv", "kind_of", "load_feed", "select", "tmdb_getter",
+    "FILTERS", "anilist_post", "default_cache_path", "due_for_notification", "fetch_anime", "fetch_movies", "fetch_tv", "kind_of", "load_feed", "notify_due", "select", "tmdb_getter",
 ]

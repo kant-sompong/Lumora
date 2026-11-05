@@ -36,12 +36,13 @@ Requested 2026-11-05. Ask for each: shared logic in `lgl/` with tests, then both
 
 ### 3.0 Release calendar with real dates (asked first)
 The owner's words: "tell what anime/tv/movie episode come out what day".
-- [ ] Show which anime episode, TV episode or movie comes out on which day.
-- Status: **in progress** on branch `feature/release-calendar` (commit 51e5920, work in progress, not merged). Written and tested with fake data only; nothing has been run against the live AniList or TMDB servers (the sandbox cannot reach them):
+- [x] Show which anime episode, TV episode or movie comes out on which day. — shipped in 0.6.7
+- Status: **merged in 0.6.7** (branch `feature/release-calendar`). The AniList source was run live from the build machine on 2026-11-05 and returned 117 episodes over 7 days; TMDB could not be exercised because no key was available:
   - `lgl/release_feed.py` fetches anime air times (AniList), TV next episodes and upcoming movies (TMDB, needs the user's key), with a 3-hour cache and per-source error messages.
   - `lgl/gtk_calendar.py` and `lgl/qt_calendar.py` add a "Release calendar…" window (day headings, Everything/Following/Anime/TV/Movies filter, Follow button, Refresh) opened from the app menu.
   - Extended `lgl/anime_calendar.py` (date-only entries, local timezone) and added `TmdbClient.get`.
-  - Still to do: run the full test suite and ruff, look at the Qt render, try it with a real TMDB key and the live servers, release-day notifications for followed titles, and a Follow button on title pages.
+  - Shipped since that note: release-day notifications for followed titles (one shared rule in `release_feed.due_for_notification`, switched off until the owner enables episode notifications) and 448 passing tests.
+  - Still to do: try it with a real TMDB key, open the Qt window on a desktop, and add a Follow button on title pages (following is done from the calendar or Tools today).
 - Why: `lgl/anime_calendar.py` already existed (0.6.6) but nothing fed it data, so the Tools → Release calendar page was always empty.
 
 ### 3.1 UI and quality of life

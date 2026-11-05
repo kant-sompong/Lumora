@@ -98,6 +98,7 @@ class CalendarWindow(Gtk.Window):
         self._refresh.set_sensitive(True)
         self._result = result
         self._render()
+        release_feed.notify_due(self.settings, result.entries, notify=_announce)
         return False
 
     # -- drawing --------------------------------------------------------
@@ -153,6 +154,12 @@ class CalendarWindow(Gtk.Window):
         else:
             cal.unfollow(self.settings, key)
             button.set_label("Follow")
+
+
+def _announce(settings: Any, title: str) -> bool:
+    from . import notifications
+
+    return notifications.episode_released(settings, title)
 
 
 def show_calendar(parent: Any, settings: Any) -> CalendarWindow:

@@ -94,6 +94,7 @@ class CalendarDialog(QDialog):
         if isinstance(result, release_feed.FeedResult):
             self._result = result
         self._render()
+        release_feed.notify_due(self.settings, self._result.entries, notify=_announce)
 
     def set_result(self, result: release_feed.FeedResult) -> None:
         """Show ``result`` without fetching (used by tests and screenshots)."""
@@ -154,6 +155,12 @@ class CalendarDialog(QDialog):
         else:
             cal.unfollow(self.settings, key)
             button.setText("Follow")
+
+
+def _announce(settings: Any, title: str) -> bool:
+    from . import notifications
+
+    return notifications.episode_released(settings, title)
 
 
 def show_calendar(settings: Any, parent: QWidget | None = None) -> CalendarDialog:

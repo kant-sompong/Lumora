@@ -125,3 +125,42 @@ def test_select_filters_by_kind_and_follows_and_sorts():
     assert [e.key for e in feed.select(entries, "anime")] == ["anilist:1"]
     assert [e.key for e in feed.select(entries, "movie")] == ["tmdb:movie:3"]
     assert [e.key for e in feed.select(entries, "following", ["tmdb:tv:2"])] == ["tmdb:tv:2"]
+
+
+def test_due_for_notification_keeps_only_followed_titles_near_now():
+    from lgl import release_feed as rf
+
+    now = 1_000_000.0
+    entries = [
+        rf.Entry(key="anilist:1", title="Air today", episode="2", air_at=now + 600),
+        rf.Entry(key="anilist:2", title="Air next week", episode="3", air_at=now + 7 * 86400),
+        rf.Entry(key="anilist:3", title="Not followed", episode="4", air_at=now + 60),
+        rf.Entry(key="anilist:4", title="No date", episode="5", air_at=None),
+    ]
+    due = rf.due_for_notification(
+        entries, ["anilist:1", "anilist:2", "anilist:4"], now=now
+    )
+    assert [entry.key for entry in due] == ["anilist:1"]
+
+
+def test_notify_due_respects_the_episode_switch_and_follows():
+    from lgl import release_feed as rf
+
+    class Settings(dict):
+        def set(self, key, value):
+            self[key] = value
+
+    now = 1_000_000.0
+    entry = rf.Entry(key="anilist:9", title="Frieren", episode="7", air_at=now + 300)
+    settings = Settings(anime_follows=["anilist:9"])
+    sent = []
+
+    def notify(_settings, title):
+        sent.append(title)
+        return True
+
+    # Notifications for episodes are off unless the owner turns them on.
+    assert rf.notify_due(settings, [entry], notify=notify, now=now) == 0
+    settings["notify_episodes"] = True
+    assert rf.notify_due(settings, [entry], notify=notify, now=now) == 1
+    assert sent == ["Frieren episode 7"]

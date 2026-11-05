@@ -125,3 +125,17 @@ Not run: the Qt frontend (no PySide6), so items 1, 5, 6 and 7 are ticked for GTK
 - No screen for the palette, suggestions, dashboard, editor, timeline or suggestions shelves, so
   no TODO item is ticked; section 3.4 of `docs/TODO.md` lists what each item still needs.
 
+
+
+## Started and finished on 2026-11-05 (Buffy / Codebuff), release 0.6.7
+- **Started:** finished the release calendar (`feature/release-calendar`) on top of 0.6.6 and
+  prepared the 0.6.7 release.
+- Merged the GTK Tools crash fix (PR #9), the shared UI foundation (PR #12: command palette,
+  accent colours, compact mode, page transitions) and the shared discovery/library work (PR #11).
+- Release calendar: AniList was run live from the build machine and returned 117 anime episodes
+  over 7 days; TMDB TV/movie sources run when the owner has a key. Added one shared
+  `release_feed.due_for_notification` rule plus release-day notifications for followed titles,
+  wired into both the GTK and Qt calendars.
+- **Finished:** `python -m compileall lgl` clean; **448 passed, 3 skipped** offscreen.
+- Not verified here: the GTK app (no PyGObject and no display in this sandbox), the Qt windows
+  on a real desktop, and the TMDB sources (no API key). Recorded as open in TODO.md.
