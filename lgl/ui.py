@@ -51,6 +51,7 @@ from . import kryoto  # noqa: E402
 from . import magnet as magnetlib  # noqa: E402
 from . import metadata as metalib  # noqa: E402
 from . import theme_gtk  # noqa: E402
+from . import view_prefs
 from .archive import (  # noqa: E402
     ArchiveClient,
     ArchiveError,
@@ -195,6 +196,39 @@ def _small_button(label: str, tooltip: str | None = None) -> Gtk.Button:
         button.set_tooltip_text(tooltip)
     button.set_valign(Gtk.Align.CENTER)
     return button
+
+
+def apply_search_visibility(pill: Gtk.Widget | None, view: str | None) -> bool:
+    """Show the search pill only where it searches something.
+
+    Only Browse queries the collection; Library, Downloads and Media have their
+    own controls.  Hiding just the entry left an empty capsule sitting in the
+    middle of those pages' headers, so the whole pill is what gets hidden.
+    """
+    visible = (view or "archive") == "archive"
+    if pill is not None:
+        # set_visible(False) alone is undone by the next show_all(), which put the
+        # capsule back on Library/Downloads/Media, so the pill is also marked
+        # no-show-all for as long as it is hidden.
+        pill.set_no_show_all(not visible)
+        pill.set_visible(visible)
+    return visible
+
+
+def _filter_footer(on_reset: Callable[..., None]) -> Gtk.Box:
+    """The reset control, on its own.
+
+    It used to sit under an "Availability" heading with nothing else beneath it,
+    which read as a section that had failed to load.
+    """
+    footer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+    footer.get_style_context().add_class("filter-group")
+    reset = Gtk.Button(label="Reset all filters")
+    reset.get_style_context().add_class("link-button")
+    reset.set_halign(Gtk.Align.START)
+    reset.connect("clicked", lambda *_: on_reset())
+    footer.pack_start(reset, False, False, 0)
+    return footer
 
 
 def _section_label(text: str) -> Gtk.Label:
@@ -598,6 +632,20 @@ def _media_icon() -> str:
     return "applications-multimedia-symbolic"
 
 
+#: Density flag for the cover grids, set from the Interface preference.  It is
+#: module-level because tiles are built deep inside the views; the only writer
+#: is :func:`set_compact_layout`, called from ``MainWindow``.
+_COMPACT_LAYOUT = False
+
+
+def set_compact_layout(compact: bool) -> bool:
+    """Set the cover-grid density; returns ``True`` when the value changed."""
+    global _COMPACT_LAYOUT
+    changed = bool(compact) != _COMPACT_LAYOUT
+    _COMPACT_LAYOUT = bool(compact)
+    return changed
+
+
 class BrowseTile(Gtk.FlowBoxChild):
     """One cover in the Browse grid: artwork, then name and one meta line."""
 
@@ -609,6 +657,9 @@ class BrowseTile(Gtk.FlowBoxChild):
         self.game = game
         self._window = window
         self._token = 0
+        if _COMPACT_LAYOUT:
+            self.COVER_WIDTH = 118
+            self.COVER_HEIGHT = 177
         self.get_style_context().add_class("browse-tile")
 
         card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
@@ -1774,6 +1825,9 @@ class LibraryTile(Gtk.FlowBoxChild):
             else self._measure_cover(entry.cover_path)
         )
         self.get_style_context().add_class("library-tile")
+        # The flow itself fills the viewport, but a tile keeps its own height:
+        # with only a few games the rows used to stretch to the window bottom.
+        self.set_valign(Gtk.Align.START)
 
         card = Gtk.Box(
             orientation=(
@@ -1938,9 +1992,10 @@ class LibraryTile(Gtk.FlowBoxChild):
                 ratio = height / width
         if ratio is None or ratio <= 0:
             ratio = self.DEFAULT_ASPECT
-        height = int(round(COVER_WIDTH * ratio))
+        width = 140 if _COMPACT_LAYOUT else COVER_WIDTH
+        height = int(round(width * ratio))
         height = max(self.MIN_COVER_HEIGHT, min(self.MAX_COVER_HEIGHT, height))
-        return COVER_WIDTH, height
+        return width, height
 
     def _on_cover(self, pixbuf: GdkPixbuf.Pixbuf | None) -> None:
         if pixbuf is None:
@@ -6300,6 +6355,7 @@ class MainWindow(Gtk.ApplicationWindow):
         self.set_titlebar(self._build_header())
         self.add(self._build_body())
         self.apply_theme(self._settings.theme)
+        self.apply_interface_prefs()
         self.connect("key-press-event", self._on_key_press)
         self.connect("delete-event", self._on_delete_event)
         self.connect("show", self._on_show)
@@ -6364,6 +6420,7 @@ class MainWindow(Gtk.ApplicationWindow):
         self._search_hint.set_valign(Gtk.Align.CENTER)
         pill.pack_end(self._search_hint, False, False, 0)
         header.set_custom_title(pill)
+        self._search_pill = pill
 
         # Refresh button (swirl icon) next to the burger menu.
         refresh_btn = Gtk.Button()
@@ -6433,6 +6490,7 @@ class MainWindow(Gtk.ApplicationWindow):
         menu.append(maintenance_item)
 
         menu.append(Gtk.SeparatorMenuItem())
+        add_item("Command palette…", self.show_palette)
         add_item("Release calendar…", self.show_calendar)
         add_item("Tools…", self.show_tools)
         add_item("Settings…", lambda: self.show_settings())
@@ -6944,13 +7002,9 @@ class MainWindow(Gtk.ApplicationWindow):
             section.pack_start(row, False, False, 0)
             body.pack_start(section, False, False, 0)
 
-        # Availability ------------------------------------------------------
-        availability = self._filter_section("Availability")
-        reset = Gtk.Button(label="Reset all filters")
-        reset.get_style_context().add_class("link-button")
-        reset.connect("clicked", lambda *_: self._reset_archive_filters())
-        availability.pack_start(reset, False, False, 0)
-        body.pack_start(availability, False, False, 0)
+        # Reset sits in its own footer: there is no availability filter here, so
+        # a heading above one link was an empty section.
+        body.pack_start(_filter_footer(self._reset_archive_filters), False, False, 0)
 
         scroller.add(body)
         column.pack_start(scroller, True, True, 0)
@@ -7388,6 +7442,55 @@ class MainWindow(Gtk.ApplicationWindow):
         """Apply dark, light, or the desktop preference immediately."""
         theme_gtk.apply(mode)
 
+    def apply_interface_prefs(self) -> None:
+        """Apply compact mode, the chosen accent and the transition amount.
+
+        Called on start-up and again whenever the Tools window closes, so the
+        Interface page has an effect without a restart.  Any preference that
+        cannot be read falls back to the shipped look instead of failing.
+        """
+        try:
+            prefs = view_prefs.effective(self._settings)
+        except (AttributeError, TypeError, ValueError):
+            return
+        context = self.get_style_context()
+        if prefs[view_prefs.COMPACT]:
+            context.add_class("compact")
+        else:
+            context.remove_class("compact")
+        if set_compact_layout(prefs[view_prefs.COMPACT]):
+            # Tiles already on screen keep their size; rebuild the library so a
+            # change from the Interface page is visible without a restart.
+            refresh = getattr(getattr(self, "library_view", None), "refresh", None)
+            if callable(refresh):
+                refresh()
+        theme_gtk.set_accent(prefs[view_prefs.ACCENT])
+        self._apply_transitions(str(prefs[view_prefs.TRANSITIONS]))
+        self.queue_resize()
+
+    def _apply_transitions(self, choice: str) -> None:
+        """Set the page transition amount, honouring reduced motion."""
+        if choice == "off" or not _animations_enabled():
+            kind = Gtk.StackTransitionType.NONE
+            duration = 0
+        elif choice == "full":
+            kind = Gtk.StackTransitionType.SLIDE_LEFT_RIGHT
+            duration = 260
+        else:
+            kind = Gtk.StackTransitionType.CROSSFADE
+            duration = 140
+        try:
+            self._main_stack.set_transition_type(kind)
+            self._main_stack.set_transition_duration(duration)
+        except (AttributeError, TypeError):
+            return
+
+    def show_palette(self) -> None:
+        """Open the command palette over the main window."""
+        from . import gtk_palette
+
+        self._palette_window = gtk_palette.show_palette(self)
+
     def _style_view_switcher(self) -> None:
         for button in self._view_switcher.get_children():
             button.set_focus_on_click(False)
@@ -7422,8 +7525,7 @@ class MainWindow(Gtk.ApplicationWindow):
             except (OSError, ValueError):
                 pass
         # Only Browse searches the collection; the other pages keep their own.
-        self._search.set_visible(name == "archive")
-        self._search_hint.set_visible(name == "archive")
+        apply_search_visibility(self._search_pill, name)
         # Movies & TV has its own Back button, so the game history arrows
         # would only sit there confusingly (they cannot affect playback).
         nav = getattr(self, "_history_nav", None)
@@ -9130,6 +9232,9 @@ class MainWindow(Gtk.ApplicationWindow):
         from . import gtk_tools
 
         window = gtk_tools.show_tools(self, self.settings)
+        # The Interface page writes the preferences while the window is open,
+        # so re-apply them when it closes rather than only on the next start.
+        window.connect("destroy", lambda *_: self.apply_interface_prefs())
         self._tools_window = window
 
     def show_about(self) -> None:
@@ -9171,6 +9276,9 @@ class MainWindow(Gtk.ApplicationWindow):
             return True
         if control and keyval in (Gdk.KEY_2, Gdk.KEY_KP_2):
             self._apply_view("library")
+            return True
+        if control and keyval in (Gdk.KEY_p, Gdk.KEY_P) and event.state & Gdk.ModifierType.SHIFT_MASK:
+            self.show_palette()
             return True
         if control and keyval in (Gdk.KEY_f, Gdk.KEY_F, Gdk.KEY_k, Gdk.KEY_K):
             self.focus_search()
