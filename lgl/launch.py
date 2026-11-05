@@ -48,6 +48,17 @@ _NATIVE_SUFFIXES = (".sh", ".appimage", ".run")
 _LAUNCH_WORDS = ("start", "run", "launch", "play", "game", "main")
 
 
+def _on_windows() -> bool:
+    """True on the Windows build, where a .exe starts directly."""
+    return os.name == "nt"
+
+
+def _is_root() -> bool:
+    """POSIX root check; simply False where ``geteuid`` does not exist."""
+    geteuid = getattr(os, "geteuid", None)
+    return bool(geteuid is not None and geteuid() == 0)
+
+
 def _compact(text: str) -> str:
     return "".join(char for char in text.casefold() if char.isalnum())
 
@@ -120,7 +131,11 @@ def _wine() -> str | None:
 
 
 def _windows_command(target: Path) -> list[str]:
-    """Start a Windows build through Wine, the only way in on Linux."""
+    """Start a Windows build: directly on Windows, through Wine on Linux."""
+    if _on_windows():
+        if target.suffix.casefold() in (".bat", ".cmd"):
+            return [os.environ.get("COMSPEC", "cmd.exe"), "/c", str(target)]
+        return [str(target)]
     wine = _wine()
     if wine is None:
         raise LaunchError(
@@ -176,7 +191,7 @@ def _kind_for(path: Path) -> str:
 
 
 def plan_launch(path: Path | str, library_root: Path | str) -> LaunchPlan:
-    if os.geteuid() == 0:
+    if _is_root():
         raise LaunchError("Refusing to launch games as root.")
     target = Path(path).expanduser()
     if target.is_symlink():
@@ -205,7 +220,7 @@ def plan_launch(path: Path | str, library_root: Path | str) -> LaunchPlan:
 
 def make_executable(path: Path | str, library_root: Path | str) -> None:
     """Add the user execute bit after the user explicitly approved the file."""
-    if os.geteuid() == 0:
+    if _is_root():
         raise LaunchError("Refusing to modify files as root.")
     target = Path(path).expanduser().resolve()
     root = Path(library_root).expanduser().resolve()

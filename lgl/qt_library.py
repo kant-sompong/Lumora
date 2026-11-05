@@ -39,8 +39,10 @@ from PySide6.QtWidgets import (
 
 from . import external_dm, integrity, platform_support
 from .archive import ArchiveClient, ArchiveItem
-from .launch import open_launch_log
+from .launch import launch as launch_program
+from .launch import plan_launch
 from .library import MANIFEST_NAME, scan_game_folder
+from .util import LaunchError
 from .library_store import LibraryEntry, LibraryStore, SORT_DEFAULT_DESCENDING, STATUSES
 from .qt_icons import icon, paint_icon
 from .qt_widgets import (
@@ -1372,52 +1374,19 @@ class LibraryPage(QWidget):
         dialog = LaunchDialog(path, entry.title or entry.identifier, self)
         if dialog.exec() != QDialog.Accepted:
             return
-        # The same two checks the GTK launcher makes, so a path from the detail
-        # panel cannot start something outside the library: this frontend has
-        # its own Windows command branches, because launch.plan_launch is
-        # POSIX-only (os.geteuid, execute bits).
-        if not is_within(path, self.download_dir):
-            self._toast(
-                "The file is outside the selected download folder. It was not launched.",
-                error=True,
-            )
-            return
-        suffix = path.suffix.lower()
-        if suffix not in (".exe", ".com", ".bat", ".cmd"):
-            self._toast(
-                "Only .exe, .com, .bat, and .cmd files are started from here. "
-                "The file was not started.",
-                error=True,
-            )
-            return
-        if suffix in (".bat", ".cmd"):
-            command = [os.environ.get("COMSPEC", "cmd.exe"), "/c", str(path)]
-        else:
-            command = [str(path)]
-        log_file, _log_path = open_launch_log(path.parent)
+        # One implementation for both frontends: launch.plan_launch rejects
+        # paths outside the library, non-executables and Windows builds with no
+        # Wine, and launch.launch writes the same log the GTK app does.
         try:
-            if log_file is not None:
-                log_file.write(
-                    f"\n=== {time.strftime('%Y-%m-%d %H:%M:%S')} launching {path.name} ===\n"
-                )
-                log_file.write("command: " + " ".join(command) + "\n")
-                log_file.flush()
-            process = subprocess.Popen(
-                command,
-                cwd=str(path.parent),
-                shell=False,
-                stdin=subprocess.DEVNULL,
-                stdout=log_file if log_file is not None else subprocess.DEVNULL,
-                stderr=subprocess.STDOUT,
-                **platform_support.detached_kwargs(),
-            )
-        except OSError as exc:
+            plan = plan_launch(path, self.download_dir)
+            pid, _log_path = launch_program(path, self.download_dir)
+        except LaunchError as exc:
+            self._toast(str(exc), error=True)
+            return
+        except Exception as exc:  # noqa: BLE001 - a launch must not crash the UI
             self._toast(f"Could not start the program: {exc}", error=True)
             return
-        finally:
-            if log_file is not None:
-                log_file.close()
-        self._toast(f"Started {path.name} (pid {process.pid}).")
+        self._toast(f"Started {plan.path.name} (pid {pid}).")
 
     # helpers ---------------------------------------------------------------
     def _toast(self, message: str, *, error: bool = False) -> None:

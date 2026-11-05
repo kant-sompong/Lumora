@@ -155,8 +155,8 @@ opened and screenshotted under a display; the Qt page was not run.
 - [ ] Screen-by-screen visual audit and pixel parity (needs a display or GPU).
 - [ ] Test provider changes, window resizing and open/close cycles with a real player.
 - [ ] Nobody has clicked through either desktop as a human.
-- [ ] Merge `qt_library._launch` and `launch.plan_launch` into one implementation (only half done).
-- [ ] Extend the Windows smoke test to open Media and Settings, not only stay running (only half done).
+- [x] Merge `qt_library._launch` and `launch.plan_launch` into one implementation. — 0.6.8: `launch.py` is platform-aware (direct .exe on Windows, COMSPEC for .bat/.cmd, root check that tolerates a missing `geteuid`), the Qt library calls it, and three tests cover the Windows branches.
+- [x] Extend the Windows smoke test to open Media and Settings. — 0.6.8: `Lumora.exe --self-test` opens Browse, Library, Downloads, Media and the Settings sheet, exits non-zero on any exception, and CI runs it before the stay-running check.
 - [x] Add the headless GTK run as a CI smoke job. "Tests (Linux, GTK)" now installs `xvfb`/`xauth` and runs the suite under `xvfb-run`, so `tests/test_gtk_layout.py` stops skipping; before this the Linux job only imported the frontend, which is how the 0.6.6 crash shipped.
 
 ## 5. Docs
