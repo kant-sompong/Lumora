@@ -81,7 +81,11 @@ jobs:
           pip install PySide6 PySide6-WebEngine pillow pyinstaller tzdata
       - name: Build with PyInstaller
         run: python -m PyInstaller --noconfirm --clean packaging/windows/Lumora.spec
-      - name: Smoke test the built exe (must still be running after 10 s)
+      - name: Smoke test the built exe (every page must open, then exit 0)
+        run: |
+          $p = Start-Process -FilePath "dist\Lumora\Lumora.exe" -ArgumentList "--self-test" -PassThru -Wait
+          if ($p.ExitCode -ne 0) { throw "Lumora.exe --self-test exited with code $($p.ExitCode)" }
+      - name: The window must also stay up on a normal launch
         run: |
           $p = Start-Process -FilePath "dist\Lumora\Lumora.exe" -PassThru
           Start-Sleep -Seconds 10

@@ -796,14 +796,50 @@ def build_window(settings: Settings, download_dir: Path | None = None) -> Window
     return window
 
 
+def self_test(window: "Window", app: QApplication) -> int:
+    """Open every page and the Settings sheet without a human, then exit.
+
+    The Windows smoke test used to prove only that the exe stayed running.  This
+    walks the pages the owner would open and fails with a non-zero exit code on
+    the first exception.  Settings is constructed directly because
+    ``show_settings`` opens a modal dialog that would never return here.
+    """
+    problems: list[str] = []
+    window.show()
+    app.processEvents()
+    for name in ("media", "downloads", "library", "browse"):
+        try:
+            window.show_view(name)
+            app.processEvents()
+        except Exception as exc:  # noqa: BLE001 - report and keep going
+            problems.append(f"{name}: {exc}")
+    try:
+        dialog = SettingsDialog(window._settings, window)  # noqa: SLF001
+        dialog.show_tab("general")
+        app.processEvents()
+        dialog.close()
+        dialog.deleteLater()
+        app.processEvents()
+    except Exception as exc:  # noqa: BLE001
+        problems.append(f"settings: {exc}")
+    for problem in problems:
+        print(f"self-test failed: {problem}", file=sys.stderr)
+    if not problems:
+        print("self-test ok: browse, library, downloads, media, settings")
+    return 1 if problems else 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
-    app = QApplication(list(argv if argv is not None else sys.argv))
+    args = list(argv if argv is not None else sys.argv)
+    app = QApplication(args)
     app.setApplicationName(APP_TITLE)
     app.setApplicationDisplayName(APP_TITLE)
     platform_support.ensure_app_dirs()
     settings = Settings()
     apply_theme(app, settings.theme)
     window = build_window(settings)
+    if "--self-test" in args:
+        return self_test(window, app)
     window.show()
     return app.exec()
 
