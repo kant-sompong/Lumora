@@ -1,24 +1,55 @@
 name: Build and release
 
-# Every push to main and every pull request runs the tests and builds both
-# packages, so a broken spec is found before a release.  Pushing a v* tag
-# (for example v0.3.0) additionally publishes a GitHub release with the
-# Windows zip and the Linux tarball attached.
+# Tests run on every push to main and every pull request.  The two package
+# builds start at once, in parallel with the tests, instead of waiting for them;
+# a failing test still stops a release because publish needs every job.
+#
+# Pull requests build and smoke-test the Windows app but do not produce the
+# portable zip or the installer, which only matter for a release.  Pushing a v*
+# tag (for example v0.3.0) publishes a GitHub release with the Windows zip,
+# the installer and the Linux tarball attached.
 
 on:
   push:
     branches: [main]
     tags: ["v*"]
+    paths-ignore:
+      - "docs/**"
+      - "screenshots/**"
+      - "shots-gtk/**"
+      - "shots-qt/**"
+      - "**/*.md"
+      - "LICENSE"
+      - ".gitignore"
   pull_request:
+    paths-ignore:
+      - "docs/**"
+      - "screenshots/**"
+      - "shots-gtk/**"
+      - "shots-qt/**"
+      - "**/*.md"
+      - "LICENSE"
+      - ".gitignore"
   workflow_dispatch:
 
 permissions:
   contents: read
 
+# One run per ref: pushing again cancels the earlier, unfinished run instead of
+# paying for both.  Tags have their own ref, so a release is never cancelled by
+# a branch push.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+
 jobs:
   test:
     name: Tests (Windows, real Qt)
     runs-on: windows-latest
+    timeout-minutes: 20
     env:
       QT_QPA_PLATFORM: offscreen
     steps:
@@ -26,10 +57,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-test.txt
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install PySide6-Essentials pillow pytest tzdata
+        run: pip install -r requirements-test.txt
       - name: Tag matches lgl.__version__
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
@@ -43,6 +74,7 @@ jobs:
   linux-tests:
     name: Tests (Linux, GTK)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     env:
       QT_QPA_PLATFORM: offscreen
     steps:
@@ -68,17 +100,24 @@ jobs:
 
   windows:
     name: Windows portable zip
-    needs: test
+    # No needs: the build runs beside the tests and shortens the wall clock by
+    # the whole test job.  Publish still waits for every job to pass.
     runs-on: windows-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-build.txt
+      - name: Cache PyInstaller's bootloader cache
+        uses: actions/cache@v4
+        with:
+          path: ~\AppData\Local\pyinstaller
+          key: pyinstaller-${{ hashFiles('packaging/windows/Lumora.spec', 'requirements-build.txt') }}
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install PySide6 PySide6-WebEngine pillow pyinstaller tzdata
+        run: pip install -r requirements-build.txt
       - name: Build with PyInstaller
         run: python -m PyInstaller --noconfirm --clean packaging/windows/Lumora.spec
       - name: Smoke test the built exe (every page must open, then exit 0)
@@ -101,28 +140,36 @@ jobs:
           if (-not $found) { throw "QtWebEngineProcess.exe is missing from the build" }
           $pak = Get-ChildItem -Path dist\Lumora -Recurse -Filter *.pak
           if (-not $pak) { throw "Qt WebEngine resources (*.pak) are missing from the build" }
+      # The zip is a release artifact: compressing and uploading ~245 MB is
+      # wasted time on a pull request, where the smoke tests above are the check.
       - name: Zip
+        if: github.event_name != 'pull_request'
         run: |
           Compress-Archive -Path dist\Lumora -DestinationPath "dist\Lumora-Windows-x64.zip"
       - uses: actions/upload-artifact@v4
+        if: github.event_name != 'pull_request'
         with:
           name: Lumora
           path: dist/Lumora-Windows-x64.zip
       - name: Build the per-user installer
+        if: startsWith(github.ref, 'refs/tags/v')
         run: |
           choco install innosetup --no-progress -y
           $v = python -c "import lgl; print(lgl.__version__)"
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "/DMyAppVersion=$v" "packaging\windows\Lumora.iss"
           if (-not (Test-Path "dist\Lumora-Setup-x64.exe")) { throw "The installer was not produced" }
       - uses: actions/upload-artifact@v4
+        if: startsWith(github.ref, 'refs/tags/v')
         with:
           name: Lumora-setup
           path: dist/Lumora-Setup-x64.exe
 
   linux:
     name: Linux tarball
-    needs: test
+    # 5 s of work, but only a release consumes it; pull requests skip it.
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - name: Build tarball
@@ -135,8 +182,9 @@ jobs:
   publish:
     name: Publish release
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [windows, linux]
+    needs: [test, linux-tests, windows, linux]
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: write
     steps:

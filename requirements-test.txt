@@ -1,0 +1,5 @@
+# Dependencies for the Windows test job (Qt frontend, tests).
+PySide6-Essentials
+pillow
+pytest
+tzdata
