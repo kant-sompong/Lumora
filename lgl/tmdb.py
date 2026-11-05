@@ -362,6 +362,10 @@ class TmdbClient:
             raise TmdbError("TMDB returned an unexpected document.", kind="invalid-response")
         return data
 
+    def get(self, path: str, params: Mapping[str, Any] | None = None) -> dict[str, Any]:
+        """A raw TMDB read for callers that need an endpoint this class lacks."""
+        return self._get(path, params)
+
     def test_connection(self) -> str:
         """Verify the API key works by calling a lightweight endpoint.
         Returns a human-readable success message, or raises TmdbError.

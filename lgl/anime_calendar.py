@@ -34,6 +34,8 @@ UNKNOWN_LABEL = "Release date unknown"
 
 def zone(name: str):
     """A usable timezone, falling back to UTC instead of raising."""
+    if str(name or "").lower() == "local":
+        return datetime.now().astimezone().tzinfo or timezone.utc
     if ZoneInfo is None:
         return timezone.utc
     try:
@@ -73,6 +75,8 @@ class Entry:
     source: str = ""
     delayed: bool = False
     changed: bool = False
+    #: The provider gave a day but no time (movies, TV): show the date only.
+    date_only: bool = False
 
     @property
     def known(self) -> bool:
@@ -100,6 +104,7 @@ def entry_from(raw: Mapping[str, Any]) -> Entry | None:
         source=_clean(raw.get("source"), 40),
         delayed=bool(raw.get("delayed", False)),
         changed=bool(raw.get("changed", False)),
+        date_only=bool(raw.get("date_only", False)),
     )
 
 
@@ -190,6 +195,9 @@ def upcoming(
 def format_when(entry: Entry, tz: str = "UTC") -> str:
     if not entry.known:
         return UNKNOWN_LABEL
+    if entry.date_only:
+        # A bare date is a calendar day, not an instant: never shift it by zone.
+        return datetime.fromtimestamp(entry.air_at or 0.0, tz=timezone.utc).strftime("%a %d %b")
     moment = entry.in_zone(tz)
     label = moment.strftime("%a %d %b %H:%M")
     return f"{label} {moment.tzname() or tz}"
@@ -211,7 +219,9 @@ def grouped(entries: Sequence[Entry], tz: str = "UTC") -> list[tuple[str, list[E
     """Split a calendar into day headings for the UI."""
     buckets: dict[str, list[Entry]] = {}
     for entry in entries:
-        if entry.known:
+        if entry.known and entry.date_only:
+            label = datetime.fromtimestamp(entry.air_at or 0.0, tz=timezone.utc).strftime("%A %d %B")
+        elif entry.known:
             label = entry.in_zone(tz).strftime("%A %d %B")
         else:
             label = UNKNOWN_LABEL
