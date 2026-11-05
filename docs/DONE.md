@@ -53,6 +53,42 @@ own the logic. New modules, all pure Python with no GTK/Qt imports:
 `lgl/tool_panels.py` gained an **Interface** section with six rows wired to `view_prefs`, so the
 same page appears in both the GTK and the Qt Tools window without touching either frontend.
 
+
+### The palette window and a real Interface page (same day, GTK 3)
+
+- `lgl/gtk_palette.py` — a 560 px modal palette: search entry, up to 12 ranked results,
+  arrow keys, Enter to run, Escape to close, reached with `Ctrl+Shift+P` or the application
+  menu. It dispatches through `lgl.palette.action_for`, so pages go to the main stack,
+  `settings.*` opens Settings on that tab, and `search.focus`/`tools.open` call the existing
+  methods. The command list itself is still the shared one.
+- `lgl/theme.py` — `with_accent()` retints `accent`, `accent_hover`, `accent_fill`,
+  `accent_fill_hover`, `on_accent` and `accent_text`; the fill shade is darkened until white
+  labels clear AA and the text shade is pushed away from the page background, so a light accent
+  such as Sunflower cannot make a button or a link unreadable. `css_variables()` takes the
+  accent, so the generated sheet is still the single source of colours.
+- `lgl/theme_gtk.py` — `ThemeManager.apply_accent()` swaps the token provider without touching
+  light/dark, and `set_accent()` is the module-level entry point.
+- `lgl/ui.py` — `MainWindow.apply_interface_prefs()` applies compact mode, the accent and the
+  transition amount on start-up and again whenever the Tools window closes; transitions map to
+  `crossfade`/140 ms (subtle), `slide-left-right`/260 ms (full) or none, and stay off when the
+  desktop asks for reduced motion. Compact mode adds `window.compact` (tighter paddings and
+  rows in `lgl/style.css`) and shrinks cover boxes to 140 px in the Library and 118 px in
+  Browse, refreshing the library so the change is visible immediately.
+- `lgl/gtk_tools.py` — the Tools window now remembers its owner and re-applies the preferences
+  after each Interface row, so a toggle takes effect while the window is still open.
+- Three new tests in `tests/test_shared_features.py` for the accent derivation: every preset in
+  both palettes keeps white labels at 4.5:1 on the fill and the text shade at 4.5:1 on the
+  surface, junk values leave the palette untouched, and the generated sheet carries the custom
+  accent.
+
+Run here: full suite **372 passed, 6 skipped**; ruff shows no new findings in `ui.py`,
+`theme_gtk.py` or `tool_panels.py` compared with `HEAD` (checked per rule code); GTK 3 app
+driven on Xvfb — palette opened with 12 results, `libr` matched `page.library` and Enter
+switched the view, compact class toggled, covers 192 → 157 px wide, accent reported as
+`#8b5cf6` in the provider, transitions `crossfade 140`, then `none 0`.
+
+Not run: the Qt frontend (no PySide6), so items 1, 5, 6 and 7 are ticked for GTK only.
+
 ### What was run here
 
 - `python3 -m pytest tests -q` with GTK 3.24.41 on Xvfb: **372 passed, 6 skipped** (the six are

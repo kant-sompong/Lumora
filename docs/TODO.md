@@ -42,13 +42,29 @@ The owner's words: "tell what anime/tv/movie episode come out what day".
 - Why: `lgl/anime_calendar.py` already existed (0.6.6) but nothing fed it data, so the Tools → Release calendar page was always empty.
 
 ### 3.1 UI and quality of life
-1. [ ] Command Palette — quickly access pages, settings and actions with a keyboard shortcut.
+1. [x] Command Palette — quickly access pages, settings and actions with a keyboard shortcut.
+   GTK 3: `lgl/gtk_palette.py`, `Ctrl+Shift+P` and the application menu. Run on a display
+   2026-11-05: typing `libr` showed `Go to Library`, Enter switched the view and closed the
+   palette (`shots-gtk/10-palette.png`). **Qt: not run**, there is no PySide6 here.
 2. [ ] Custom Dashboard Layout — rearrange, resize or hide homepage sections.
 3. [ ] Dynamic Artwork Backgrounds — use blurred poster artwork as page backgrounds.
 4. [ ] Quick Preview — preview title information without opening its detail page.
-5. [ ] Compact Mode — fit more content on screen.
-6. [ ] Custom Accent Colors — personalize the interface's color scheme.
-7. [ ] Smooth Page Transitions — add subtle animations between pages.
+5. [x] Compact Mode — fit more content on screen.
+   GTK 3: the Interface switch adds `window.compact` (tighter paddings, denser rows) and
+   shrinks covers from 180 to 140 px in the Library and 150 to 118 px in Browse. Run on a
+   display 2026-11-05: covers went from 192 to 157 px wide on screen
+   (`shots-gtk/09-interface-default.png` against `shots-gtk/11-interface-compact-violet.png`).
+   **Qt: not run.**
+6. [x] Custom Accent Colors — personalize the interface's color scheme.
+   GTK 3: `theme.with_accent` retints the accent family, keeping white labels at AA on the
+   filled shade and moving the text shade away from the page background. Run on a display
+   2026-11-05: picking Violet turned the search ring and the active rail entry violet.
+   **Qt: not run.**
+7. [x] Smooth Page Transitions — add subtle animations between pages.
+   GTK 3: the Interface choice sets the main stack to `crossfade`/140 ms (subtle),
+   `slide-left-right`/260 ms (full) or none, and still respects the desktop's reduced-motion
+   preference. Run on a display 2026-11-05: the stack reported `crossfade 140` and then
+   `none 0` after choosing Off. **Qt: not run.**
 8. [ ] Custom Home Sections — create homepage shelves using saved filters.
 9. [ ] Recently Viewed History — quickly revisit previously opened titles.
 10. [ ] Smart Search Suggestions — show suggestions, filters and matching titles while typing.
@@ -84,19 +100,21 @@ Delivery chosen by the owner: one branch per feature.
 ### 3.4 What the shared layer provides (added 2026-11-05, branch `feature/shared-ui-foundation`)
 
 Ten new modules in `lgl/` now hold the logic behind the 30 items above, with 18 tests in
-`tests/test_shared_features.py`, on top of the hand-off notes in 3.0 to 3.3. **No item is ticked yet**: each one still needs its visible
-screen in both frontends, and the Qt frontend cannot be run in this sandbox (no PySide6).
+`tests/test_shared_features.py`, on top of the hand-off notes in 3.0 to 3.3. Items 1, 5, 6 and 7
+above are ticked for the GTK frontend only, with the display run recorded next to each; the
+remainder still need their visible screen, and the Qt frontend cannot be run in this sandbox
+(no PySide6).
 What exists today, item by item:
 
 | # | Item | What is in `lgl/` now | Still missing |
 |---|------|----------------------|---------------|
-| 3.1.1 | Command Palette | `palette.py`: one command list for both frontends, ranked search, page/settings mapping | the palette window and its shortcut |
+| 3.1.1 | Command Palette | `palette.py` plus `gtk_palette.py`: ranked command list, `Ctrl+Shift+P`, menu entry | the Qt palette window |
 | 3.1.2 | Dashboard layout | existing `home_layout.py` (unchanged) | resize support; only order/show-hide today |
 | 3.1.3 | Artwork backgrounds | `view_prefs.artwork_backgrounds` + Tools switch | drawing the blurred artwork |
 | 3.1.4 | Quick preview | `view_prefs.quick_preview` + Tools switch | the popover itself |
-| 3.1.5 | Compact mode | `view_prefs.compact` + Tools switch | tiles/grids actually changing density |
-| 3.1.6 | Accent colours | `view_prefs.accent` (validated `#rrggbb`, contrast-safe label colour, 6 choices) + Tools row | theme repaint after the change |
-| 3.1.7 | Page transitions | `view_prefs.transitions` (`off`/`subtle`/`full`) + Tools row | any animation |
+| 3.1.5 | Compact mode | `view_prefs.compact`, Tools switch, `window.compact` CSS and smaller cover grids | the Qt side |
+| 3.1.6 | Accent colours | validated accent, contrast-safe fill and text shades, live retint of every window | the Qt side |
+| 3.1.7 | Page transitions | `off`/`subtle`/`full` mapped to the main stack, reduced-motion aware | the Qt side |
 | 3.1.8 | Custom home sections | `shelves.py`: saved filter + limit, stored, filled and rendered as rows | drawing them on Home |
 | 3.1.9 | Recently viewed | existing `media_history.py` covers media only | one history for games and media, plus the screen |
 | 3.1.10 | Smart search suggestions | `suggestions.py`: prefix/word/substring/subsequence ranking, de-duplicated, completion | wiring it to the search entry |

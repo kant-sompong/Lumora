@@ -161,9 +161,15 @@ def css_name(token: str) -> str:
     return CSS_NAMES.get(token, token)
 
 
-def css_variables(resolved: str) -> str:
-    """Render a palette as GTK ``@define-color`` declarations."""
+def css_variables(resolved: str, *, accent: str | None = None) -> str:
+    """Render a palette as GTK ``@define-color`` declarations.
+
+    ``accent`` retints the accent family for the session, so the same generated
+    sheet serves every accent; a value that is not a colour is ignored.
+    """
     colors = palette(resolved)
+    if accent:
+        colors = with_accent(colors, accent)
     lines = [
         "/* Generated from lgl/theme.py — do not edit by hand. */",
         "/* Palette: " + resolved + " */",
@@ -215,6 +221,73 @@ def contrast_ratio(foreground: str, background: str) -> float:
     return (lighter + 0.05) / (darker + 0.05)
 
 
+def _mix(first: str, second: str, amount: float) -> str:
+    """Blend ``amount`` (0-1) of ``second`` into ``first``."""
+    try:
+        left = _channels(first)
+        right = _channels(second)
+    except ThemeError:
+        return first
+    blended = [
+        max(0, min(255, round(a + (b - a) * amount)))
+        for a, b in zip(left, right)
+    ]
+    return "#" + "".join(f"{value:02x}" for value in blended)
+
+
+def _reads_on(foreground: str, background: str) -> bool:
+    try:
+        return contrast_ratio(foreground, background) >= CONTRAST_TEXT
+    except ThemeError:
+        return True
+
+
+def _is_dark(value: str) -> bool:
+    try:
+        return relative_luminance(value) < 0.5
+    except ThemeError:
+        return True
+
+
+def with_accent(palette_map: Mapping[str, str], accent: str) -> dict[str, str]:
+    """A copy of ``palette_map`` whose accent family is retinted to ``accent``.
+
+    The fill shade is darkened until white labels clear AA on it, and the text
+    shade is pushed away from the page background the same way, so a light
+    accent (sunflower) cannot produce unreadable buttons or links.  The rest of
+    the palette is returned untouched; an unusable ``accent`` is ignored.
+    """
+    colors = dict(palette_map)
+    value = str(accent or "").strip().lower()
+    if not value.startswith("#"):
+        value = "#" + value
+    if not _HEX.fullmatch(value):
+        return colors
+    background = colors.get("bg", "#101216")
+    surface = colors.get("surface", background)
+    dark = _is_dark(background)
+
+    fill = value
+    for _ in range(12):
+        if _reads_on("#ffffff", fill):
+            break
+        fill = _mix(fill, "#000000", 0.08)
+
+    text = value
+    for _ in range(12):
+        if _reads_on(text, surface):
+            break
+        text = _mix(text, "#ffffff" if dark else "#000000", 0.10)
+
+    colors["accent"] = value
+    colors["accent_hover"] = _mix(value, "#ffffff" if dark else "#000000", 0.14)
+    colors["accent_fill"] = fill
+    colors["accent_fill_hover"] = _mix(fill, "#000000", 0.14)
+    colors["on_accent"] = "#ffffff" if _reads_on("#ffffff", fill) else "#111111"
+    colors["accent_text"] = text
+    return colors
+
+
 __all__ = [
     "ACCENT",
     "ACCENT_FILL",
@@ -242,4 +315,5 @@ __all__ = [
     "palette",
     "relative_luminance",
     "resolve",
+    "with_accent",
 ]
