@@ -81,9 +81,14 @@ The owner's words: "tell what anime/tv/movie episode come out what day".
    the window does not jump to a title yet and has **not** been run (no PyGObject here).
    Still open: GTK navigation and a display run on either desktop.
 10. [ ] Smart Search Suggestions — show suggestions, filters and matching titles while typing.
+   Qt: the header search field now builds a completer from library and media titles and refreshes
+   it with `suggestions.suggest` on every keystroke (top 8, prefix/word/substring/subsequence).
+   GTK: not wired. A display run is still needed before this can be ticked.
 
 ### 3.2 Movies, TV and anime
 11. [ ] Random Discovery — pick a random movie, anime or series.
+   Qt: **Surprise me…** in the app menu picks one game or media title from what is loaded using
+   `discovery.random_pick` and opens it. GTK: not wired. Needs a display run before ticking.
 12. [ ] Smart Recommendations — recommend titles based on viewing preferences.
 13. [ ] Trailer Autoplay Preview — preview trailers when selecting a title.
 14. [ ] Advanced Content Filtering — filter by runtime, language, rating, year and genre.
@@ -97,6 +102,10 @@ The owner's words: "tell what anime/tv/movie episode come out what day".
 ### 3.3 Library and productivity
 21. [ ] Unified Favorites Dashboard — browse favorite games, movies and anime together.
 22. [ ] Personal Statistics Dashboard — view viewing time, completed series and favorite genres.
+   Qt: **Statistics…** opens a window with title/event/active-day/streak totals, the busiest day,
+   favourite genres, metadata coverage and a 12-week heatmap drawn from library adds, last plays
+   and viewed titles (`lgl/qt_stats.py`, 3 tests, rendered offscreen to `shots-qt/statistics.png`).
+   GTK: not wired. Viewing time is not shown: nothing records how long a game or episode ran.
 23. [ ] Profile Switching — maintain separate preferences and histories for different users.
 24. [ ] Smart Duplicate Detection — find duplicate titles and conflicting metadata.
 25. [ ] Metadata Editor — manually correct posters, descriptions, titles and release dates.

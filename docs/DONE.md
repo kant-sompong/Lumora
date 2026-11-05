@@ -150,3 +150,8 @@ Not run: the Qt frontend (no PySide6), so items 1, 5, 6 and 7 are ticked for GTK
 - **Started and still open.** Shared store, Qt window with tests and an offscreen render, GTK window,
   and recording hooks on both desktops. GTK cannot open a title from the window yet and neither
   desktop has had a display run, so the item stays unticked in `docs/TODO.md`.
+
+### Quick wins in Qt (3.1.10, 3.2.11, 3.3.22) — partly landed
+- **Started and still open.** Search suggestions on the header field, Surprise me…, and the
+  Statistics window with a heatmap. All three are Qt-only and none has had a display run, so
+  `docs/TODO.md` keeps them unticked. Viewing time is deliberately absent: nothing measures it.

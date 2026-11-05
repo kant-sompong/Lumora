@@ -33,13 +33,16 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from . import discovery
 from . import recently_viewed
+from . import suggestions
 from . import __version__, magnet as magnetlib, platform_support, theme
 from .archive import ArchiveClient, build_download_url
 from .catalog_store import CatalogStore
 from .downloader import DownloadManager, TaskSnapshot
 from .library_store import LibraryStore
 from .qt_recent import RecentlyViewedDialog
+from .qt_stats import StatisticsDialog
 from .qt_browse import BrowsePage
 from .qt_downloads import (
     DownloadBridge,
@@ -365,6 +368,7 @@ class Window(QMainWindow):
             self.search_field.setEnabled(False)
 
     def focus_search(self) -> None:
+        self._prepare_suggestions()
         self.search_field.setFocus()
         self.search_field.selectAll()
 
@@ -434,6 +438,12 @@ class Window(QMainWindow):
         viewed = QAction("Recently viewed…", self)
         viewed.triggered.connect(self.show_recent)
         menu.addAction(viewed)
+        surprise = QAction("Surprise me…", self)
+        surprise.triggered.connect(self.pick_random)
+        menu.addAction(surprise)
+        statistics = QAction("Statistics…", self)
+        statistics.triggered.connect(self.show_statistics)
+        menu.addAction(statistics)
         tools = QAction("Tools…", self)
         tools.triggered.connect(self.show_tools)
         menu.addAction(tools)
@@ -500,6 +510,59 @@ class Window(QMainWindow):
         self.show_view("media")
         if card is not None:
             self.media.open_card(card)
+
+    def pick_random(self) -> None:
+        """Open one random game or media title from what is already loaded."""
+        pool: list[dict[str, str]] = [
+            {"kind": "game", "key": entry.identifier, "title": entry.title}
+            for entry in self.library._entries  # noqa: SLF001
+        ]
+        pool += [
+            {"kind": card.kind, "key": card.key, "title": card.title}
+            for card in self.media._all_cards()  # noqa: SLF001
+        ]
+        choice = discovery.random_pick(pool)
+        if choice is None:
+            self.toast.show_message(
+                "Nothing to pick yet — add a game or open Movies & TV.", error=True
+            )
+            return
+        self.toast.show_message(f"Random pick: {choice['title']}")
+        self.open_recent(choice["kind"], choice["key"])
+
+    def show_statistics(self) -> None:
+        dialog = StatisticsDialog(
+            list(self.library._entries),  # noqa: SLF001
+            recently_viewed.recent(recently_viewed.default_path(), 100),
+            self,
+        )
+        dialog.exec()
+
+    def _search_titles(self) -> list[str]:
+        titles = [entry.title for entry in self.library._entries]  # noqa: SLF001
+        titles += [card.title for card in self.media._all_cards()]  # noqa: SLF001
+        return [title for title in titles if title]
+
+    def _update_suggestions(self, text: str) -> None:
+        if getattr(self, "_search_model", None) is None:
+            return
+        matches = suggestions.suggest(text, self._search_titles(), limit=8)
+        self._search_model.setStringList([match.text for match in matches])
+
+    def _prepare_suggestions(self) -> None:
+        if getattr(self, "_search_completer", None) is not None:
+            self._update_suggestions(self.search_field.text())
+            return
+        from PySide6.QtCore import QStringListModel
+        from PySide6.QtWidgets import QCompleter
+
+        self._search_model = QStringListModel([], self)
+        self._search_completer = QCompleter(self._search_model, self)
+        self._search_completer.setCaseSensitivity(Qt.CaseInsensitive)
+        self._search_completer.setCompletionMode(QCompleter.CompletionMode.PopupCompletion)
+        self.search_field.setCompleter(self._search_completer)
+        self.search_field.textChanged.connect(self._update_suggestions)
+        self._update_suggestions(self.search_field.text())
 
     def show_settings(self, tab: str = "general") -> None:
         dialog = SettingsDialog(self._settings, self)
