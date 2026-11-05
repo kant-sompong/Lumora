@@ -20,12 +20,15 @@ This file is a hand-over note for a new session (human or AI). Read it, then DON
 - [ ] Revoke the GitHub token that was pasted into a chat early on (not confirmed done).
 
 ## 2. Linux (GTK) bugs found on 0.6.1, not re-checked on 0.6.6
-- [ ] **G1** — Library tiles stretch to full window height when there are few games. Fix: `valign = START` on every `FlowBoxChild` in `LibraryView` (`lgl/ui.py` ~3165), keep `FILL` on the flow. Verified only in memory. Check on a real compositor that the old black band (the reason for `FILL`) does not return.
-- [ ] **G2** — An empty capsule stays in the header on Library, Downloads and Media. Fix: hide `self._search.get_parent()` in `_on_view_changed` (~7421), not only the entry and hint.
-- [ ] **G3** — The "Availability" filter heading has nothing under it except "Reset all filters" (~6943). Fix or remove.
+- [x] **G1** — Library tiles stretch to full window height when there are few games. Fixed on `fix/gtk-tools-window-gtk3` (`a36468f`): `valign = START` on the tile, `FILL` kept on the flow. Measured on the running app under Xvfb + xcompmgr: 3 tiles 336 px tall inside a 650 px flow in an 800 px window. `tests/test_gtk_layout.py` fails if a tile fills the flow again. Still worth a look on a real desktop with a window manager.
+- [x] **G2** — An empty capsule stays in the header on Library, Downloads and Media. Fixed (`a36468f`, then `b37b3d6`): `apply_search_visibility()` hides the whole pill and marks it no-show-all, because the next `show_all()` put the capsule straight back — that only showed up in the screenshot, not in the widget state. Verified on the running app: `mapped=False` on all three pages and `True` on Browse.
+- [x] **G3** — The "Availability" filter heading has nothing under it except "Reset all filters" (~6943). Removed rather than invented: there is no availability data in the model, so the heading is gone and the button sits in its own footer (`_filter_footer`). Checked in a capture of the Browse filter column.
 - [ ] Re-run the whole GTK app on 0.6.6 headless (screens, Settings, About, a real download) and record the result in DONE.md.
+  - Partly done 2026-11-05 on `fix/gtk-tools-window-gtk3`: Browse, Library (with tiles), Downloads, Media (first run, no TMDB key), Settings (General) and the Tools window all ran under Xvfb + xcompmgr with captures and no traceback. **Not done: About, and a real download.**
 - [ ] Click through every page of the new Tools window and its actions (backup, update check, profiles, plugins). Only the layout of each page has been seen.
+  - 2026-11-05: all ten pages open on GTK 3 (sidebar). Actions triggered and checked: `backup.create` wrote `lumora-backup.zip` (604 B), `diagnostics.create` wrote `support-report.txt` (274 B), `updates.check` reached the live GitHub API and reported "Lumora 0.6.6 is the latest release." **Profiles and plugin actions were not triggered**, so this stays open.
 - [ ] Check on a real desktop: Settings → General toggles (not drawn in the headless render; the Tools switches do draw, so probably a sandbox quirk), and the Media home on first run with no TMDB key.
+  - Headless 2026-11-05: the notifications switch responds (44×22, mapped), writes `notifications: true` to `config.json`, and survives closing and reopening the dialog; the Media home shows the "TMDB is not connected" card with Configure providers. Their **look** could not be judged: the sandbox has no Adwaita theme and degraded fontconfig, so the switch crop came out unstyled white/black. Needs a real desktop.
 
 ## 3. Features the owner asked for (new work)
 
@@ -89,10 +92,10 @@ Delivery chosen by the owner: one branch per feature.
 - [ ] Nobody has clicked through either desktop as a human.
 - [ ] Merge `qt_library._launch` and `launch.plan_launch` into one implementation (only half done).
 - [ ] Extend the Windows smoke test to open Media and Settings, not only stay running (only half done).
-- [ ] Add the headless GTK run as a CI smoke job.
+- [x] Add the headless GTK run as a CI smoke job. "Tests (Linux, GTK)" now installs `xvfb`/`xauth` and runs the suite under `xvfb-run`, so `tests/test_gtk_layout.py` stops skipping; before this the Linux job only imported the frontend, which is how the 0.6.6 crash shipped.
 
 ## 5. Docs
-- [ ] `docs/ROADMAP.md` is stale (says no automatic updater and no Steam/itch.io/GOG import). Check what is true now and update it.
+- [x] `docs/ROADMAP.md` is stale (says no automatic updater and no Steam/itch.io/GOG import). Check what is true now and update it. Rewritten 2026-11-05 from the code: the updater still never downloads or installs (consent, interval, checksum check, manual instructions only); Steam/Epic/GOG **are** supported as folders you point at, with no account and no launcher-database access, while itch.io is not supported at all; plus the plugin, sync, GTK-3-only and auto-launch limits.
 - [ ] Keep this file and DONE.md current: tick things only when they were run.
 
 ## 6. Not checked at all
