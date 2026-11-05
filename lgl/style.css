@@ -1726,3 +1726,36 @@ button.movie-link:hover {
   background-color: @bg;
   border-radius: 10px;
 }
+
+
+/* -- compact mode (Interface -> Compact layout) --------------------------- */
+/* More rows and smaller covers on the same screen; the class is added to the
+   main window only, so dialogs keep their comfortable spacing. */
+window.compact .library-flow {
+  padding: 8px 10px 14px 10px;
+}
+
+window.compact .tile-cover {
+  min-height: 84px;
+  min-width: 116px;
+}
+
+window.compact .tile-title {
+  font-size: 0.8em;
+  margin-top: 4px;
+}
+
+window.compact .tile-meta,
+window.compact .tile-compat {
+  font-size: 0.72em;
+}
+
+window.compact row.game-row {
+  padding: 3px 10px 4px 12px;
+}
+
+window.compact row.task-row,
+window.compact row.torrent-row {
+  padding-top: 3px;
+  padding-bottom: 3px;
+}

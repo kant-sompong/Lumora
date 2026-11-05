@@ -289,3 +289,32 @@ def test_interface_section_actions_write_preferences():
     assert view_prefs.transitions(settings) == "off"
     assert tool_panels.apply("view.spoilers", settings, True) == "Spoiler-free mode on."
     assert view_prefs.spoiler_free(settings) is True
+
+def test_with_accent_keeps_labels_readable():
+    from lgl import theme
+
+    for _mode, palette in theme.PALETTES.items():
+        for accent, _name in view_prefs.ACCENT_CHOICES:
+            tinted = theme.with_accent(palette, accent)
+            assert tinted["accent"] == accent
+            assert theme.contrast_ratio(tinted["on_accent"], tinted["accent_fill"]) >= 4.5
+            assert theme.contrast_ratio(tinted["accent_text"], palette["surface"]) >= 4.5
+            # the rest of the palette is untouched
+            assert tinted["bg"] == palette["bg"]
+            assert tinted["fg" if "fg" in palette else "text"] == palette.get("text")
+
+
+def test_with_accent_ignores_junk():
+    from lgl import theme
+
+    palette = theme.palette("dark")
+    assert theme.with_accent(palette, "not a colour") == palette
+    assert theme.with_accent(palette, "#12345") == palette
+
+
+def test_css_variables_carry_the_custom_accent():
+    from lgl import theme
+
+    sheet = theme.css_variables("light", accent="#0f9d8f")
+    assert "@define-color accent #0f9d8f;" in sheet
+    assert "@define-color accent_text #0f9d8f;" not in sheet  # pushed darker for light

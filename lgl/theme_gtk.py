@@ -129,6 +129,9 @@ class ThemeManager:
         self._handlers: list[tuple[Any, int]] = []
         self._mode = tokens.DEFAULT_MODE
         self._resolved = "light"
+        #: A custom accent chosen in the Interface settings; ``None`` uses the
+        #: palette's own accent.
+        self._accent: str | None = None
         self._applying = False
         #: The desktop's own prefer-dark request, captured before we ever write
         #: to that property.  Reading it live would latch: after asking for dark
@@ -173,6 +176,15 @@ class ThemeManager:
             except (TypeError, RuntimeError):
                 pass
         self._handlers.clear()
+
+    def apply_accent(self, accent: str | None) -> None:
+        """Retint the accent family without touching the light/dark mode."""
+        chosen = str(accent or "").strip().lower() or None
+        if chosen == self._accent:
+            return
+        self._accent = chosen
+        self._swap_token_provider(self._resolved)
+        self._reset_widget_styles()
 
     def apply(self, mode: str) -> None:
         """Apply ``dark``, ``light`` or ``system`` immediately."""
@@ -280,7 +292,9 @@ class ThemeManager:
             return
         provider = Gtk.CssProvider()
         try:
-            provider.load_from_data(tokens.css_variables(resolved).encode("utf-8"))
+            provider.load_from_data(
+                tokens.css_variables(resolved, accent=self._accent).encode("utf-8")
+            )
         except GLib.Error as exc:
             _log(f"could not build the {resolved} palette: {exc}")
             return
@@ -383,6 +397,12 @@ def apply(mode: str) -> None:
     manager().apply(mode)
 
 
+def set_accent(accent: str | None) -> None:
+    """Retint the accent for every window, or restore the shipped one."""
+    if _MANAGER is not None:
+        _MANAGER.apply_accent(accent)
+
+
 def resolved() -> str:
     return manager().resolved
 
@@ -403,10 +423,11 @@ __all__ = [
     "ThemeManager",
     "apply",
     "audit_toplevels",
-    "start_audit",
     "install",
     "is_dark",
     "manager",
     "resolved",
+    "set_accent",
     "shutdown",
+    "start_audit",
 ]
