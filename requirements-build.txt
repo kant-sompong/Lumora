@@ -1,0 +1,6 @@
+# Dependencies for the Windows packaging job (PyInstaller bundle).
+PySide6
+PySide6-WebEngine
+pillow
+pyinstaller
+tzdata
