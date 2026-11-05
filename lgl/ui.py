@@ -206,6 +206,10 @@ def apply_search_visibility(pill: Gtk.Widget | None, view: str | None) -> bool:
     """
     visible = (view or "archive") == "archive"
     if pill is not None:
+        # set_visible(False) alone is undone by the next show_all(), which put the
+        # capsule back on Library/Downloads/Media, so the pill is also marked
+        # no-show-all for as long as it is hidden.
+        pill.set_no_show_all(not visible)
         pill.set_visible(visible)
     return visible
 

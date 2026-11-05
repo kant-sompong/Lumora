@@ -114,6 +114,18 @@ def test_search_pill_is_hidden_on_every_page_but_browse(display):
         pump()
         assert pill.get_visible() is False
         assert pill.get_mapped() is False, f"the empty capsule stayed on {view}"
+        # The window is shown again whenever a page reloads; that used to bring
+        # the capsule back.
+        window.show_all()
+        pump()
+        assert pill.get_visible() is False, f"show_all() put the capsule back on {view}"
+        assert pill.get_mapped() is False
+
+    # And it still comes back for Browse.
+    assert ui.apply_search_visibility(pill, "archive") is True
+    window.show_all()
+    pump()
+    assert pill.get_mapped() is True
 
     assert ui.apply_search_visibility(None, "library") is False
     window.destroy()
