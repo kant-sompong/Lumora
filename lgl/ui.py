@@ -45,6 +45,7 @@ from gi.repository import (  # noqa: E402
     PangoCairo,
 )
 
+from . import recently_viewed
 from . import APP_ID, APP_NAME, __version__, platform_support  # noqa: E402
 from . import external_dm  # noqa: E402
 from . import kryoto  # noqa: E402
@@ -2037,6 +2038,7 @@ class LibraryDetail(Gtk.Box):
         self._entry: LibraryEntry | None = None
         self._compat_token = 0
         self._updating = False
+        self._viewed_key = ""
         self._chosen_file: LocalFile | None = None
         self._local_files: list[LocalFile] = []
         self.get_style_context().add_class("library-detail")
@@ -2322,6 +2324,15 @@ class LibraryDetail(Gtk.Box):
 
     def show_entry(self, entry: LibraryEntry,
                    copies: Sequence[LibraryEntry] | None = None) -> None:
+        if entry.identifier != self._viewed_key:
+            self._viewed_key = entry.identifier
+            recently_viewed.record(
+                recently_viewed.default_path(),
+                kind="game",
+                key=entry.identifier,
+                title=entry.title,
+                subtitle=entry.display_subtitle(),
+            )
         self._entry = entry
         self._show_copies(list(copies or []))
         self._title.set_text(entry.title or entry.identifier)
@@ -6492,6 +6503,7 @@ class MainWindow(Gtk.ApplicationWindow):
         menu.append(Gtk.SeparatorMenuItem())
         add_item("Command palette…", self.show_palette)
         add_item("Release calendar…", self.show_calendar)
+        add_item("Recently viewed…", self.show_recent)
         add_item("Tools…", self.show_tools)
         add_item("Settings…", lambda: self.show_settings())
         add_item("About Lumora", self.show_about)
@@ -9226,6 +9238,12 @@ class MainWindow(Gtk.ApplicationWindow):
         from . import gtk_calendar
 
         self._calendar_window = gtk_calendar.show_calendar(self, self.settings)
+
+    def show_recent(self) -> None:
+        """Open the shared Recently viewed list."""
+        from . import gtk_recent
+
+        self._recent_window = gtk_recent.show_recent(self, self.settings)
 
     def show_tools(self) -> None:
         """Open the tools window: providers, downloads, backup, profiles and more."""

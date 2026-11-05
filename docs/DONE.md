@@ -145,3 +145,8 @@ Not run: the Qt frontend (no PySide6), so items 1, 5, 6 and 7 are ticked for GTK
 - **Started:** continued the TODO list with the code items that can be checked without a display.
 - **Finished:** one launcher for both desktops (`launch.plan_launch` now handles Windows, `qt_library` no longer keeps a copy), three new tests, and `Lumora.exe --self-test`, which opens Browse, Library, Downloads, Media and Settings and exits non-zero on failure; CI runs it in the Windows job.
 - Verified here: compileall clean, **451 passed, 3 skipped**, and the self-test exits 0 offscreen.
+
+### Recently Viewed History (3.1.9) — partly landed
+- **Started and still open.** Shared store, Qt window with tests and an offscreen render, GTK window,
+  and recording hooks on both desktops. GTK cannot open a title from the window yet and neither
+  desktop has had a display run, so the item stays unticked in `docs/TODO.md`.

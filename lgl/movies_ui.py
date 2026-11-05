@@ -38,6 +38,7 @@ from gi.repository import (  # noqa: E402
     PangoCairo,
 )
 
+from . import recently_viewed
 from . import anipm, framextv, mal, media_history, streaming, tmdb  # noqa: E402
 from .mal import (  # noqa: E402
     AnimeDetails,
@@ -3191,6 +3192,15 @@ class MoviesWindow(Gtk.Box):
             self._details_origin = current
         self._current_item = item
         self._current_id = item.tmdb_id
+        kind = str(getattr(item, "kind", "") or "")
+        if kind in recently_viewed.KINDS:
+            recently_viewed.record(
+                recently_viewed.default_path(),
+                kind=kind,
+                key=f"{kind}:{item.tmdb_id}",
+                title=str(getattr(item, "title", "") or ""),
+                subtitle=str(getattr(item, "year", "") or ""),
+            )
         self._current_details = None
         self._detail_token += 1
         self._season_token += 1
