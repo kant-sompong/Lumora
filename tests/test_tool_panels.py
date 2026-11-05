@@ -17,6 +17,7 @@ def test_panel_has_every_section(settings):
         "downloads",
         "notifications",
         "home",
+        "interface",
         "profiles",
         "library",
         "calendar",

@@ -81,6 +81,52 @@ Note for whoever picks these up: since 0.6.6 several of them already exist as sh
 
 Delivery chosen by the owner: one branch per feature.
 
+### 3.4 What the shared layer provides (added 2026-11-05, branch `feature/shared-ui-foundation`)
+
+Ten new modules in `lgl/` now hold the logic behind the 30 items above, with 18 tests in
+`tests/test_shared_features.py`, on top of the hand-off notes in 3.0 to 3.3. **No item is ticked yet**: each one still needs its visible
+screen in both frontends, and the Qt frontend cannot be run in this sandbox (no PySide6).
+What exists today, item by item:
+
+| # | Item | What is in `lgl/` now | Still missing |
+|---|------|----------------------|---------------|
+| 3.1.1 | Command Palette | `palette.py`: one command list for both frontends, ranked search, page/settings mapping | the palette window and its shortcut |
+| 3.1.2 | Dashboard layout | existing `home_layout.py` (unchanged) | resize support; only order/show-hide today |
+| 3.1.3 | Artwork backgrounds | `view_prefs.artwork_backgrounds` + Tools switch | drawing the blurred artwork |
+| 3.1.4 | Quick preview | `view_prefs.quick_preview` + Tools switch | the popover itself |
+| 3.1.5 | Compact mode | `view_prefs.compact` + Tools switch | tiles/grids actually changing density |
+| 3.1.6 | Accent colours | `view_prefs.accent` (validated `#rrggbb`, contrast-safe label colour, 6 choices) + Tools row | theme repaint after the change |
+| 3.1.7 | Page transitions | `view_prefs.transitions` (`off`/`subtle`/`full`) + Tools row | any animation |
+| 3.1.8 | Custom home sections | `shelves.py`: saved filter + limit, stored, filled and rendered as rows | drawing them on Home |
+| 3.1.9 | Recently viewed | existing `media_history.py` covers media only | one history for games and media, plus the screen |
+| 3.1.10 | Smart search suggestions | `suggestions.py`: prefix/word/substring/subsequence ranking, de-duplicated, completion | wiring it to the search entry |
+| 3.2.11 | Random discovery | `discovery.random_pick` (seeded, empty-safe) | menu entry / button |
+| 3.2.12 | Smart recommendations | `discovery.recommend` from liked titles, never recommends owned | the row on Home |
+| 3.2.13 | Trailer autoplay | `trailers.py`: link detection (rejects non-http), YouTube vs local, autoplay off unless enabled | any player surface |
+| 3.2.14 | Advanced filtering | `content_filters.py`: runtime, language, rating, year, include/exclude genres, junk-tolerant parsing, `describe` | Browse filter UI rebuilt on it |
+| 3.2.15 | Custom collections | existing `collections.py` (unchanged) | the editor screen |
+| 3.2.16 | Season comparison | `season_compare.py`: grouping, shared/only-first/only-second, summary | the compare window |
+| 3.2.17 | Watch progress heatmap | `stats.heatmap` (7×N grid), `busiest_day` | drawing the grid |
+| 3.2.18 | Similarity explorer | `discovery.similar` (Jaccard over genres/tags) | the explorer screen |
+| 3.2.19 | Hidden gems | `discovery.hidden_gems` (popularity ceiling + rating floor) | the shelf |
+| 3.2.20 | Spoiler-free mode | `view_prefs.spoiler_free` + Tools switch | hiding descriptions/artwork |
+| 3.3.21 | Unified favourites | `stats.split` (games vs media buckets) | the dashboard |
+| 3.3.22 | Statistics | `stats.totals` (events, days, streak), `favourite_genres`, `coverage` | the dashboard |
+| 3.3.23 | Profile switching | existing `profiles.py` (unchanged) | visible switcher |
+| 3.3.24 | Duplicate detection | `library_tools.duplicates` (normalised title + size) | conflicts view |
+| 3.3.25 | Metadata editor | `library_tools.apply_edit` for title/description/year/poster, year validated | the dialog |
+| 3.3.26 | Library tags | `library_tools.add_tag`/`remove_tag`/`tag_counts`, normalised and persisted | tag UI and filtering |
+| 3.3.27 | Bulk actions | `library_tools.bulk_update` over chosen keys | multi-select UI |
+| 3.3.28 | Collection suggestions | `discovery.suggestions` from uncovered genres | the shelf |
+| 3.3.29 | Activity timeline | `stats.timeline` (newest first, junk timestamps dropped) | the screen |
+| 3.3.30 | Keyboard controls | existing `shortcuts.py` (unchanged) | remapping dialog |
+
+One visible change did land: `lgl/tool_panels.py` gained an **Interface** section (compact
+layout, accent, transitions, artwork backgrounds, spoiler-free, quick preview), and because both
+frontends render that panel, GTK and Qt both get the page without extra code. The GTK page was
+opened and screenshotted under a display; the Qt page was not run.
+
+
 ## 4. Roadmap items still open (from the 0.6.6 notes in thing.md)
 - [ ] Continue Watching shelf widget on the Movies & TV page (the data and rules exist in `media_lists.shelf`).
 - [ ] Resume-from-position (cannot seek because the player is the system player).

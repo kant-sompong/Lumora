@@ -26,3 +26,53 @@ Last updated: 2026-11-05 (Lumora 0.6.6). What is still open is in [TODO.md](TODO
 ## Lessons
 - 0.6.6 was never run on Linux before release; CI only imported the GTK frontend. A headless run caught the crash.
 - Codebuff's test counts (406, then 412) were not re-run by Claude.
+
+## Done on 2026-11-05 (Buffy / Codebuff), branch `feature/shared-ui-foundation`
+
+Started the 30 features in `docs/TODO.md` section 3 from the shared side, so neither frontend has to
+own the logic. New modules, all pure Python with no GTK/Qt imports:
+
+- `lgl/palette.py` — command list for both frontends, ranked search (prefix, word start,
+  substring, subsequence), page/settings/action mapping.
+- `lgl/view_prefs.py` — compact mode, accent colour (validated, with a contrast-safe label
+  colour and six presets), page transitions, artwork backgrounds, spoiler-free, quick preview.
+- `lgl/suggestions.py` — search-box suggestions and single completion, de-duplicated.
+- `lgl/content_filters.py` — runtime, language, rating, year and genre filters with
+  junk-tolerant parsing and a human summary.
+- `lgl/discovery.py` — random pick, recommendations from liked titles, similarity, hidden gems,
+  and suggestions for incomplete collections.
+- `lgl/season_compare.py` — season grouping plus shared/only-first/only-second comparison.
+- `lgl/stats.py` — activity heatmap, totals with streak, favourite genres, timeline, game/media
+  split and metadata coverage.
+- `lgl/library_tools.py` — tags (normalised, persisted), duplicate groups, bulk field updates and
+  per-field edits.
+- `lgl/trailers.py` — trailer link detection (non-http rejected), YouTube vs local, autoplay
+  policy (off unless enabled) and muted default.
+- `lgl/shelves.py` — saved filter shelves, capped at eight, filled through `content_filters`.
+
+`lgl/tool_panels.py` gained an **Interface** section with six rows wired to `view_prefs`, so the
+same page appears in both the GTK and the Qt Tools window without touching either frontend.
+
+### What was run here
+
+- `python3 -m pytest tests -q` with GTK 3.24.41 on Xvfb: **372 passed, 6 skipped** (the six are
+  the Qt tests; PySide6 is not installed in this sandbox).
+- `tests/test_shared_features.py`: 18 new tests covering palette ranking, preference round-trips
+  and fallbacks, suggestion ranking and de-duplication, filter parsing/matching, discovery
+  ordering and exclusions, season comparison, heatmap/streak/timeline maths, tags, duplicates and
+  edits, trailer policy, shelves and the panel wiring.
+- `ruff check` clean on every new file; `lgl/tool_panels.py` has the same 7 pre-existing findings
+  as before this change (verified against `git show HEAD:lgl/tool_panels.py`), so no new lint debt.
+- GTK Tools window opened under Xvfb: **11 pages** (was 10), the Interface page renders all six
+  rows with switches and combo boxes, and toggling compact/accent/transitions wrote
+  `compact_mode`, `accent_color` and `page_transitions` to `config.json`
+  (`shots-gtk/07-interface.png`, `shots-gtk/08-interface-toggled.png`).
+
+### What was not run
+
+- The Qt frontend, for the same reason as above.
+- Nothing behind the new logic has real data yet: discovery, statistics, tags and shelves were
+  exercised with synthetic dicts, not with a real library or live AniList/TMDB responses.
+- No screen for the palette, suggestions, dashboard, editor, timeline or suggestions shelves, so
+  no TODO item is ticked; section 3.4 of `docs/TODO.md` lists what each item still needs.
+
