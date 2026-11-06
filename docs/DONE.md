@@ -182,3 +182,12 @@ GTK has no collections screen.
 `QShortcut`s from the saved values. Opened from **Library tools -> Keyboard shortcuts...**.
 Verified: 485 passed, 3 skipped offscreen; compileall clean. Not verified: no desktop run, and
 changes take effect the next time the window opens (GTK has no equivalent).
+
+## 2026-11-06 - Profile switcher (3.3.23, Qt)
+
+`lgl/qt_profiles.py` lists the profiles with the active one marked and creates, renames, deletes
+and switches them through `Profile`/`Profiles`. Opened from **Library tools -> Profiles...**.
+Because the library, settings and collection stores are built at startup, a switch is saved and
+applied on the next launch, which the window says plainly.
+Verified: 487 passed, 3 skipped offscreen; compileall clean. Not verified: no desktop run; GTK has
+no switcher.
