@@ -73,6 +73,25 @@ def spoiler_free(settings: Any) -> bool:
     return _stored_flag(settings, SPOILERS, False)
 
 
+#: What an episode title becomes while spoiler-free mode is on.  One wording,
+#: so both frontends hide the same thing behind the same words.
+HIDDEN_EPISODE = "Hidden (spoiler-free mode)"
+#: How the reader turns the mode off again; shown beside an episode list.
+SPOILER_NOTE = "Spoiler-free mode is on. Turn it off in Tools \u2192 Interface."
+
+
+def episode_title(settings: Any, title: Any) -> str:
+    """The episode title to show: the real one, or a placeholder."""
+    if spoiler_free(settings):
+        return HIDDEN_EPISODE
+    return str(title or "").strip()
+
+
+def spoiler_note(settings: Any) -> str:
+    """Say how to switch the mode off; empty while it is already off."""
+    return SPOILER_NOTE if spoiler_free(settings) else ""
+
+
 def quick_preview(settings: Any) -> bool:
     """Show the preview popover on selection."""
     return _stored_flag(settings, PREVIEW, True)
@@ -171,8 +190,10 @@ __all__ = [
     "ARTWORK",
     "COMPACT",
     "DEFAULT_ACCENT",
+    "HIDDEN_EPISODE",
     "PREVIEW",
     "SPOILERS",
+    "SPOILER_NOTE",
     "TRANSITIONS",
     "TRANSITION_CHOICES",
     "accent",
@@ -181,6 +202,7 @@ __all__ = [
     "artwork_backgrounds",
     "compact",
     "effective",
+    "episode_title",
     "normalize_accent",
     "quick_preview",
     "readable_on",
@@ -191,5 +213,6 @@ __all__ = [
     "set_spoilers",
     "set_transitions",
     "spoiler_free",
+    "spoiler_note",
     "transitions",
 ]
