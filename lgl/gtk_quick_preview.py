@@ -93,6 +93,14 @@ def spot(position: Gtk.PositionType, tile: Gdk.Rectangle,
     return rect(tile.x, tile.y - GAP - height, width, height)
 
 
+def window_origin(window: Gdk.Window) -> tuple[int, int, int]:
+    """A Gdk window's root position, as ``(ok, x, y)``, whatever the build."""
+    moved = window.get_origin()
+    if len(moved) == 3:
+        return int(moved[0]), int(moved[1]), int(moved[2])
+    return 1, int(moved[0]), int(moved[1])
+
+
 def origin(widget: Gtk.Widget, target: Gtk.Widget) -> tuple[int, int]:
     """A widget's top-left corner in another widget's coordinates.
 
@@ -159,6 +167,9 @@ class QuickPreview(Gtk.Popover):
         self._tiles: dict[Gtk.Widget, Any] = {}
         self._source = 0
         self._window: Gtk.Window | None = None
+        self._flow: Gtk.Widget | None = None
+        self._watched: list[Gtk.Window] = []
+        self._hovered: Gtk.Widget | None = None
         self.set_modal(False)
         self.set_position(Gtk.PositionType.RIGHT)
         self.get_style_context().add_class("quick-preview")
@@ -221,33 +232,95 @@ class QuickPreview(Gtk.Popover):
 
     # -- tracking tiles ------------------------------------------------------
     def attach(self, flow: Gtk.Widget) -> None:
-        """Catch Space while the grid itself, not one of its tiles, has focus."""
+        """Follow the pointer over the grid and catch Space while it has focus."""
+        self._flow = flow
         flow.connect("key-press-event", self._on_key)
+        flow.connect("map", self._watch_pointer)
+        self._watch_pointer()
+
+    def _watch_pointer(self, *_args: Any) -> None:
+        """Listen for pointer motion on the window that owns the tiles.
+
+        A ``Gtk.FlowBoxChild`` has no ``GdkWindow`` of its own, so it never sees
+        crossing events however many masks it asks for — the window under the
+        pointer is the toplevel's.  Tracking motion there and asking which tile
+        is under the pointer is what makes the hover work with a real mouse.
+        """
+        flow = self._flow
+        if flow is None:
+            return
+        toplevel = flow.get_toplevel()
+        if not isinstance(toplevel, Gtk.Window) or toplevel in self._watched:
+            return
+        toplevel.add_events(
+            Gdk.EventMask.POINTER_MOTION_MASK | Gdk.EventMask.LEAVE_NOTIFY_MASK
+        )
+        toplevel.connect("motion-notify-event", self._on_motion)
+        toplevel.connect("leave-notify-event", self._on_window_leave)
+        self._watched.append(toplevel)
 
     def track(self, tile: Gtk.Widget) -> None:
         """Watch one tile; called from the view for every rendered card."""
         if tile in self._tiles:
             return
         self._tiles[tile] = getattr(tile, "entry", None)
-        tile.connect("enter-notify-event", self._on_enter)
-        tile.connect("leave-notify-event", self._on_leave)
         tile.connect("key-press-event", self._on_key)
 
-    def _on_enter(self, tile: Gtk.Widget, _event: Gdk.EventCrossing) -> bool:
+    def _toplevel(self) -> Gtk.Window | None:
+        widget = self._flow if self._flow is not None else self._view
+        if not isinstance(widget, Gtk.Widget):
+            return None
+        toplevel = widget.get_toplevel()
+        return toplevel if isinstance(toplevel, Gtk.Window) else None
+
+    def _tile_at(self, x_root: float, y_root: float) -> Gtk.Widget | None:
+        """The tracked tile under a root-coordinate pointer position."""
+        toplevel = self._toplevel()
+        if toplevel is None or toplevel.get_window() is None:
+            return None
+        _ok, window_x, window_y = window_origin(toplevel.get_window())
+        for tile in list(self._tiles):
+            if not tile.get_mapped():
+                continue
+            x, y = origin(tile, toplevel)
+            width, height = tile.get_allocated_width(), tile.get_allocated_height()
+            if (
+                window_x + x <= x_root < window_x + x + width
+                and window_y + y <= y_root < window_y + y + height
+            ):
+                return tile
+        return None
+
+    def _on_motion(self, _widget: Gtk.Widget, event: Gdk.EventMotion) -> bool:
+        """Start the hover timer when the pointer moves onto a new tile."""
+        if not self.enabled():
+            return False
+        tile = self._tile_at(event.x_root, event.y_root)
+        if tile is self._hovered:
+            return False
+        self._hovered = tile
+        if tile is None:
+            if self.get_visible():
+                self.dismiss()
+            return False
+        self._hover(tile)
+        return False
+
+    def _on_window_leave(self, _widget: Gtk.Widget,
+                         _event: Gdk.EventCrossing) -> bool:
+        """The pointer left the window the tiles live in."""
+        self._hovered = None
+        if self.get_visible():
+            self.dismiss()
+        return False
+
+    def _hover(self, tile: Gtk.Widget) -> None:
         entry = self._tiles.get(tile)
-        if entry is None or not self.enabled():
-            return False
-        if not tile.get_mapped():
-            return False
+        if entry is None or not tile.get_mapped():
+            return
         self._entry = entry
         self._tile = tile
         self._restart()
-        return False
-
-    def _on_leave(self, tile: Gtk.Widget, _event: Gdk.EventCrossing) -> bool:
-        if tile is self._tile and self.get_visible():
-            self.dismiss()
-        return False
 
     # -- opening and closing -------------------------------------------------
     def open_selected(self) -> bool:
@@ -273,8 +346,14 @@ class QuickPreview(Gtk.Popover):
         self.dismiss()
 
     def dismiss(self) -> None:
-        """Close the popover and forget the tile it was pointing at."""
+        """Close the popover and forget the tile it was pointing at.
+
+        The tile under the pointer stays remembered, so the next motion event
+        on that same tile does not open the preview again: it takes a move to a
+        different tile (or leaving and coming back) after Escape or a click.
+        """
         self._cancel()
+        self._hovered = self._hovered or self._tile
         self._entry = None
         self._tile = None
         if self.get_visible():

@@ -1,11 +1,14 @@
-"""The GTK quick preview: text rules, the switch, opening and dismissal.
+"""The GTK quick preview: text rules, the switch, hover and dismissal.
 
-Skipped without GTK 3 or a display, like the rest of the GTK suite.
+The hover and leave tests move the real pointer with ``Gdk.Device.warp`` and
+let GTK deliver the crossing and motion events itself; nothing is emitted by
+hand.  Skipped without GTK 3, a display, or a display that cannot warp.
 """
 
 from __future__ import annotations
 
 import time
+import warnings
 
 import pytest
 
@@ -23,9 +26,11 @@ from lgl.gtk_quick_preview import (
     QuickPreview,
     choose,
     meta_text,
+    origin,
     preview_text,
     rect,
     spot,
+    window_origin,
 )
 from lgl.library_store import LibraryEntry
 
@@ -66,18 +71,103 @@ class View(Gtk.Box):
 
 
 def pump(rounds: int = 6) -> None:
-    """Let GTK finish allocating and run the timeout sources."""
     for _ in range(rounds):
         while Gtk.events_pending():
             Gtk.main_iteration_do(False)
         time.sleep(0.01)
 
 
+def wait_for(predicate, seconds: float = 2.0) -> bool:
+    """Pump the main loop until `predicate` holds, or the deadline passes."""
+    deadline = time.time() + seconds
+    while time.time() < deadline:
+        while Gtk.events_pending():
+            Gtk.main_iteration_do(False)
+        if predicate():
+            return True
+        time.sleep(0.01)
+    return bool(predicate())
+
+
 @pytest.fixture(scope="module")
 def display():
     if not Gtk.init_check()[0]:
         pytest.skip("no display")
-    yield
+    return Gdk.Display.get_default()
+
+
+def pointer():
+    """The seat's pointer, or the deprecated device manager on older GTK."""
+    display = Gdk.Display.get_default()
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        seat = display.get_default_seat() if hasattr(display, "get_default_seat") else None
+        if seat is not None:
+            device = seat.get_pointer()
+            if device is not None:
+                return device
+        return display.get_device_manager().get_client_pointer()
+
+
+@pytest.fixture(scope="module")
+def warping(display):
+    """Skip the pointer tests only when this display cannot move the pointer."""
+    device = pointer()
+    screen = Gdk.Screen.get_default()
+    if device is None or screen is None:
+        pytest.skip("no pointer to warp")
+    warp_to(device, 4, 4)
+    pump(4)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        _screen, x, y = device.get_position()
+    if (x, y) != (4, 4):
+        pytest.skip(f"this display cannot warp the pointer (it stayed at {x}, {y})")
+    warp_to(device, 6, 6)
+    pump(2)
+    return device
+
+
+def warp_to(device, x, y) -> None:
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        device.warp(Gdk.Screen.get_default(), int(x), int(y))
+
+
+def tile_centre(tile, window):
+    """Root coordinates of a tile's centre."""
+    _ok, window_x, window_y = window_origin(window.get_window())
+    x, y = origin(tile, window)
+    return (
+        window_x + x + tile.get_allocated_width() // 2,
+        window_y + y + tile.get_allocated_height() // 2,
+    )
+
+
+def away_from(window):
+    """A root position outside this window, so the pointer leaves it."""
+    size = window.get_size()
+    _ok, window_x, window_y = window_origin(window.get_window())
+    return window_x + size[0] + 40, window_y + size[1] + 40
+
+
+def park(device, window):
+    """Move the real pointer off this window, so no hover is inherited."""
+    warp_to(device, *away_from(window))
+    pump(3)
+
+
+def hover(device, tile, window):
+    """Move the real pointer onto a tile, from outside the window.
+
+    Warping twice inside the tile makes sure the window sees motion even when
+    the pointer happened to sit on that exact pixel already.
+    """
+    park(device, window)
+    x, y = tile_centre(tile, window)
+    warp_to(device, x, y)
+    pump(2)
+    warp_to(device, x + 3, y)
 
 
 def entry(identifier, title, **kwargs):
@@ -106,7 +196,7 @@ def entries():
     ]
 
 
-def library(display, *, delay: int = 0, **flags):
+def library(*, delay: int = 0, **flags):
     """A real window, a flow of real library tiles, and one popover."""
     from lgl import ui
 
@@ -140,10 +230,6 @@ def library(display, *, delay: int = 0, **flags):
     return window, flow, preview, tiles, view
 
 
-def crossing(kind=Gdk.EventType.ENTER_NOTIFY):
-    return Gdk.Event.new(kind)
-
-
 def key(keyval):
     event = Gdk.Event.new(Gdk.EventType.KEY_PRESS)
     event.keyval = keyval
@@ -160,7 +246,7 @@ def overlap(first, second):
     )
 
 
-def test_the_text_rules_come_from_the_entry(display):
+def test_the_text_rules_come_from_the_entry(warping):
     long_line = "x" * 200
     item = entry("braid", "Braid", description=f"  first line  \n\n{long_line}\nthird line")
 
@@ -176,35 +262,28 @@ def test_the_text_rules_come_from_the_entry(display):
     assert meta_text(entry("plain", "Plain")) == "—"
 
 
-def test_nothing_starts_when_the_switch_is_off(display):
-    window, _flow, preview, tiles, _view = library(
-        display, delay=30, quick_preview=False
-    )
+def test_nothing_starts_when_the_switch_is_off(warping):
+    window, _flow, preview, tiles, _view = library(delay=30, quick_preview=False)
     assert preview.enabled() is False
 
-    tiles["game-0"].emit("enter-notify-event", crossing())
-    pump(8)
+    hover(warping, tiles["game-0"], window)
+    pump(12)
 
     assert preview.pending() is False
     assert preview.get_visible() is False
     window.destroy()
 
 
-def test_hovering_a_tile_opens_the_popover(display):
-    # 80 ms stands in for the 400 ms a real pointer has to rest.
-    window, _flow, preview, tiles, view = library(display, delay=80)
-    tile = tiles["game-0"]
+def test_hovering_a_tile_opens_the_popover(warping):
+    window, _flow, preview, tiles, view = library(delay=150)
 
-    tile.emit("enter-notify-event", crossing())
-    pump(2)
-    assert preview.pending() is True
-    assert preview.get_visible() is False
+    hover(warping, tiles["game-0"], window)
+    assert wait_for(preview.pending)
+    assert preview.get_visible() is False  # a pointer that passes over does nothing
 
-    pump(10)
-
-    assert preview.get_visible() is True
+    assert wait_for(preview.get_visible)
     assert preview.get_modal() is False
-    assert preview.get_relative_to() is tile
+    assert preview.get_relative_to() is tiles["game-0"]
     assert preview.get_position() in POSITIONS
     assert preview.title.get_text() == "Hollow Knight"
     assert preview.meta.get_text() == "2002 · 1.5 KiB"
@@ -217,49 +296,80 @@ def test_hovering_a_tile_opens_the_popover(display):
     window.destroy()
 
 
-def test_space_opens_the_selected_tile_unless_a_field_has_focus(display):
-    window, flow, preview, tiles, view = library(display)
+def test_moving_the_pointer_off_the_tile_closes_it(warping):
+    window, _flow, preview, tiles, _view = library(delay=0)
+    hover(warping, tiles["game-0"], window)
+    assert wait_for(preview.get_visible)
+    assert preview.get_relative_to() is tiles["game-0"]
 
-    assert tiles["game-1"].emit("key-press-event", key(Gdk.KEY_space)) is True
-    pump()
-    assert preview.get_visible() is True
-    preview.dismiss()
-    pump()
+    park(warping, window)
+    assert wait_for(lambda: not preview.get_visible())
+    window.destroy()
 
-    field = Gtk.Entry()
-    view.pack_start(field, False, False, 0)
-    field.show()
-    field.grab_focus()
+
+def test_moving_to_another_tile_moves_the_preview(warping):
+    window, _flow, preview, tiles, _view = library(delay=0)
+    hover(warping, tiles["game-0"], window)
+    assert wait_for(preview.get_visible)
+
+    warp_to(warping, *tile_centre(tiles["game-1"], window))
+    assert wait_for(lambda: preview.title.get_text() == "Celeste")
+    assert preview.get_relative_to() is tiles["game-1"]
+    window.destroy()
+
+
+def test_space_opens_the_selection_and_escape_closes_it(warping):
+    """Real keys, with hover parked so only a key can open the popover.
+
+    ``Gtk.test_widget_send_key`` warps the pointer into the window before it
+    sends the key, so hover is given an hour: anything that opens here came
+    from the key.  Skipped when this X server drops the keys (no XTEST).
+    """
+    window, flow, preview, tiles, _view = library(delay=60_000)
+    park(warping, window)
+    assert preview.get_visible() is False
+    flow.select_child(tiles["game-0"])
+    window.present()
     pump()
-    if window.get_focus() is not field:
+    window.get_window().focus(Gdk.CURRENT_TIME)
+    pump(3)
+
+    Gtk.test_widget_send_key(window, Gdk.KEY_space, 0)
+    if not wait_for(preview.get_visible, 1.0):
+        preview.dismiss()
         window.destroy()
-        pytest.skip("this display did not give the entry focus")
+        pytest.skip("this X server does not deliver injected key events (no XTEST)")
+    assert preview.get_relative_to() is tiles["game-0"]
 
-    assert preview.typing() is True
-    assert flow.emit("key-press-event", key(Gdk.KEY_space)) is False
-    pump()
+    Gtk.test_widget_send_key(window, Gdk.KEY_Escape, 0)
+    closed = wait_for(lambda: not preview.get_visible(), 1.0)
+    preview.dismiss()
+    window.destroy()
+    assert closed, "Escape did not close the preview"
+
+
+def test_space_and_escape_through_the_key_handler(warping):
+    """The same two keys, delivered without XTest: a real Gdk.EventKey."""
+    window, flow, preview, tiles, _view = library(delay=0)
+    park(warping, window)
+    flow.select_child(tiles["game-0"])
+    pump(2)
+
+    flow.emit("key-press-event", key(Gdk.KEY_space))
+    pump(2)
+    assert preview.get_visible() is True
+    assert preview.get_relative_to() is tiles["game-0"]
+
+    flow.emit("key-press-event", key(Gdk.KEY_Escape))
+    pump(2)
     assert preview.get_visible() is False
     window.destroy()
 
 
-def test_escape_closes_it(display):
-    window, _flow, preview, _tiles, _view = library(display)
-    preview.open_selected()
-    pump()
-    assert preview.get_visible() is True
-
-    assert preview.emit("key-press-event", key(Gdk.KEY_Escape)) is True
-    pump()
-
-    assert preview.get_visible() is False
-    window.destroy()
-
-
-def test_a_selection_change_closes_it(display):
-    window, _flow, preview, _tiles, _view = library(display)
-    preview.open_selected()
-    pump()
-    assert preview.get_visible() is True
+def test_a_selection_change_closes_it(warping):
+    window, _flow, preview, tiles, _view = library(delay=0)
+    hover(warping, tiles["game-0"], window)
+    assert wait_for(preview.get_visible)
 
     # What LibraryView runs from the flow's selected-children-changed signal.
     preview.selection_changed()
@@ -269,7 +379,7 @@ def test_a_selection_change_closes_it(display):
     window.destroy()
 
 
-def test_it_only_places_the_popover_beside_the_tile(display):
+def test_it_only_places_the_popover_beside_the_tile(warping):
     size = (320, 190)
     roomy = rect(0, 0, 900, 600)
     middle = rect(300, 200, 180, 260)
@@ -290,3 +400,10 @@ def test_it_only_places_the_popover_beside_the_tile(display):
         assert not overlap(spot(position, middle, size), middle)
 
     assert choose(middle, size, rect(0, 0, 100, 100)) is None
+
+
+def test_key_events_carry_the_key_that_was_pressed():
+    """The handler reads a real Gdk.EventKey, not a made-up object."""
+    event = key(Gdk.KEY_Escape)
+    assert event.type == Gdk.EventType.KEY_PRESS
+    assert event.keyval == Gdk.KEY_Escape
