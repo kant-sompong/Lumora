@@ -2,8 +2,9 @@
 collection gaps, all ranked by :mod:`lgl.discovery`.
 
 The ranking is shared with the Qt frontend; this file only turns the loaded
-catalogue into the plain mappings the ranker expects and draws four lists.
-GTK 3 only: ``pack_start``, ``.add()`` and ``get_style_context().add_class()``.
+catalogue and the user's library into the mappings the ranker expects and draws
+the lists.  GTK 3 only: ``pack_start``, ``.add()`` and
+``get_style_context().add_class()``.
 """
 
 from __future__ import annotations
@@ -14,9 +15,9 @@ from typing import Any
 import gi
 
 gi.require_version("Gtk", "3.0")
-from gi.repository import Gtk  # noqa: E402
+from gi.repository import Gtk
 
-from . import discovery  # noqa: E402
+from . import discovery
 
 
 def game_rows(games: Sequence[Any]) -> list[dict[str, Any]]:
@@ -33,9 +34,22 @@ def game_rows(games: Sequence[Any]) -> list[dict[str, Any]]:
                 "year": str(getattr(game, "year", "") or ""),
                 "genres": list(getattr(game, "subjects", []) or []),
                 "rating": getattr(game, "rating", None),
+                "popularity": getattr(game, "popularity", None),
             }
         )
     return rows
+
+
+def library_keys(parent: Any) -> list[str]:
+    """Identifiers of every title the user keeps in their library."""
+    view = getattr(parent, "library_view", None)
+    entries = getattr(view, "_entries", None) or []
+    keys: list[str] = []
+    for entry in entries:
+        key = str(getattr(entry, "identifier", "") or "").strip()
+        if key and key not in keys:
+            keys.append(key)
+    return keys
 
 
 def row_text(item: Mapping[str, Any]) -> str:
@@ -51,9 +65,7 @@ def row_text(item: Mapping[str, Any]) -> str:
 
 
 class DiscoverWindow(Gtk.Window):
-    """Four ways to find the next title, all from what is already loaded."""
-
-    TABS = ("For you", "More like this", "Hidden gems", "Complete the set")
+    """Ways to find the next title, from what is loaded and what is owned."""
 
     def __init__(
         self,
@@ -79,6 +91,7 @@ class DiscoverWindow(Gtk.Window):
             if key:
                 self._games[key] = game
         self._lists: dict[str, Gtk.ListBox] = {}
+        self._notes: dict[str, Gtk.Label] = {}
 
         outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         for side in ("top", "bottom", "start", "end"):
@@ -95,17 +108,24 @@ class DiscoverWindow(Gtk.Window):
             "For you",
             discovery.recommend(self.items, self.liked),
             "Like what you already have; nothing you own is repeated.",
+            empty_note=(
+                "No recommendations from the loaded titles yet."
+                if self.liked
+                else "Mark favourites to get suggestions here."
+            ),
         )
         self._similar_page()
-        self._simple_page(
-            "Hidden gems",
-            discovery.hidden_gems(self.items),
-            "Well rated but not widely known.",
-        )
+        if self._gems_available():
+            self._simple_page(
+                "Hidden gems",
+                discovery.hidden_gems(self.items),
+                "Well rated but not widely known.",
+            )
         self._simple_page(
             "Complete the set",
             discovery.suggestions(self.items, self.owned),
             "Fills genres your collection is still missing.",
+            empty_note="No gaps found in the loaded titles.",
         )
 
         buttons = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
@@ -118,6 +138,13 @@ class DiscoverWindow(Gtk.Window):
         self.seed.set_active(0)
 
     # -- pages ----------------------------------------------------------
+    def _gems_available(self) -> bool:
+        """Hidden gems needs both a rating and a popularity on some title."""
+        return any(
+            item.get("rating") is not None and item.get("popularity") is not None
+            for item in self.items
+        )
+
     def _list(self, name: str) -> Gtk.ListBox:
         widget = Gtk.ListBox()
         widget.set_selection_mode(Gtk.SelectionMode.NONE)
@@ -137,14 +164,22 @@ class DiscoverWindow(Gtk.Window):
         caption.set_max_width_chars(70)
         caption.get_style_context().add_class("dim-label")
         page.pack_start(caption, False, False, 0)
+        self._notes[name] = caption
         self.notebook.append_page(page, Gtk.Label(label=name))
         return page
 
-    def _simple_page(self, name: str, rows: Sequence[Mapping[str, Any]], note: str) -> None:
+    def _simple_page(
+        self,
+        name: str,
+        rows: Sequence[Mapping[str, Any]],
+        note: str,
+        *,
+        empty_note: str | None = None,
+    ) -> None:
         widget = self._list(name)
         for item in rows:
             self._add_row(widget, item)
-        self._wrap(name, widget, note)
+        self._wrap(name, widget, note if rows else (empty_note or note))
 
     def _similar_page(self) -> None:
         page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
@@ -162,6 +197,7 @@ class DiscoverWindow(Gtk.Window):
         caption = Gtk.Label(label="Shares genres or tags with the title above.", xalign=0)
         caption.get_style_context().add_class("dim-label")
         page.pack_start(caption, False, False, 0)
+        self._notes["More like this"] = caption
         self.notebook.append_page(page, Gtk.Label(label="More like this"))
 
     def _add_row(self, listbox: Gtk.ListBox, item: Mapping[str, Any]) -> None:
@@ -177,13 +213,6 @@ class DiscoverWindow(Gtk.Window):
         row.set_tooltip_text(str(item.get("title") or item.get("key") or ""))
         listbox.add(row)
 
-    def _replace(self, listbox: Gtk.ListBox, rows: Sequence[Mapping[str, Any]]) -> None:
-        for row in list(listbox.get_children()):
-            listbox.remove(row)
-        for item in rows:
-            self._add_row(listbox, item)
-        listbox.show_all()
-
     # -- behaviour ------------------------------------------------------
     def items_in(self, name: str) -> list[dict[str, Any]]:
         widget = self._lists.get(name)
@@ -194,9 +223,25 @@ class DiscoverWindow(Gtk.Window):
             for row in widget.get_children()
         ]
 
+    def tab_labels(self) -> list[str]:
+        labels: list[str] = []
+        for index in range(self.notebook.get_n_pages()):
+            page = self.notebook.get_nth_page(index)
+            labels.append(str(self.notebook.get_tab_label_text(page) or ""))
+        return labels
+
+    def note_text(self, name: str) -> str:
+        label = self._notes.get(name)
+        return str(label.get_text()) if label is not None else ""
+
     def refresh_similar(self) -> None:
         key = self.seed.get_active_id() or ""
-        self._replace(self._similar_list, discovery.similar(self.items, key))
+        listbox = self._similar_list
+        for row in list(listbox.get_children()):
+            listbox.remove(row)
+        for item in discovery.similar(self.items, key):
+            self._add_row(listbox, item)
+        listbox.show_all()
 
     def _on_row(self, _listbox: Gtk.ListBox, row: Gtk.ListBoxRow) -> None:
         item = getattr(row, "discover_item", None)
@@ -210,13 +255,19 @@ class DiscoverWindow(Gtk.Window):
 
 
 def show_discover(parent: Any, settings: Any) -> DiscoverWindow:
-    """Open Discover from the app menu, fed by the loaded catalogue."""
+    """Open Discover from the app menu, fed by the catalogue and the library."""
     rows = game_rows(getattr(parent, "_games", None) or [])
     owned = [str(item["key"]) for item in rows]
-    window = DiscoverWindow(parent, settings, rows, owned=owned)
+    window = DiscoverWindow(
+        parent,
+        settings,
+        rows,
+        liked=library_keys(parent),
+        owned=owned,
+    )
     window.show_all()
     window.present()
     return window
 
 
-__all__ = ["DiscoverWindow", "game_rows", "row_text", "show_discover"]
+__all__ = ["DiscoverWindow", "game_rows", "library_keys", "row_text", "show_discover"]
