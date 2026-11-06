@@ -45,6 +45,16 @@ def row_titles(listbox):
     return [row.get_child().get_text() for row in listbox.get_children()]
 
 
+def test_the_window_does_not_shadow_container_add_and_remove(display):
+    """GTK builds the window with ``Container.add``; ours must not take the name."""
+    for name in ("add", "remove"):
+        assert name not in vars(gtk_collections.CollectionsWindow), (
+            f"CollectionsWindow overrides Gtk.Container.{name}"
+        )
+    assert gtk_collections.CollectionsWindow.add is Gtk.Container.add
+    assert gtk_collections.CollectionsWindow.remove is Gtk.Container.remove
+
+
 def test_new_collection_starts_empty_and_takes_titles(display):
     win = window()
     try:
@@ -52,7 +62,7 @@ def test_new_collection_starts_empty_and_takes_titles(display):
         assert win.create("Co-op") is True
         assert row_titles(win.list) == ["Co-op (0)"]
         assert win.members_note.get_text() == gtk_collections.NO_MEMBERS
-        assert win.add("a") == 1
+        assert win.add_title("a") == 1
         assert row_titles(win.members) == ["Alpha"]
         assert win.members.get_row_at_index(0).member_key == "a"
         assert row_titles(win.list) == ["Co-op (1)"]
@@ -95,10 +105,10 @@ def test_removing_a_title_and_deleting_a_collection(display):
     win = window(store=store)
     try:
         assert win.create("Keep") is True
-        assert win.add("a") == 1
-        assert win.add("b") == 1
+        assert win.add_title("a") == 1
+        assert win.add_title("b") == 1
         assert row_titles(win.members) == ["Alpha", "Beta"]
-        assert win.remove("a") == 1
+        assert win.remove_title("a") == 1
         assert row_titles(win.members) == ["Beta"]
         assert win.delete() is True
         assert win.list.get_children() == []
@@ -124,7 +134,7 @@ def test_an_empty_library_says_why_nothing_can_be_added(display):
         assert win.library_note.get_text() == gtk_collections.NO_LIBRARY
         assert win.members_note.get_text() == gtk_collections.NO_MEMBERS
         assert win.add_button.get_sensitive() is False
-        assert win.add("a") == 0
+        assert win.add_title("a") == 0
     finally:
         win.destroy()
 
@@ -133,9 +143,9 @@ def test_the_members_note_returns_after_removing_the_last_title(display):
     win = window()
     try:
         win.create("Co-op")
-        win.add("a")
+        win.add_title("a")
         assert win.members_note.get_text() == ""
-        win.remove("a")
+        win.remove_title("a")
         assert win.members_note.get_text() == gtk_collections.NO_MEMBERS
         assert win.remove_button.get_sensitive() is False
     finally:

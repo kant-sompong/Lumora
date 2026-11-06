@@ -299,7 +299,7 @@ class CollectionsWindow(Gtk.Window):
         self.refresh()
         return removed
 
-    def add(self, key: str) -> int:
+    def add_title(self, key: str) -> int:
         collection_id = self.current_id()
         collection = self.store.get(collection_id)
         if collection is None or collection.smart:
@@ -308,7 +308,7 @@ class CollectionsWindow(Gtk.Window):
         self.refresh()
         return added
 
-    def remove(self, key: str) -> int:
+    def remove_title(self, key: str) -> int:
         collection_id = self.current_id()
         collection = self.store.get(collection_id)
         if collection is None or collection.smart:
@@ -341,12 +341,12 @@ class CollectionsWindow(Gtk.Window):
             self.delete()
 
     def _add_clicked(self) -> None:
-        self.add(str(self.picker.get_active_id() or ""))
+        self.add_title(str(self.picker.get_active_id() or ""))
 
     def _remove_clicked(self) -> None:
         key = self.current_member()
         if key:
-            self.remove(key)
+            self.remove_title(key)
 
     def _ask_name(self, title: str, initial: str = "") -> str | None:
         dialog = Gtk.Dialog(title=title, transient_for=self, modal=True)
