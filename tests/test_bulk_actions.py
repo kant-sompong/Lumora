@@ -6,6 +6,7 @@ now and the Qt screen later, so the rules are tested once.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from types import SimpleNamespace
 
 from lgl import library_tools
@@ -300,3 +301,51 @@ def test_bulk_actions_never_remove_entries_or_touch_folders():
 
     assert [(entry.identifier, entry.folder) for entry in entries] == before
     assert store.entries() == entries
+
+
+# -- fix: undo of a collection it created ------------------------------------
+
+def test_undo_of_a_collection_it_created_deletes_the_empty_collection():
+    entries = three()
+    store = CollectionStore()
+    collection = store.create("Co-op")
+    plan = library_tools.plan_collection(
+        entries,
+        ["a", "b"],
+        "Co-op",
+        collection_id=collection.id,
+        is_member=lambda entry: False,
+    )
+    plan = replace(
+        plan,
+        change=replace(plan.change, field=collection.id),
+        created_collection=collection.id,
+    )
+
+    library_tools.apply_plan(plan, collections_store=store)
+    assert store.members(collection.id) == ["a", "b"]
+
+    library_tools.apply_plan(plan.undo(), collections_store=store)
+    assert store.members(collection.id) == []
+    assert store.by_name("Co-op") is None
+
+
+def test_undo_leaves_a_collection_it_did_not_create_alone():
+    entries = three()
+    store = CollectionStore()
+    collection = store.create("Co-op")
+    store.add(collection.id, ["c"])
+    plan = library_tools.plan_collection(
+        entries,
+        ["a"],
+        "Co-op",
+        collection_id=collection.id,
+        is_member=lambda entry: False,
+    )
+
+    library_tools.apply_plan(plan, collections_store=store)
+    assert store.members(collection.id) == ["c", "a"]
+
+    library_tools.apply_plan(plan.undo(), collections_store=store)
+    assert store.by_name("Co-op") is not None
+    assert store.members(collection.id) == ["c"]

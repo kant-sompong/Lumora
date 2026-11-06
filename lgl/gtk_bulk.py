@@ -44,6 +44,7 @@ class BulkActions:
         #: Selected identifiers, in the order they were picked.
         self._selected: dict[str, bool] = {}
         self._checks: dict[str, Gtk.CheckButton] = {}
+        self._chips: dict[str, Gtk.EventBox] = {}
         self._collections: CollectionStore | None = collections_store
         self.history = library_tools.BulkHistory()
 
@@ -125,8 +126,10 @@ class BulkActions:
         self.undo_button.set_sensitive(False)
         row.pack_start(self.undo_button, False, False, 0)
 
-        done = _button("Done", lambda: self.toggle.set_active(False), "Leave selection mode")
-        row.pack_end(done, False, False, 0)
+        self.done_button = _button(
+            "Done", lambda: self.toggle.set_active(False), "Leave selection mode"
+        )
+        row.pack_start(self.done_button, False, False, 0)
 
         body.pack_start(row, False, False, 0)
 
@@ -232,45 +235,62 @@ class BulkActions:
         return self._active
 
     def sync(self) -> int:
-        """Put one check box on every tile the grid is showing now."""
+        """Put one readable check box inside every tile the grid is showing now.
+
+        The box sits under the artwork, not on it, on a small chip so it stays
+        readable over whatever the tile's background is.
+        """
         if not self._active:
             return 0
         self._clear_checks()
         for key, tile in self._tiles().items():
-            overlay = self._overlay(tile)
-            if overlay is None:
+            host = self._check_host(tile)
+            if host is None:
                 continue
             check = Gtk.CheckButton()
             check.set_active(self.is_selected(key))
             check.set_tooltip_text("Select this game")
             check.get_accessible().set_name("Select this game")
-            check.set_halign(Gtk.Align.START)
-            check.set_valign(Gtk.Align.START)
-            check.set_margin_start(6)
-            check.set_margin_top(5)
             check.connect("toggled", self._on_check_toggled, str(key))
-            overlay.add_overlay(check)
-            check.show()
+            chip = Gtk.EventBox()
+            chip.get_style_context().add_class("tile-check")
+            context = tile.get_style_context()
+            found, colour = context.lookup_color("theme_bg_color")
+            if not found:
+                found, colour = context.lookup_color("theme_base_color")
+            if found:
+                chip.override_background_color(Gtk.StateFlags.NORMAL, colour)
+            chip.set_margin_start(4)
+            chip.set_margin_end(4)
+            chip.set_margin_top(4)
+            chip.set_margin_bottom(2)
+            chip.set_halign(Gtk.Align.START)
+            chip.add(check)
+            host.pack_start(chip, False, False, 0)
+            chip.show_all()
             self._checks[str(key)] = check
+            self._chips[str(key)] = chip
         self._sync_controls()
         return len(self._checks)
 
     @staticmethod
-    def _overlay(tile: Any) -> Gtk.Overlay | None:
+    def _check_host(tile: Any) -> Gtk.Box | None:
+        """The tile's text block: under the artwork, never on top of it."""
         card = tile.get_child() if isinstance(tile, Gtk.Container) else None
         if card is None:
             return None
         for child in card.get_children():
-            if isinstance(child, Gtk.Overlay):
+            if isinstance(child, Gtk.Box):
                 return child
         return None
 
     def _clear_checks(self) -> None:
-        for check in self._checks.values():
-            parent = check.get_parent()
+        for chip in self._chips.values():
+            parent = chip.get_parent()
             if isinstance(parent, Gtk.Container):
-                parent.remove(check)
+                parent.remove(chip)
         self._checks = {}
+        self._chips = {}
 
     def _sync_checks(self) -> None:
         for key, check in self._checks.items():
@@ -497,7 +517,9 @@ class BulkActions:
             existing = store.by_name(plan.change.value)
             collection = existing if existing is not None else store.create(plan.change.value)
             plan = replace(
-                plan, change=replace(plan.change, field=collection.id)
+                plan,
+                change=replace(plan.change, field=collection.id),
+                created_collection="" if existing is not None else collection.id,
             )
         library_tools.apply_plan(
             plan,
