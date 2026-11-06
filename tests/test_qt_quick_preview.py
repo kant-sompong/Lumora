@@ -9,7 +9,7 @@ import pytest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 pytest.importorskip("PySide6.QtWidgets")
 
-from PySide6.QtCore import QEvent, Qt
+from PySide6.QtCore import QEvent, QPoint, QRect, Qt
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 
@@ -64,30 +64,32 @@ def app():
 def make_page(app, **flags):
     entries = [
         LibraryEntry(
-            identifier="game-0",
-            title="Hollow Knight",
-            year="2017",
-            folder="/games/0",
-            size=1536,
+            identifier=f"game-{index}",
+            title=title,
+            year=str(1998 + index * 2),
+            folder=f"/games/{index}",
+            size=size,
             description=(
                 "A hand-drawn metroidvania in a ruined insect kingdom.\n"
                 "Second line of the blurb with the details.\n"
                 "Third line must not appear."
             ),
-        ),
-        LibraryEntry(
-            identifier="game-1",
-            title="Celeste",
-            year="2018",
-            folder="/games/1",
-            size=2048,
-        ),
+        )
+        for index, (title, size) in enumerate(
+            [
+                ("Hollow Knight", 1536),
+                ("Celeste", 2048),
+                ("Braid", 1024),
+                ("Inside", 4096),
+                ("Super Meat Boy", 3072),
+            ]
+        )
     ]
     settings = Settings(**flags)
     store = Store(entries)
     page = LibraryPage(store, settings)
     page.set_entries(store.entries())
-    page.resize(1100, 700)
+    page.resize(1280, 820)
     page.show()
     page.grab()  # one paint pass, so the deferred reflow has already run
     pump(10)
@@ -123,7 +125,7 @@ def test_the_popover_text_comes_from_the_entry(app):
     preview = page.preview
     assert preview.isVisible() is True
     assert preview.title.text() == "Hollow Knight"
-    assert preview.meta.text() == "2017 · 1.5 KiB"
+    assert preview.meta.text() == "1998 · 1.5 KiB"
     assert preview.tags_label.text() == "Tags: co-op"
     assert preview.tags_label.isVisible() is True
     assert preview.description.text() == (
@@ -211,4 +213,70 @@ def test_a_rebuild_re_anchors_the_preview_to_the_new_tile(app):
     # Re-anchored to a live tile of the current render, never the deleted one.
     assert page.preview._card in page._cards.values()
     assert page.preview.title.text() == "Hollow Knight"
+    page.close()
+
+
+def grid_bounds(page):
+    """The grid's own rectangle, computed independently of the module."""
+    viewport = page.scroll.viewport()
+    return QRect(viewport.mapTo(page, QPoint(0, 0)), viewport.size())
+
+
+def open_on(page, identifier):
+    card = page._cards[identifier]
+    QApplication.sendEvent(card, QEvent(QEvent.Enter))
+    pump(10)
+    page.grab()  # a paint pass, so the deferred re-anchor has run
+    pump(10)
+    return card
+
+
+@pytest.mark.parametrize("which", [0, 2, 4], ids=["first", "middle", "last"])
+@pytest.mark.parametrize("detail", [True, False], ids=["detail-open", "detail-closed"])
+@pytest.mark.parametrize("compact", [False, True], ids=["roomy", "compact"])
+def test_the_popover_never_covers_its_own_tile(app, which, detail, compact):
+    page = make_page(app, quick_preview=True)
+    page.set_compact(compact)
+    pump(10)
+    page.grab()
+    pump(10)
+    if detail:
+        page.select(page._shown[4].identifier)
+        pump(10)
+        page.grab()
+        pump(10)
+    else:
+        page.clear_selection()
+        pump(10)
+
+    identifier = page._shown[which].identifier
+    card = open_on(page, identifier)
+    preview = page.preview
+    tile = QRect(card.mapTo(page, QPoint(0, 0)), card.size())
+
+    assert preview.isVisible() is True
+    assert not preview.geometry().intersects(tile), preview.geometry().getRect()
+    assert grid_bounds(page).contains(preview.geometry())
+    page.close()
+
+
+def test_a_reflow_moves_the_popover_and_keeps_it_off_the_tile(app):
+    page = make_page(app, quick_preview=True)
+    page.grab()
+    pump(10)
+    card = open_on(page, "game-1")
+    first = page.preview.geometry()
+    assert page.preview.isVisible() is True
+
+    page.set_compact(True)  # narrower grid, every tile rebuilt
+    pump(10)
+    page.grab()
+    pump(10)
+
+    card = page._cards["game-1"]
+    tile = QRect(card.mapTo(page, QPoint(0, 0)), card.size())
+    assert page.preview.isVisible() is True
+    assert page.preview.geometry() != first
+    assert not page.preview.geometry().intersects(tile)
+    assert grid_bounds(page).contains(page.preview.geometry())
     page.close()
