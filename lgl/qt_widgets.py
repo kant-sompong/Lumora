@@ -54,9 +54,15 @@ THEME_STATE: dict[str, object] = {
 }
 
 
-def set_theme(resolved: str) -> None:
-    """Remember the resolved palette so painted widgets can colour themselves."""
+def set_theme(resolved: str, accent: str | None = None) -> None:
+    """Remember the resolved palette so painted widgets can colour themselves.
+
+    ``accent`` retints the accent family exactly as the stylesheet does, so a
+    hand-painted badge or rail highlight cannot drift from the QSS.
+    """
     palette = dict(theme.palette(resolved))
+    if accent:
+        palette = theme.with_accent(palette, accent)
     THEME_STATE["resolved"] = resolved
     THEME_STATE["palette"] = palette
     THEME_STATE["muted"] = palette["muted"]
@@ -637,6 +643,19 @@ class CoverGrid(QWidget):
 
     def columns(self) -> int:
         return self._columns
+
+    def spacing(self) -> int:
+        return self._spacing
+
+    def set_spacing(self, spacing: int) -> None:
+        """Change the tile gap and re-flow: compact mode, without a restart."""
+        spacing = max(0, int(spacing))
+        if spacing == self._spacing:
+            return
+        self._spacing = spacing
+        self._grid.setHorizontalSpacing(spacing)
+        self._grid.setVerticalSpacing(max(6, round(spacing * 1.25)))
+        self._reflow(force=True)
 
     def resizeEvent(self, event) -> None:  # noqa: N802
         super().resizeEvent(event)

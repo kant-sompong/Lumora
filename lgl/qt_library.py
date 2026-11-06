@@ -241,7 +241,7 @@ class LibraryRow(QFrame):
 
     clicked = Signal(str)
 
-    def __init__(self, entry: LibraryEntry) -> None:
+    def __init__(self, entry: LibraryEntry, *, compact: bool = False) -> None:
         super().__init__()
         self.setObjectName("listRow")
         self.setProperty("selected", False)
@@ -250,9 +250,10 @@ class LibraryRow(QFrame):
         self.identifier = entry.identifier
         self.entry = entry
         row = QHBoxLayout(self)
-        row.setContentsMargins(4, 9, 4, 9)
+        pad = 4 if compact else 9
+        row.setContentsMargins(4, pad, 4, pad)
         column = QVBoxLayout()
-        column.setSpacing(2)
+        column.setSpacing(1 if compact else 2)
         name = ElideLabel(entry.title or entry.identifier)
         name.setObjectName("listTitle")
         column.addWidget(name)
@@ -467,6 +468,13 @@ class LibraryDetail(QFrame):
         ("PLATFORMS", "platforms"),
         ("SOURCE", "metadata_provider"),
     )
+
+    def set_compact(self, compact: bool) -> None:
+        """Denser padding in the selected-game panel."""
+        self._column.setContentsMargins(
+            *((14, 10, 14, 12) if compact else (20, 16, 20, 18))
+        )
+        self._column.setSpacing(4 if compact else 6)
 
     def __init__(self) -> None:
         super().__init__()
@@ -753,6 +761,9 @@ class LibraryPage(QWidget):
         self._descending: bool | None = None
         self._sort_key = "size"
         self._view = "grid"
+        self._compact = False
+        self._gap = GRID_GAP
+        self._vgap = GRID_GAP_VERTICAL
         self.popover: LibraryFilters | None = None
 
         root = QHBoxLayout(self)
@@ -769,6 +780,7 @@ class LibraryPage(QWidget):
         toolbar = QWidget()
         bar = QHBoxLayout(toolbar)
         bar.setContentsMargins(24, 16, 24, 10)
+        self._bar = bar
         bar.setSpacing(8)
         self.search = QLineEdit()
         self.search.setObjectName("librarySearch")
@@ -813,11 +825,12 @@ class LibraryPage(QWidget):
         # panel.
         self.scroll.viewport().installEventFilter(self)
         column.setContentsMargins(24, 4, 24, 20)
+        self._column = column
         self.grid_host = QWidget()
         self.grid = QGridLayout(self.grid_host)
         self.grid.setContentsMargins(0, 0, 0, 0)
-        self.grid.setHorizontalSpacing(GRID_GAP)
-        self.grid.setVerticalSpacing(GRID_GAP_VERTICAL)
+        self.grid.setHorizontalSpacing(self._gap)
+        self.grid.setVerticalSpacing(self._vgap)
         column.addWidget(self.grid_host)
         self.list_host = QWidget()
         self.list_column = QVBoxLayout(self.list_host)
@@ -851,6 +864,24 @@ class LibraryPage(QWidget):
     def set_entries(self, entries: Sequence[LibraryEntry]) -> None:
         self._entries = list(entries)
         self.refresh()
+
+    def set_compact(self, compact: bool) -> None:
+        """Shrink padding, row height and tile spacing; off restores the look."""
+        self._compact = bool(compact)
+        self._bar.setContentsMargins(
+            *((16, 10, 16, 6) if compact else (24, 16, 24, 10))
+        )
+        self._column.setContentsMargins(
+            *((16, 2, 16, 12) if compact else (24, 4, 24, 20))
+        )
+        self._gap = 8 if compact else GRID_GAP
+        self._vgap = 8 if compact else GRID_GAP_VERTICAL
+        self.grid.setHorizontalSpacing(self._gap)
+        self.grid.setVerticalSpacing(self._vgap)
+        self.detail.set_compact(compact)
+        if self._view == "list":
+            # Rows are built at a fixed padding, so rebuild the ones on screen.
+            self._render()
 
     def rescan(self) -> None:
         if self.store is None:
@@ -982,7 +1013,7 @@ class LibraryPage(QWidget):
         if self._view == "grid":
             columns = self._columns()
             available = max(self.scroll.viewport().width() - 48, 200)
-            cell = max(180, (available - GRID_GAP * (columns - 1)) // columns)
+            cell = max(180, (available - self._gap * (columns - 1)) // columns)
             for index, entry in enumerate(self._shown):
                 card: QWidget = LibraryCard(entry)
                 card.setMinimumWidth(min(200, cell))
@@ -991,7 +1022,7 @@ class LibraryPage(QWidget):
                 self._wire(card, entry)
         else:
             for entry in self._shown:
-                card = LibraryRow(entry)
+                card = LibraryRow(entry, compact=self._compact)
                 self.list_column.addWidget(card)
                 self._wire(card, entry)
 
@@ -1020,7 +1051,7 @@ class LibraryPage(QWidget):
 
     def _columns(self) -> int:
         width = max(self.scroll.viewport().width() - 48, 200)
-        return max(1, int((width + GRID_GAP) // (GRID_MIN_CELL + GRID_GAP)))
+        return max(1, int((width + self._gap) // (GRID_MIN_CELL + self._gap)))
 
     def eventFilter(self, watched, event) -> bool:  # noqa: N802
         if watched is self.scroll.viewport() and event.type() == QEvent.Resize:

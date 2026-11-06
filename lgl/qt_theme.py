@@ -33,14 +33,23 @@ def font_family() -> str:
     return '"Segoe UI Variable Text", "Segoe UI", "Cantarell", "Noto Sans", sans-serif'
 
 
-def build_stylesheet(resolved: str) -> str:
-    """Return the application QSS for ``"dark"`` or ``"light"``."""
+def build_stylesheet(
+    resolved: str, *, compact: bool = False, accent: str | None = None
+) -> str:
+    """Return the application QSS for ``"dark"`` or ``"light"``.
+
+    ``accent`` retints the accent family through :func:`lgl.theme.with_accent`,
+    and ``compact`` appends the denser padding block used by compact mode.  Both
+    default to the shipped look, so existing callers are unaffected.
+    """
     c = dict(theme.palette(resolved))
+    if accent:
+        c = theme.with_accent(c, accent)
     fg = c["text"]
     sm, md, lg = RADIUS["sm"], RADIUS["md"], RADIUS["lg"]
     body, small, title, page = TYPE["body"], TYPE["small"], TYPE["title"], TYPE["page"]
 
-    return f"""
+    qss = f"""
 * {{
     font-family: {font_family()};
     font-size: {body}px;
@@ -374,6 +383,25 @@ QPushButton#kebab {{
     border-radius: {md}px; padding: 0;
 }}
 QPushButton#kebab:hover {{ background: {c['hover']}; }}
+"""
+    if not compact:
+        return qss
+    # Only padding and type sizes change: colours still come from the palette
+    # above, so an accent or a theme switch keeps working in compact mode.
+    return qss + f"""
+/* ---- compact density -------------------------------------------------- */
+QPushButton, QToolButton {{ padding: 3px 9px; }}
+QPushButton#small {{ padding: 2px 7px; }}
+QPushButton#pill {{ padding: 3px 10px; }}
+QPushButton#filterRow {{ padding: 2px 4px; }}
+QPushButton#sheetTab {{ padding: 4px 10px; }}
+QLineEdit, QComboBox, QSpinBox {{ padding: 4px 7px; }}
+QLineEdit#librarySearch {{ padding: 6px 14px 6px 34px; }}
+QMenu::item {{ padding: 4px 20px 4px 12px; }}
+QLabel#coverTitle {{ font-size: {small}px; }}
+QLabel#coverMeta, QLabel#listMeta {{ font-size: {small}px; }}
+QLabel#listTitle {{ font-size: {body}px; }}
+QFrame#coverCard {{ border-radius: {sm}px; }}
 """
 
 
