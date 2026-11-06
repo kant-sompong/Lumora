@@ -6414,6 +6414,7 @@ class MainWindow(Gtk.ApplicationWindow):
         pill = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         pill.get_style_context().add_class("search-pill")
         self._search = Gtk.SearchEntry()
+        __import__("lgl.gtk_suggest", fromlist=["attach"]).attach(self._search, self)
         self._search.set_placeholder_text("Search games")
         self._search.set_width_chars(18)
         self._search.set_max_width_chars(28)
