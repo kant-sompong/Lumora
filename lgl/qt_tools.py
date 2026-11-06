@@ -219,6 +219,13 @@ class ToolsDialog(QDialog):
             self._say("Writing the support report…")
             run_async(self._report, self._report_done, self._failed)
             return
+        if action == "home.shelves":
+            from .qt_shelves import ShelvesDialog
+
+            ShelvesDialog(self.settings, self).exec()
+            self._say("Shelves saved.")
+            self.reload()
+            return
         message = tool_panels.apply(
             action,
             self.settings,

@@ -128,7 +128,8 @@ class Window(QMainWindow):
         shell.addWidget(body, 1)
 
         self.browse = BrowsePage(
-            client, cache_root=platform_support.cache_dir(), catalog=self.catalog
+            client, cache_root=platform_support.cache_dir(), catalog=self.catalog,
+            settings=self._settings,
         )
         self.browse.download_requested.connect(self._download_requested)
         self.browse.files_download_requested.connect(self._files_download_requested)

@@ -761,10 +761,12 @@ class BrowsePage(QWidget):
     def __init__(self, client: ArchiveClient | None = None,
                  cache_root: Path | None = None,
                  formats_for: Callable[[str], Sequence[str]] | None = None,
-                 catalog: object | None = None) -> None:
+                 catalog: object | None = None,
+                 settings: object | None = None) -> None:
         super().__init__()
         self.client = client
         self.catalog = catalog
+        self.settings = settings
         self._cache_root = cache_root
         self._formats_for = formats_for or (lambda _identifier: ())
         self._games: list[GameSummary] = []
@@ -842,6 +844,12 @@ class BrowsePage(QWidget):
         self.grid.setContentsMargins(0, 0, 0, 0)
         self.grid.setHorizontalSpacing(16)
         self.grid.setVerticalSpacing(22)
+        self.shelves_host = QWidget()
+        self.shelves_column = QVBoxLayout(self.shelves_host)
+        self.shelves_column.setContentsMargins(0, 4, 0, 10)
+        self.shelves_column.setSpacing(6)
+        self.shelves_host.hide()
+        column.addWidget(self.shelves_host)
         column.addWidget(self.grid_host)
         self.list_host = QWidget()
         self.list_column = QVBoxLayout(self.list_host)
@@ -1034,6 +1042,7 @@ class BrowsePage(QWidget):
                      if format_matches(self._formats_for(g.identifier), self.filters.format)]
         self._shown = sort_games(shown, self._sort_key, self._descending)
         self._limit = ROW_LIMIT
+        self._render_shelves()
         if self._view == "grid":
             self.list_host.hide()
             self.grid_host.show()
@@ -1097,8 +1106,9 @@ class BrowsePage(QWidget):
         limit = min(len(self._shown), self._limit)
         visible = self._shown[:limit]
         columns = self._columns()
-        available = max(self.scroll.viewport().width() - 48, CARD_MIN)
-        cell = max(CARD_MIN, (available - 16 * (columns - 1)) // columns)
+        base = self._card_min()
+        available = max(self.scroll.viewport().width() - 48, base)
+        cell = max(base, (available - 16 * (columns - 1)) // columns)
         for index, game in enumerate(visible):
             if self._view == "grid":
                 card: QWidget = BrowseCard(game)
@@ -1127,9 +1137,62 @@ class BrowsePage(QWidget):
             self._cards[self._selected].set_selected(True)  # type: ignore[attr-defined]
         self._load_covers()
 
+    def _card_min(self) -> int:
+        """Base card width for the chosen home layout."""
+        from . import home_layout
+
+        if self.settings is None:
+            return CARD_MIN
+        try:
+            return max(90, int(CARD_MIN * home_layout.scale(home_layout.HomeLayout(self.settings).layout())))
+        except Exception:  # noqa: BLE001 - a broken settings file must not break Browse
+            return CARD_MIN
+
+    def _render_shelves(self) -> None:
+        """Custom shelves above the grid, one row of titles each."""
+        from . import shelves as shelves_lib
+
+        if self.shelves_column.count():
+            clear_layout(self.shelves_column)
+        if self.settings is None or not self._games:
+            self.shelves_host.hide()
+            return
+        rows = [
+            {
+                "key": game.identifier,
+                "title": game.title,
+                "year": game.year,
+                "genres": list(game.subjects),
+                "rating": None,
+            }
+            for game in self._games
+        ]
+        rendered = shelves_lib.render(self.settings, rows)
+        for name, items in rendered:
+            self.shelves_column.addWidget(label(name.upper(), "detailEyebrow"))
+            line = QWidget()
+            flow = QHBoxLayout(line)
+            flow.setContentsMargins(0, 0, 0, 0)
+            flow.setSpacing(8)
+            for item in items:
+                key = str(item.get("key") or "")
+                pill = QPushButton(str(item.get("title") or key))
+                pill.setObjectName("shelfPill")
+                pill.setCursor(Qt.PointingHandCursor)
+                pill.clicked.connect(lambda _=False, k=key: self._open_shelf_item(k))
+                flow.addWidget(pill)
+            flow.addStretch(1)
+            self.shelves_column.addWidget(line)
+        self.shelves_host.setVisible(bool(rendered))
+
+    def _open_shelf_item(self, key: str) -> None:
+        if key and self.game(key) is not None:
+            self.select(key)
+
     def _columns(self) -> int:
-        width = max(self.scroll.viewport().width() - 48, CARD_MIN)
-        return max(1, int((width + 16) // (CARD_MIN + 16)))
+        base = self._card_min()
+        width = max(self.scroll.viewport().width() - 48, base)
+        return max(1, int((width + 16) // (base + 16)))
 
     def resizeEvent(self, event) -> None:  # noqa: N802
         super().resizeEvent(event)

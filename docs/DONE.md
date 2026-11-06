@@ -191,3 +191,16 @@ Because the library, settings and collection stores are built at startup, a swit
 applied on the next launch, which the window says plainly.
 Verified: 487 passed, 3 skipped offscreen; compileall clean. Not verified: no desktop run; GTK has
 no switcher.
+
+## 2026-11-06 - Home shelves and a third card size (3.1.8, 3.1.2, Qt)
+
+- `HomeLayout` gained `LARGE` and `scale()`; the Browse card width is multiplied by it
+  (compact 0.78, poster 1.0, large 1.3), so the existing options now cover three sizes.
+- `BrowsePage._render_shelves` turns the loaded catalogue into mappings and draws
+  `shelves.render` output above the grid; each title is a pill that selects it.
+- `lgl/qt_shelves.py` is the Shelves editor (name, genre, limit, add, remove), opened from
+  Tools -> Home screen -> Shelves...
+- Verified: `compileall` clean, `pytest tests` 492 passed / 3 skipped, and an offscreen render
+  at `shots-qt/home-shelves.png` showed both shelf rows with the right titles.
+- Not verified: no desktop run, GTK has neither shelves nor the third size, and "resize" is a
+  card-size choice rather than free resizing.
