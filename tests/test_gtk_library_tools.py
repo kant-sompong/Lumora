@@ -15,6 +15,7 @@ except (ValueError, ImportError):  # pragma: no cover - GTK 3 typelib missing
     pytest.skip("GTK 3 is not installed", allow_module_level=True)
 
 from lgl import gtk_library_tools
+from lgl.library_store import LibraryEntry, LibraryStore
 
 
 class Settings(dict):
@@ -107,7 +108,7 @@ def test_duplicates_groups_copies(display):
         row = window.list.get_row_at_index(0)
         assert row is not None
         assert len(row.group) == 2
-        assert "Same" in window.empty.get_text()
+        assert "1 group" in window.empty.get_text()
     finally:
         window.destroy()
 
@@ -129,10 +130,30 @@ def test_edit_rejects_a_year_that_is_not_a_number(display):
     try:
         window.fields["year"].set_text("nineteen")
         assert window.save() is False
-        assert "Year must be a number" in window.error.get_text()
+        assert window.error.get_text() == (
+            "Year must be a number; nothing was saved."
+        )
         assert store.updates == []
+        assert store.saved == 0
     finally:
         window.destroy()
+
+
+def test_edit_saves_a_valid_year_through_the_store(display, tmp_path):
+    path = tmp_path / "library.json"
+    store = LibraryStore(path)
+    store.upsert(
+        LibraryEntry(identifier="g1", title="One", year="1998", folder="/games/one")
+    )
+    store.save()
+    window = gtk_library_tools.EditDetailsWindow(None, game("g1", "One"), store)
+    try:
+        window.fields["year"].set_text("2001")
+        assert window.save() is True
+    finally:
+        window.destroy()
+    reloaded = LibraryStore(path)
+    assert reloaded.get("g1").year == "2001"
 
 
 def test_edit_saves_title_year_and_poster(display):
