@@ -48,6 +48,7 @@ from gi.repository import (  # noqa: E402
 from . import recently_viewed
 from . import APP_ID, APP_NAME, __version__, platform_support  # noqa: E402
 from . import external_dm  # noqa: E402
+from . import gtk_shortcuts  # noqa: E402
 from . import kryoto  # noqa: E402
 from . import magnet as magnetlib  # noqa: E402
 from . import metadata as metalib  # noqa: E402
@@ -6504,6 +6505,8 @@ class MainWindow(Gtk.ApplicationWindow):
         add_item("Command palette…", self.show_palette)
         add_item("Release calendar…", self.show_calendar)
         add_item("Recently viewed…", self.show_recent)
+        add_item("Keyboard shortcuts…", self.show_shortcuts)
+        add_item("Profiles…", self.show_profiles)
         add_item("Tools…", self.show_tools)
         add_item("Settings…", lambda: self.show_settings())
         add_item("About Lumora", self.show_about)
@@ -9255,6 +9258,16 @@ class MainWindow(Gtk.ApplicationWindow):
         window.connect("destroy", lambda *_: self.apply_interface_prefs())
         self._tools_window = window
 
+    def show_shortcuts(self) -> None:
+        """Open the window that rebinds the keys this window obeys."""
+        self._shortcuts_window = gtk_shortcuts.show_shortcuts(self, self.settings)
+
+    def show_profiles(self) -> None:
+        """Open the profiles window: choose, create, rename or delete one."""
+        from . import gtk_profiles
+
+        self._profiles_window = gtk_profiles.show_profiles(self)
+
     def show_about(self) -> None:
         dialog = Gtk.AboutDialog(transient_for=self, modal=True)
         dialog.set_program_name(APP_NAME)
@@ -9274,7 +9287,6 @@ class MainWindow(Gtk.ApplicationWindow):
 
     def _on_key_press(self, _window: Gtk.Window, event: Gdk.EventKey) -> bool:
         keyval = event.keyval
-        control = bool(event.state & Gdk.ModifierType.CONTROL_MASK)
         if keyval == Gdk.KEY_Escape:
             self._toast.dismiss()
             if self._queue_banner.get_reveal_child():
@@ -9286,27 +9298,30 @@ class MainWindow(Gtk.ApplicationWindow):
                 self._clear_search()
                 return True
             return False
-        if keyval == Gdk.KEY_F5:
+        # The editable bindings decide here, so a key changed in the shortcuts
+        # window works on the next press instead of on the next start.
+        action = gtk_shortcuts.action_for(self._settings, keyval, event.state)
+        if action == "refresh":
             self.refresh_active_view()
             return True
-        if control and keyval in (Gdk.KEY_1, Gdk.KEY_KP_1):
+        if action == "nav.browse":
             self._apply_view("archive")
             return True
-        if control and keyval in (Gdk.KEY_2, Gdk.KEY_KP_2):
+        if action == "nav.library":
             self._apply_view("library")
             return True
-        if control and keyval in (Gdk.KEY_p, Gdk.KEY_P) and event.state & Gdk.ModifierType.SHIFT_MASK:
-            self.show_palette()
-            return True
-        if control and keyval in (Gdk.KEY_f, Gdk.KEY_F, Gdk.KEY_k, Gdk.KEY_K):
-            self.focus_search()
-            return True
-        if control and keyval in (Gdk.KEY_d, Gdk.KEY_D):
+        if action == "downloads.toggle":
             self.set_downloads_visible(
                 self._main_stack.get_visible_child_name() != "downloads"
             )
             return True
-        if control and keyval == Gdk.KEY_comma:
+        if action == "palette":
+            self.show_palette()
+            return True
+        if action == "search":
+            self.focus_search()
+            return True
+        if action == "settings":
             self.show_settings()
             return True
         return False
