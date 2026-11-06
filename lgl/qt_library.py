@@ -45,6 +45,7 @@ from .library import MANIFEST_NAME, scan_game_folder
 from .util import LaunchError
 from .library_store import LibraryEntry, LibraryStore, SORT_DEFAULT_DESCENDING, STATUSES
 from .qt_icons import icon, paint_icon
+from .qt_quick_preview import QuickPreview
 from .qt_widgets import (
     CoverArt,
     CoverGrid,
@@ -867,6 +868,9 @@ class LibraryPage(QWidget):
         self.detail.action.connect(self._on_action)
         root.addWidget(self.detail)
 
+        # Hover preview: off unless Tools -> Interface turns it on.
+        self.preview = QuickPreview(self)
+
     # data ------------------------------------------------------------------
     def genres(self) -> list[str]:
         if self.store is not None:
@@ -1064,9 +1068,12 @@ class LibraryPage(QWidget):
             # The tiles were just rebuilt, so the checks go back on them.
             bulk.sync()
         self._load_covers()
+        # The tiles were just replaced; an open preview re-anchors to the new one.
+        self.preview.cards_rebuilt()
 
     def _wire(self, card: QWidget, entry: LibraryEntry) -> None:
         card.clicked.connect(self.select)  # type: ignore[attr-defined]
+        self.preview.track(card, entry)
         self._cards[entry.identifier] = card
         if entry.identifier in self._pix:
             card.set_pixmap(self._pix[entry.identifier]) if hasattr(card, "set_pixmap") else None
@@ -1139,6 +1146,7 @@ class LibraryPage(QWidget):
         return next((e for e in self._entries if e.identifier == identifier), None)
 
     def select(self, identifier: str) -> None:
+        self.preview.selection_changed()
         previous = self._cards.get(self._selected)
         if previous is not None:
             previous.set_selected(False)  # type: ignore[attr-defined]
