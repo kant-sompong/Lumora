@@ -27,11 +27,13 @@ from PySide6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QSizePolicy,
+    QSpinBox,
     QToolButton,
     QVBoxLayout,
     QWidget,
 )
 
+from . import browse_filters
 from . import platform_support
 from .archive import ArchiveClient, ArchiveItem, GameSummary
 from .qt_archive import (
@@ -210,11 +212,14 @@ class BrowseFilters(QFrame):
         self.setObjectName("filters")
         self.setFixedWidth(284)
         self.genres: set[str] = set()
+        self.exclude_genres: set[str] = set()
         self.size = "any"
-        self.year = "all"
+        self.min_year = 0
+        self.max_year = 0
         self.license = "all"
         self.format = "all"
         self._genre_rows: dict[str, CheckRow] = {}
+        self._exclude_buttons: dict[str, QToolButton] = {}
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
@@ -229,6 +234,13 @@ class BrowseFilters(QFrame):
         column.setContentsMargins(18, 16, 18, 22)
         column.setSpacing(4)
 
+        # The genre block is hidden when no loaded title carries a genre, so a
+        # control is never offered that could not match anything.
+        self._genre_block = QWidget()
+        genre_column = QVBoxLayout(self._genre_block)
+        genre_column.setContentsMargins(0, 0, 0, 0)
+        genre_column.setSpacing(1)
+
         head = QHBoxLayout()
         head.setContentsMargins(2, 0, 2, 6)
         genre_head = label("Genre", "filterGroup")
@@ -238,11 +250,12 @@ class BrowseFilters(QFrame):
         self.genre_total.setCursor(Qt.PointingHandCursor)
         self.genre_total.setToolTip("Clear the genre filter")
         head.addWidget(self.genre_total)
-        column.addLayout(head)
+        genre_column.addLayout(head)
 
         self._genre_host = QVBoxLayout()
         self._genre_host.setSpacing(1)
-        column.addLayout(self._genre_host)
+        genre_column.addLayout(self._genre_host)
+        column.addWidget(self._genre_block)
 
         self._group(column, "Size", top=12)
         self._size_group = QButtonGroup(self)
@@ -250,11 +263,36 @@ class BrowseFilters(QFrame):
         column.addWidget(self._pill_flow(SIZE_FILTERS, self._size_group, "any"))
         self._size_group.buttonClicked.connect(self._pick_size)
 
-        self._group(column, "Released", top=14)
+        # Released stays as shortcuts over the year range under it: a decade
+        # chip fills the two boxes, so there is one year state and the summary
+        # line can never disagree with the controls.
+        self._year_block = QWidget()
+        year_column = QVBoxLayout(self._year_block)
+        year_column.setContentsMargins(0, 0, 0, 0)
+        year_column.setSpacing(4)
+        self._group(year_column, "Released", top=14)
         self._year_group = QButtonGroup(self)
         self._year_group.setExclusive(True)
-        column.addWidget(self._pill_flow(YEAR_FILTERS, self._year_group, "all"))
+        self._year_pills = self._pill_flow(YEAR_FILTERS, self._year_group, "all")
+        year_column.addWidget(self._year_pills)
         self._year_group.buttonClicked.connect(self._pick_year)
+
+        years = QHBoxLayout()
+        years.setContentsMargins(2, 8, 2, 0)
+        years.addWidget(label("Years", "filterGroup"))
+        years.addStretch(1)
+        year_column.addLayout(years)
+        spin_row = QHBoxLayout()
+        spin_row.setContentsMargins(2, 0, 2, 0)
+        spin_row.setSpacing(4)
+        self._from_spin = self._year_spin("From")
+        self._to_spin = self._year_spin("To")
+        spin_row.addWidget(self._from_spin)
+        spin_row.addWidget(label("–"))
+        spin_row.addWidget(self._to_spin)
+        spin_row.addStretch(1)
+        year_column.addLayout(spin_row)
+        column.addWidget(self._year_block)
 
         self._group(column, "Licence", top=14)
         self._license_group = QButtonGroup(self)
@@ -273,6 +311,11 @@ class BrowseFilters(QFrame):
             btn.setChecked(key == "all")
             column.addWidget(btn)
         self._format_group.buttonClicked.connect(self._pick_format)
+
+        self.summary = label("", "filterSummary", wrap=True)
+        self.summary.setContentsMargins(2, 14, 2, 0)
+        self.summary.hide()
+        column.addWidget(self.summary)
 
         self._group(column, "Availability", top=14)
         reset = QPushButton("Reset all filters")
@@ -318,35 +361,122 @@ class BrowseFilters(QFrame):
         group.addButton(btn)
         return btn
 
+    def _year_spin(self, placeholder: str) -> QSpinBox:
+        """A year box where 0 reads as "Any", which is how "no bound" is stored."""
+        spin = QSpinBox(self)
+        spin.setRange(0, 2200)
+        spin.setSpecialValueText("Any")
+        spin.setValue(0)
+        spin.setFixedWidth(78)
+        spin.setToolTip(f"{placeholder} year; Any means no bound")
+        spin.setAccessibleName(f"{placeholder} year")
+        spin.valueChanged.connect(lambda _value: self._pick_years())
+        return spin
+
     # genres ---------------------------------------------------------------
     def set_genres(self, genres: Sequence[tuple[str, int]], total: int) -> None:
         clear_layout(self._genre_host)
         self._genre_rows.clear()
         self.genre_total.setText(f"All {total}")
         keep = {value.casefold() for value in self.genres}
+        excluded = {value.casefold() for value in self.exclude_genres}
         self.genres = set()
+        self.exclude_genres = set()
         for name, count in genres:
             row = CheckRow(name, count, checked=name.casefold() in keep)
             row.toggled.connect(lambda on, n=name: self._toggle_genre(n, on))
-            self._genre_host.addWidget(row)
+
+            never = QToolButton()
+            never.setText("\u2715")
+            never.setObjectName("genreExclude")
+            never.setCheckable(True)
+            never.setCursor(Qt.PointingHandCursor)
+            never.setToolTip(f"Never show titles tagged {name}")
+            never.setAccessibleName(f"Exclude {name}")
+            never.setChecked(name.casefold() in excluded)
+            never.toggled.connect(lambda on, n=name: self._toggle_exclude(n, on))
+
+            holder = QWidget()
+            line = QHBoxLayout(holder)
+            line.setContentsMargins(0, 0, 0, 0)
+            line.setSpacing(2)
+            line.addWidget(row, 1)
+            line.addWidget(never)
+            self._genre_host.addWidget(holder)
+
             self._genre_rows[name] = row
+            self._exclude_buttons[name] = never
             if row.isChecked():
                 self.genres.add(name)
+            if never.isChecked():
+                self.exclude_genres.add(name)
+        self.update_summary()
 
     def _toggle_genre(self, name: str, on: bool) -> None:
         if on:
             self.genres.add(name)
+            self.exclude_genres.discard(name)
+            self._set_excluded(name, False)
         else:
             self.genres.discard(name)
+        self.update_summary()
         self.changed.emit()
 
+    def _toggle_exclude(self, name: str, on: bool) -> None:
+        """Never show this genre; it cannot be included at the same time."""
+        if on:
+            self.exclude_genres.add(name)
+            self.genres.discard(name)
+            row = self._genre_rows.get(name)
+            if row is not None and row.isChecked():
+                row.setChecked(False)
+        else:
+            self.exclude_genres.discard(name)
+        self.update_summary()
+        self.changed.emit()
+
+    def _set_excluded(self, name: str, value: bool) -> None:
+        button = self._exclude_buttons.get(name)
+        if button is None or button.isChecked() == value:
+            return
+        button.blockSignals(True)
+        try:
+            button.setChecked(value)
+        finally:
+            button.blockSignals(False)
+
     def clear_genres(self) -> None:
-        if not self.genres:
+        if not self.genres and not self.exclude_genres:
             return
         self.genres.clear()
+        self.exclude_genres.clear()
         for row in self._genre_rows.values():
             row.setChecked(False)
+        for name in self._exclude_buttons:
+            self._set_excluded(name, False)
+        self.update_summary()
         self.changed.emit()
+
+    # the content filters both frontends share -----------------------------
+    def content_filters(self) -> browse_filters.Filters:
+        return browse_filters.filters_for(
+            min_year=self.min_year or None,
+            max_year=self.max_year or None,
+            genres=self.genres,
+            exclude_genres=self.exclude_genres,
+        )
+
+    def update_summary(self) -> None:
+        """Show what is being applied, or nothing when nothing is filtered."""
+        names = {name.casefold(): name for name in self.genres | self.exclude_genres}
+        text = browse_filters.summary(self.content_filters(), display=names)
+        self.summary.setText(text)
+        self.summary.setVisible(bool(text))
+
+    def set_fields(self, present: set[str]) -> None:
+        """Hide a section when no loaded title has the field it filters on."""
+        self._genre_block.setVisible(browse_filters.GENRES in present)
+        self._year_block.setVisible(browse_filters.YEAR in present)
 
     # pickers --------------------------------------------------------------
     def _pick_size(self, button: QPushButton) -> None:
@@ -354,8 +484,30 @@ class BrowseFilters(QFrame):
         self.changed.emit()
 
     def _pick_year(self, button: QPushButton) -> None:
-        self.year = str(button.property("key"))
+        """A century chip is a shortcut: it fills the two year boxes."""
+        low, high = browse_filters.bucket_bounds(str(button.property("key")))
+        for spin, value in ((self._from_spin, low), (self._to_spin, high)):
+            spin.blockSignals(True)
+            try:
+                spin.setValue(int(value or 0))
+            finally:
+                spin.blockSignals(False)
+        self._pick_years()
+
+    def _pick_years(self) -> None:
+        """The two year boxes are the year filter; the chips follow them."""
+        self.min_year = self._from_spin.value()
+        self.max_year = self._to_spin.value()
+        self._sync_year_pills()
+        self.update_summary()
         self.changed.emit()
+
+    def _sync_year_pills(self) -> None:
+        bucket = browse_filters.bucket_for(
+            self.min_year or None, self.max_year or None
+        )
+        for button in self._year_group.buttons():
+            button.setChecked(str(button.property("key")) == bucket)
 
     def _pick_license(self, button: QPushButton) -> None:
         self.license = str(button.property("key"))
@@ -367,17 +519,29 @@ class BrowseFilters(QFrame):
 
     def reset(self) -> None:
         self.genres.clear()
+        self.exclude_genres.clear()
         for row in self._genre_rows.values():
             row.setChecked(False)
+        for name in self._exclude_buttons:
+            self._set_excluded(name, False)
         for group, attr, value in (
             (self._size_group, "size", "any"),
-            (self._year_group, "year", "all"),
             (self._license_group, "license", "all"),
             (self._format_group, "format", "all"),
         ):
             setattr(self, attr, value)
             for button in group.buttons():
                 button.setChecked(str(button.property("key")) == value)
+        for spin in (self._from_spin, self._to_spin):
+            spin.blockSignals(True)
+            try:
+                spin.setValue(0)
+            finally:
+                spin.blockSignals(False)
+        self.min_year = 0
+        self.max_year = 0
+        self._sync_year_pills()
+        self.update_summary()
         self.changed.emit()
 
 
@@ -1021,12 +1185,16 @@ class BrowsePage(QWidget):
 
     # filtering -------------------------------------------------------------
     def refresh(self) -> None:
+        self.filters.set_fields(browse_filters.available(self._games))
+        self.filters.update_summary()
         shown = filter_games(
             self._games,
             query=self._query(),
-            year=self.filters.year,
             license_=self.filters.license,
             genres=self.filters.genres,
+            exclude_genres=self.filters.exclude_genres,
+            min_year=self.filters.min_year or None,
+            max_year=self.filters.max_year or None,
             size=self.filters.size,
         )
         if self.filters.format != "all":

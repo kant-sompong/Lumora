@@ -1229,6 +1229,15 @@ progressbar progress {
   color: @muted;
 }
 
+/* The year fields sit under the decade chips, so they take the chips' own text
+   size and height rather than looking like form fields. */
+.filter-year {
+  min-height: 18px;
+  padding: 0 6px;
+  font-size: 0.74em;
+  border-radius: 6px;
+}
+
 /* The chips live in a FlowBox so they wrap instead of widening the column. */
 .chip-row flowboxchild {
   padding: 0;
