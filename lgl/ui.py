@@ -48,7 +48,7 @@ from gi.repository import (  # noqa: E402
 from . import recently_viewed
 from . import APP_ID, APP_NAME, __version__, platform_support  # noqa: E402
 from . import external_dm  # noqa: E402
-from . import gtk_shortcuts  # noqa: E402
+from . import gtk_shortcuts
 from . import kryoto  # noqa: E402
 from . import magnet as magnetlib  # noqa: E402
 from . import metadata as metalib  # noqa: E402
