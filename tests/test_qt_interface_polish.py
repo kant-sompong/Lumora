@@ -72,6 +72,26 @@ def grab(widget, name: str) -> Path:
     return path
 
 
+def rule(sheet: str, selector: str) -> str:
+    """The body of the QSS rule for ``selector``, or an empty string."""
+    lines = sheet.splitlines()
+    for index, line in enumerate(lines):
+        text = line.strip()
+        if not text.startswith(selector + " {"):
+            continue
+        tail = text[len(selector) + 2:].strip()
+        if "}" in tail:
+            return tail.strip("} ")
+        body: list[str] = []
+        for follow in lines[index + 1:]:
+            if "}" in follow:
+                body.append(follow.split("}")[0])
+                break
+            body.append(follow)
+        return "\n".join(body).strip()
+    return ""
+
+
 # --------------------------------------------------------------------------
 # command palette
 # --------------------------------------------------------------------------
@@ -276,3 +296,54 @@ def test_transitions_fade_then_switch_instantly(app, window, settings):
     window.show_view("library")
     assert window.stack.currentWidget() is window.library
     assert window.library.graphicsEffect() is None
+
+
+# --------------------------------------------------------------------------
+# visual defects found while reviewing the polish branch
+# --------------------------------------------------------------------------
+
+
+def test_compact_resizes_grid_cards_already_drawn(app, window, settings, tmp_path):
+    """Toggling compact in grid view must resize the cards, not just the gaps."""
+    window.library.set_entries([_entry(tmp_path)])
+    window.show_view("library")
+    window.library._view = "grid"
+    window.library._render()
+    pump(app)
+    card = next(iter(window.library._cards.values()))
+    roomy = (card.width(), card.height(), card.maximumWidth())
+
+    view_prefs.set_compact(settings, True)
+    window.apply_interface_prefs()
+    pump(app)
+    card = next(iter(window.library._cards.values()))
+    compact = (card.width(), card.height(), card.maximumWidth())
+
+    assert compact[2] < roomy[2], f"card width did not shrink: {roomy} -> {compact}"
+    assert compact[0] < roomy[0], f"card is not narrower: {roomy} -> {compact}"
+
+
+def test_compact_library_search_keeps_the_icon_and_the_pill(app, window, settings):
+    """The library search field is an icon inside a pill, in compact mode too."""
+    view_prefs.set_compact(settings, True)
+    window.apply_interface_prefs()
+    pump(app)
+    sheet = QApplication.instance().styleSheet()
+    compact_block = sheet.split("compact density", 1)[1]
+    body = rule(compact_block, "QLineEdit#librarySearch")
+    assert "border-radius" in body, f"compact library search lost its pill: {body!r}"
+    assert "30px" in body, f"compact library search left padding is wrong: {body!r}"
+    icon = rule(sheet, "QLineEdit#librarySearch QToolButton")
+    assert icon, "the leading search icon still takes the raised button styling"
+    assert "transparent" in icon
+
+
+def test_custom_accent_reaches_tabs_and_list_selection(app, window, settings):
+    """A custom accent must not leave the tabs or the palette rows on the old one."""
+    view_prefs.set_accent(settings, "#8b5cf6")
+    window.apply_interface_prefs()
+    pump(app)
+    sheet = QApplication.instance().styleSheet()
+    violet = "139, 92, 246"
+    assert violet in rule(sheet, "QPushButton#sheetTab:checked")
+    assert violet in rule(sheet, "QListWidget::item:selected")

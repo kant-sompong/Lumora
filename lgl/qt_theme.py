@@ -131,10 +131,24 @@ QLineEdit#librarySearch {{
     border-radius: 20px; padding: 9px 16px 9px 38px;
 }}
 QLineEdit#librarySearch:focus {{ border: 1px solid {c['accent']}; }}
+/* The leading icon is an action widget, a QToolButton: without this it took
+   the raised button styling and showed as a boxed gap inside the field. */
+QLineEdit#librarySearch QToolButton {{
+    background: transparent; border: none; padding: 0; margin-left: 10px;
+}}
 QComboBox::drop-down {{ border: none; width: 24px; }}
 QComboBox QAbstractItemView {{
     background: {c['raised']}; border: 1px solid {c['divider']};
     selection-background-color: {alpha(c['accent'], 0.25)}; outline: none; padding: 4px;
+}}
+QListWidget {{
+    background: {c['surface']}; border: 1px solid {alpha(fg, 0.10)};
+    border-radius: {md}px; padding: 4px; outline: none;
+}}
+QListWidget::item {{ padding: 6px 8px; border-radius: {sm}px; }}
+QListWidget::item:hover {{ background: {alpha(fg, 0.06)}; }}
+QListWidget::item:selected {{
+    background: {alpha(c['accent'], 0.30)}; color: {fg};
 }}
 
 QMenu {{
@@ -331,7 +345,7 @@ QPushButton#sheetTab {{
 }}
 QPushButton#sheetTab:hover {{ background: {alpha(fg, 0.05)}; color: {fg}; }}
 QPushButton#sheetTab:checked {{
-    background: {alpha(fg, 0.12)}; color: {fg};
+    background: {alpha(c['accent'], 0.22)}; color: {fg};
 }}
 QLabel#settLabel {{ font-weight: 600; }}
 QLabel#settDesc {{ color: {c['muted']}; font-size: {small + 1}px; }}
@@ -396,7 +410,7 @@ QPushButton#pill {{ padding: 3px 10px; }}
 QPushButton#filterRow {{ padding: 2px 4px; }}
 QPushButton#sheetTab {{ padding: 4px 10px; }}
 QLineEdit, QComboBox, QSpinBox {{ padding: 4px 7px; }}
-QLineEdit#librarySearch {{ padding: 6px 14px 6px 34px; }}
+QLineEdit#librarySearch {{ padding: 5px 12px 5px 30px; border-radius: 16px; }}
 QMenu::item {{ padding: 4px 20px 4px 12px; }}
 QLabel#coverTitle {{ font-size: {small}px; }}
 QLabel#coverMeta, QLabel#listMeta {{ font-size: {small}px; }}
