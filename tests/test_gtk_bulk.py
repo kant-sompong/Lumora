@@ -305,4 +305,51 @@ def test_collection_action_creates_the_collection_and_undo_empties_it(built):
     pump()
 
     assert bulk.collection_store().members(collection.id) == []
-    assert bulk.collection_store().by_name("Co-op") is not None
+    # The collection only existed because of the action, so the undo takes
+    # it away again instead of leaving an empty one behind.
+    assert bulk.collection_store().by_name("Co-op") is None
+
+
+def test_the_check_box_sits_under_the_artwork_not_on_it(built):
+    view, _window = built
+    bulk = select(view, "game-1")
+    pump()
+
+    check = bulk._checks["game-1"]
+    tile = view._tiles["game-1"]
+    chip = check.get_parent()
+    assert isinstance(chip, Gtk.EventBox)
+
+    card = tile.get_child()
+    overlay = next(
+        child for child in card.get_children() if isinstance(child, Gtk.Overlay)
+    )
+    assert chip.get_parent() is not overlay
+    assert not overlay.is_ancestor(chip)
+
+    x, y = chip.translate_coordinates(card, 0, 0)
+    art = overlay.get_allocation()
+    assert y >= art.y + art.height  # under the cover, never on its corner
+    assert x > 0
+
+    # Styled chip, so the box stays readable wherever it lands.
+    assert chip.get_style_context().has_class("tile-check")
+
+
+def test_done_button_sits_next_to_the_other_bar_buttons(built):
+    view, _window = built
+    bulk = select(view, "game-0")
+    holder = Gtk.Window()
+    holder.add(bulk.bar)
+    bulk.bar.set_transition_type(Gtk.RevealerTransitionType.NONE)
+    holder.set_default_size(1200, 120)
+    holder.show_all()
+    bulk.set_active(True)
+    pump(20)
+
+    assert bulk.done_button.get_parent() is bulk.undo_button.get_parent()
+    done = bulk.done_button.get_allocation()
+    undo = bulk.undo_button.get_allocation()
+    assert done.width > 1 and undo.width > 1
+    assert 0 <= done.x - (undo.x + undo.width) <= 12
+    holder.destroy()

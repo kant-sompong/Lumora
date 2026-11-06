@@ -280,6 +280,8 @@ class BulkPlan:
     changes: list[tuple[str, Any, Any]] = field(default_factory=list)
     #: ``(title, reason)`` for each selected game the action cannot change.
     skipped: list[tuple[str, str]] = field(default_factory=list)
+    #: Id of a collection this plan created, so its undo can remove it again.
+    created_collection: str = ""
 
     @property
     def updated(self) -> int:
@@ -324,6 +326,7 @@ class BulkPlan:
                 (identifier, wanted, previous)
                 for identifier, previous, wanted in self.changes
             ],
+            created_collection=self.created_collection,
         )
 
 
@@ -524,6 +527,12 @@ def apply_plan(
                 saver()
             except OSError:
                 pass
+    if plan.created_collection and collections_store is not None:
+        # Undoing a collection action that created the collection must not
+        # leave an empty one behind.
+        collection = collections_store.get(plan.created_collection)
+        if collection is not None and not collection.items:
+            collections_store.delete(plan.created_collection)
     return written
 
 
