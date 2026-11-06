@@ -879,9 +879,9 @@ class LibraryPage(QWidget):
         self.grid.setHorizontalSpacing(self._gap)
         self.grid.setVerticalSpacing(self._vgap)
         self.detail.set_compact(compact)
-        if self._view == "list":
-            # Rows are built at a fixed padding, so rebuild the ones on screen.
-            self._render()
+        # Grid cards carry their own width, so rebuild whichever view is up:
+        # otherwise an already-drawn grid keeps the old tile size.
+        self._render()
 
     def rescan(self) -> None:
         if self.store is None:
@@ -1014,6 +1014,9 @@ class LibraryPage(QWidget):
             columns = self._columns()
             available = max(self.scroll.viewport().width() - 48, 200)
             cell = max(180, (available - self._gap * (columns - 1)) // columns)
+            if self._compact:
+                # The gap alone barely shows; a denser grid needs smaller tiles.
+                cell = max(150, min(cell, 190))
             for index, entry in enumerate(self._shown):
                 card: QWidget = LibraryCard(entry)
                 card.setMinimumWidth(min(200, cell))
