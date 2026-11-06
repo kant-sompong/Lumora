@@ -155,3 +155,14 @@ Not run: the Qt frontend (no PySide6), so items 1, 5, 6 and 7 are ticked for GTK
 - **Started and still open.** Search suggestions on the header field, Surprise me…, and the
   Statistics window with a heatmap. All three are Qt-only and none has had a display run, so
   `docs/TODO.md` keeps them unticked. Viewing time is deliberately absent: nothing measures it.
+
+## 2026-11-06 - Qt library tools and discovery screens
+
+Started: the 3.2 and 3.3 items that only needed a visible screen.
+Finished: `lgl/qt_library_tools.py` (tags, detail editor, bulk edit, duplicate groups) and
+`lgl/qt_discover.py` (recommendations, hidden gems, similarity, collection gaps, favourites,
+activity timeline, season comparison), all opened from a new **Library tools** menu in
+`qt_main`. Edits go through `LibraryStore.upsert` + `save`; tags reuse `library_tools` and no
+downloaded file is touched.
+Verified: `pytest tests` 479 passed, 3 skipped; `python -m compileall lgl` clean.
+Not verified: no window was opened on a desktop, and GTK has none of this yet.
