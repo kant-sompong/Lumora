@@ -6504,6 +6504,7 @@ class MainWindow(Gtk.ApplicationWindow):
         add_item("Command palette…", self.show_palette)
         add_item("Release calendar…", self.show_calendar)
         add_item("Recently viewed…", self.show_recent)
+        add_item("Collections…", lambda: __import__("lgl.gtk_collections", fromlist=["show_collections"]).show_collections(self))
         add_item("Tools…", self.show_tools)
         add_item("Settings…", lambda: self.show_settings())
         add_item("About Lumora", self.show_about)
