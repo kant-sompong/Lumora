@@ -260,19 +260,24 @@ class Window(QMainWindow):
         return header
 
     def _install_shortcuts(self) -> None:
-        for keys, callback in (
-            ("Ctrl+1", lambda: self.show_view("browse")),
-            ("Ctrl+2", lambda: self.show_view("library")),
-            ("Ctrl+3", lambda: self.show_view("downloads")),
-            ("Ctrl+4", lambda: self.show_view("media")),
-            ("Ctrl+F", self.focus_search),
-            ("Ctrl+K", self.focus_search),
-            ("Ctrl+R", self.refresh_all),
-            ("F5", self.refresh_all),
-            ("Ctrl+,", lambda: self.show_settings()),
+        from . import shortcut_prefs
+        from .qt_shortcuts import DEFAULTS
+
+        keys = shortcut_prefs.effective(self._settings, DEFAULTS)
+        for shortcut_id, callback in (
+            ("nav.browse", lambda: self.show_view("browse")),
+            ("nav.library", lambda: self.show_view("library")),
+            ("nav.downloads", lambda: self.show_view("downloads")),
+            ("nav.media", lambda: self.show_view("media")),
+            ("search", self.focus_search),
+            ("refresh", self.refresh_all),
+            ("settings", lambda: self.show_settings()),
         ):
-            shortcut = QShortcut(QKeySequence(keys), self)
+            sequence = keys.get(shortcut_id) or DEFAULTS[shortcut_id]
+            shortcut = QShortcut(QKeySequence(sequence), self)
             shortcut.activated.connect(callback)
+        for extra, callback in (("Ctrl+K", self.focus_search), ("F5", self.refresh_all)):
+            QShortcut(QKeySequence(extra), self).activated.connect(callback)
 
     # navigation -----------------------------------------------------------
     VIEW_TITLES = {
@@ -464,6 +469,7 @@ class Window(QMainWindow):
             ("Favourites…", self.show_favourites),
             ("Activity…", self.show_activity),
             ("Collections…", self.show_collections),
+            ("Keyboard shortcuts…", self.show_shortcuts),
         ):
             action = library_menu.addAction(label)
             action.triggered.connect(slot)
@@ -666,6 +672,12 @@ class Window(QMainWindow):
     def show_favourites(self) -> None:
         rows = [row | {"kind": "game"} for row in self._library_rows() if row.get("favorite")]
         FavouritesDialog(rows, self).exec()
+
+    def show_shortcuts(self) -> None:
+        """Rebind the keys; the window picks them up the next time it opens."""
+        from .qt_shortcuts import ShortcutsDialog
+
+        ShortcutsDialog(self._settings, self).exec()
 
     def show_collections(self) -> None:
         """Create collections and put library titles in them."""

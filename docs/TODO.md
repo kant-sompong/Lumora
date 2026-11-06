@@ -187,6 +187,7 @@ every item stays unticked.
 | 3.3.27 Bulk actions | Bulk edit window (one selected title today; the dialog takes many) | multi-select in the library grid |
 | 3.3.29 Activity timeline | Activity window | GTK |
 | 3.2.15 Custom collections | Collections window: create, rename, add/remove titles | smart collections, GTK; membership is manual only |
+| 3.3.30 Customisable keyboard controls | Keyboard shortcuts window (overrides saved, applied on next start) | GTK; no live re-binding in the open window |
 
 `lgl/qt_discover.SeasonCompareDialog` is written and tested but not in the menu: no loaded source
 carries a season, so it would open with empty pickers.
