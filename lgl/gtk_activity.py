@@ -18,9 +18,10 @@ from gi.repository import Gtk
 from . import recently_viewed, stats
 
 #: ``(field, verb)`` pairs turned into timeline events for a library entry.
+#: ``last_seen`` is deliberately absent: every library scan moves it to now, so
+#: it would bury real activity under a wall of identical "Updated" rows.
 ENTRY_EVENTS = (
     ("added_at", "Added"),
-    ("last_seen", "Updated"),
     ("last_played", "Launched"),
 )
 
@@ -77,7 +78,7 @@ def favourite_rows(entries: Iterable[Any]) -> list[dict[str, Any]]:
 def build_events(
     entries: Iterable[Any], viewed: Iterable[Mapping[str, Any]] = ()
 ) -> list[dict[str, Any]]:
-    """Added, updated and launched games plus the viewing history.
+    """Added and launched games plus the viewing history.
 
     ``stats.timeline`` drops the events whose timestamp is junk and sorts what
     is left, so nothing here needs to validate or order anything.
@@ -166,6 +167,7 @@ class FavouritesWindow(Gtk.Window):
         outer.pack_start(_heading("FAVOURITES"), False, False, 0)
 
         columns = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        columns.set_homogeneous(True)
         games_column, self.games_list, self.games_note = self._column(
             "Games", self.games
         )
@@ -175,6 +177,9 @@ class FavouritesWindow(Gtk.Window):
         columns.pack_start(games_column, True, True, 0)
         columns.pack_start(media_column, True, True, 0)
         outer.pack_start(columns, True, True, 0)
+        self.columns = columns
+        self.games_column = games_column
+        self.media_column = media_column
 
         buttons = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         buttons.pack_end(_close_button(self), False, False, 0)

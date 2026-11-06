@@ -67,6 +67,23 @@ def test_favourites_say_why_a_column_is_empty(display):
         window.destroy()
 
 
+def test_favourites_columns_share_the_width(display):
+    rows = [{"key": "g1", "title": "Game one", "kind": "game"}]
+    window = gtk_activity.FavouritesWindow(None, rows)
+    try:
+        assert window.columns.get_homogeneous() is True
+        window.show_all()
+        while Gtk.events_pending():
+            Gtk.main_iteration_do(False)
+        games_width = window.games_column.get_allocated_width()
+        media_width = window.media_column.get_allocated_width()
+        assert games_width > 0
+        # Homogeneous distributes any odd pixel to one side, so allow one.
+        assert abs(games_width - media_width) <= 1
+    finally:
+        window.destroy()
+
+
 def test_only_favourite_games_become_rows(display):
     entries = [
         game("g1", "Hearted", favorite=True),
@@ -82,6 +99,7 @@ def test_events_name_the_action_and_skip_junk(display):
         game("g1", "Added only", added=stamp("2026-01-01")),
         game("g2", "Played", added=0.0, played=stamp("2026-01-03")),
         game("g3", "Never touched"),
+        game("g4", "Scanned", seen=stamp("2026-01-04")),
     ]
     viewed = [
         {"kind": "movie", "title": "A film", "viewed_at": stamp("2026-01-02")},
@@ -94,6 +112,9 @@ def test_events_name_the_action_and_skip_junk(display):
     assert "Watched · A film" in labels
     assert all("Never touched" not in label for label in labels)
     assert all("Broken" not in label for label in labels)
+    # A scan updates last_seen on everything, so it must not become an event.
+    assert all(not label.startswith("Updated") for label in labels)
+    assert all("Scanned" not in label for label in labels)
 
 
 def test_activity_is_newest_first(display):
