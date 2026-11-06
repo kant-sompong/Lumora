@@ -30,7 +30,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from . import mal, media_history, platform_support, streaming, tmdb
+from . import mal, media_history, platform_support, streaming, tmdb, view_prefs
 from . import recently_viewed
 from .qt_icons import icon, paint_icon
 from .qt_widgets import (
@@ -774,6 +774,9 @@ class MediaPage(QWidget):
         column.addWidget(self.detail_info)
         self.episode_head = SectionTitle("Episodes")
         column.addWidget(self.episode_head)
+        self.spoiler_note = label("", "mediaNote", wrap=True)
+        self.spoiler_note.setVisible(False)
+        column.addWidget(self.spoiler_note)
         picker = QHBoxLayout()
         picker.setSpacing(8)
         self.season_label = label("Season", "detailNote")
@@ -1146,14 +1149,22 @@ class MediaPage(QWidget):
                          self.detail_hero.set_pixmap)
         self._load_episodes(card)
 
+    def _sync_spoiler_note(self) -> None:
+        """Say the mode is on, and where to turn it off, beside the episodes."""
+        text = view_prefs.spoiler_note(self.settings)
+        self.spoiler_note.setText(text)
+        self.spoiler_note.setVisible(bool(text))
+
     def _load_episodes(self, card: Card) -> None:
         clear_layout(self.episode_column)
+        self._sync_spoiler_note()
         client = getattr(self, "_tmdb", None)
         if card.kind != "tv" or card.tmdb_id == 0 or client is None:
             self.episode_head.setVisible(False)
             self.episode_host.setVisible(False)
             self.season_label.setVisible(False)
             self.season_combo.setVisible(False)
+            self.spoiler_note.setVisible(False)
             return
         self.episode_head.setVisible(True)
         self.episode_host.setVisible(True)
@@ -1216,7 +1227,10 @@ class MediaPage(QWidget):
             for episode in episodes[:40]:
                 row = EpisodeRow(
                     int(getattr(episode, "number", 0) or 0),
-                    str(getattr(episode, "title", "Episode") or "Episode"),
+                    view_prefs.episode_title(
+                        self.settings,
+                        str(getattr(episode, "title", "Episode") or "Episode"),
+                    ),
                     str(getattr(episode, "air_date", "") or ""),
                 )
                 row.clicked.connect(
