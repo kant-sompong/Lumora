@@ -10,6 +10,7 @@ from __future__ import annotations
 import urllib.parse
 from typing import Sequence
 
+from . import browse_filters
 from .archive import ArchiveClient, GameSummary
 from .catalog_store import DOWNLOAD_STATE_LABELS
 from .settings import ARCHIVE_SORT_KEYS
@@ -155,6 +156,9 @@ def filter_games(
     license_: str = "all",
     genre: str = "all",
     genres: Sequence[str] = (),
+    exclude_genres: Sequence[str] = (),
+    min_year: int | None = None,
+    max_year: int | None = None,
     size: str = "any",
 ) -> list[GameSummary]:
     out = ArchiveClient.search(list(games), query) if query.strip() else list(games)
@@ -162,13 +166,16 @@ def filter_games(
         out = [g for g in out if year_matches(g.year, year)]
     if license_ != "all":
         out = [g for g in out if license_group(g.licenseurl) == license_]
-    wanted = {value.casefold() for value in ([genre] if genre != "all" else [])}
-    wanted |= {value.casefold() for value in genres}
-    if wanted:
-        out = [
-            g for g in out
-            if wanted & {subject.casefold() for subject in g.subjects}
-        ]
+    # The year range and the include/exclude genres go through the same
+    # content_filters rules the shelves use, so the two filters cannot drift.
+    wanted = browse_filters.filters_for(
+        min_year=min_year,
+        max_year=max_year,
+        genres=list(genres) + ([genre] if genre != "all" else []),
+        exclude_genres=exclude_genres,
+    )
+    if not wanted.is_empty():
+        out = browse_filters.apply(out, wanted)
     if size != "any":
         out = [g for g in out if size_matches(g.item_size, size)]
     return out
