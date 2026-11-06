@@ -204,3 +204,18 @@ no switcher.
   at `shots-qt/home-shelves.png` showed both shelf rows with the right titles.
 - Not verified: no desktop run, GTK has neither shelves nor the third size, and "resize" is a
   card-size choice rather than free resizing.
+
+## 2026-11-06 - GTK home shelves and the large card size (branch feature/gtk-home-shelves)
+
+Branched from `origin/feature/qt-home-shelves` because PR #23 was still open.
+- `ui.card_cover_size(layout)` and `BrowseTile` read `home_layout.scale`, giving GTK the same
+  compact/poster/large widths; `apply_interface_prefs` rebuilds the Browse grid after a change.
+- The cover grid is wrapped in a page with `_shelves_box` above it; `_rebuild_shelves()` feeds
+  `shelves.render` from `self._games` and draws a heading plus a `Gtk.FlowBox` of buttons that
+  select the game.
+- `lgl/gtk_shelves.py` is the GTK 3 shelves editor (name, genre, limit, add, remove), opened
+  from Tools → Home screen → Shelves… through `gtk_tools._dispatch`.
+- `tests/test_gtk_home.py` (4 tests) skips itself when GTK 3 or a display is missing.
+- Verified: `compileall` clean; `pytest tests` 492 passed, 4 skipped.
+- NOT verified: never run on a display. This sandbox has no Gtk-3.0 typelib, no Xvfb, no fonts and
+  sudo is blocked by the container, so the requested xvfb-run and screenshot could not be done.

@@ -647,6 +647,20 @@ def set_compact_layout(compact: bool) -> bool:
     return changed
 
 
+def card_cover_size(layout_name: str = "poster") -> tuple[int, int]:
+    """Cover size in the Browse grid for a home card layout.
+
+    Compact mode keeps its own, smaller size; poster and large differ only by
+    the multiplier in :func:`lgl.home_layout.scale`.
+    """
+    from . import home_layout
+
+    if _COMPACT_LAYOUT:
+        return 118, 177
+    factor = home_layout.scale(layout_name)
+    return int(150 * factor), int(225 * factor)
+
+
 class BrowseTile(Gtk.FlowBoxChild):
     """One cover in the Browse grid: artwork, then name and one meta line."""
 
@@ -655,12 +669,16 @@ class BrowseTile(Gtk.FlowBoxChild):
 
     def __init__(self, window: "MainWindow", game: GameSummary) -> None:
         super().__init__()
+        from . import home_layout
+
         self.game = game
         self._window = window
         self._token = 0
-        if _COMPACT_LAYOUT:
-            self.COVER_WIDTH = 118
-            self.COVER_HEIGHT = 177
+        try:
+            layout_name = home_layout.HomeLayout(getattr(window, "settings", None)).layout()
+        except (AttributeError, TypeError, ValueError):
+            layout_name = "poster"
+        self.COVER_WIDTH, self.COVER_HEIGHT = card_cover_size(layout_name)
         self.get_style_context().add_class("browse-tile")
 
         card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
@@ -6870,10 +6888,19 @@ class MainWindow(Gtk.ApplicationWindow):
         grid_scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
         grid_scroller.add(self._browse_flow)
         self._browse_scroller = grid_scroller
+        self._browse_grid_page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        self._shelves_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        self._shelves_box.set_margin_start(24)
+        self._shelves_box.set_margin_end(24)
+        self._shelves_box.set_margin_top(8)
+        self._shelves_box.set_margin_bottom(4)
+        self._shelves_box.set_visible(False)
+        self._browse_grid_page.pack_start(self._shelves_box, False, False, 0)
+        self._browse_grid_page.pack_start(grid_scroller, True, True, 0)
         grid_adjustment = grid_scroller.get_vadjustment()
         if grid_adjustment is not None:
             grid_adjustment.connect("value-changed", self._on_grid_scrolled)
-        self._sidebar_stack.add_named(grid_scroller, "grid")
+        self._sidebar_stack.add_named(self._browse_grid_page, "grid")
 
         self._list = Gtk.ListBox()
         self._list.set_selection_mode(Gtk.SelectionMode.SINGLE)
@@ -7203,9 +7230,60 @@ class MainWindow(Gtk.ApplicationWindow):
         finally:
             self._grid_selecting = False
         flow.show_all()
+        self._rebuild_shelves()
         self._load_visible_covers()
         if selected and selected in self._grid_tiles:
             GLib.idle_add(self._restore_grid_selection, selected)
+
+    def _rebuild_shelves(self) -> None:
+        """Custom shelves above the cover grid, drawn from the loaded catalogue."""
+        from . import shelves as shelves_lib
+
+        box = getattr(self, "_shelves_box", None)
+        if box is None:
+            return
+        for child in list(box.get_children()):
+            box.remove(child)
+        rows = [
+            {
+                "key": game.identifier,
+                "title": game.title,
+                "year": game.year,
+                "genres": list(game.subjects),
+                "rating": None,
+            }
+            for game in self._games
+        ]
+        rendered = shelves_lib.render(getattr(self, "settings", None), rows)
+        for name, items in rendered:
+            heading = Gtk.Label(label=name.upper(), xalign=0)
+            heading.get_style_context().add_class("shelf-title")
+            heading.set_margin_top(6)
+            box.pack_start(heading, False, False, 0)
+            flow = Gtk.FlowBox()
+            flow.set_selection_mode(Gtk.SelectionMode.NONE)
+            flow.set_homogeneous(False)
+            flow.set_min_children_per_line(1)
+            flow.set_max_children_per_line(12)
+            flow.set_column_spacing(6)
+            flow.set_row_spacing(4)
+            for item in items:
+                key = str(item.get("key") or "")
+                button = Gtk.Button(label=str(item.get("title") or key))
+                button.get_style_context().add_class("chip")
+                button.set_relief(Gtk.ReliefStyle.NONE)
+                button.set_tooltip_text(str(item.get("title") or key))
+                button.connect("clicked", self._on_shelf_item, key)
+                flow.add(button)
+            box.pack_start(flow, False, False, 0)
+        box.set_visible(bool(rendered))
+        if rendered:
+            box.show_all()
+
+    def _on_shelf_item(self, _button: Gtk.Button, key: str) -> None:
+        game = next((item for item in self._games if item.identifier == key), None)
+        if game is not None:
+            self._select_game(game)
 
     def _restore_grid_selection(self, identifier: str) -> bool:
         tile = self._grid_tiles.get(identifier)
@@ -7476,6 +7554,10 @@ class MainWindow(Gtk.ApplicationWindow):
             refresh = getattr(getattr(self, "library_view", None), "refresh", None)
             if callable(refresh):
                 refresh()
+        visible = getattr(self, "_visible_games", None)
+        rebuild = getattr(self, "_rebuild_grid", None)
+        if callable(rebuild) and visible is not None:
+            rebuild(visible)
         theme_gtk.set_accent(prefs[view_prefs.ACCENT])
         self._apply_transitions(str(prefs[view_prefs.TRANSITIONS]))
         self.queue_resize()
