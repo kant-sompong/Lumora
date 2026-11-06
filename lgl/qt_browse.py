@@ -167,7 +167,7 @@ class BrowseRow(QFrame):
 
     clicked = Signal(str)
 
-    def __init__(self, game: GameSummary) -> None:
+    def __init__(self, game: GameSummary, *, compact: bool = False) -> None:
         super().__init__()
         self.setObjectName("listRow")
         self.setProperty("selected", False)
@@ -176,8 +176,9 @@ class BrowseRow(QFrame):
         self.identifier = game.identifier
         self.game = game
         column = QVBoxLayout(self)
-        column.setContentsMargins(4, 9, 4, 9)
-        column.setSpacing(2)
+        pad = 4 if compact else 9
+        column.setContentsMargins(4, pad, 4, pad)
+        column.setSpacing(1 if compact else 2)
         title = ElideLabel(bare_title(game.title) or game.identifier)
         title.setObjectName("listTitle")
         column.addWidget(title)
@@ -650,6 +651,13 @@ class BrowseDetail(QFrame):
     external_requested = Signal(str, str)
     mirror_requested = Signal(str)
 
+    def set_compact(self, compact: bool) -> None:
+        """Denser padding in the selected-game panel."""
+        self._column.setContentsMargins(
+            *((14, 10, 14, 12) if compact else (18, 16, 18, 18))
+        )
+        self._column.setSpacing(4 if compact else 6)
+
     def __init__(self) -> None:
         super().__init__()
         self.setObjectName("detail")
@@ -666,6 +674,7 @@ class BrowseDetail(QFrame):
         outer.addWidget(scroll)
         column.setContentsMargins(18, 16, 18, 18)
         column.setSpacing(6)
+        self._column = column
 
         head = QHBoxLayout()
         eyebrow = label("SELECTED GAME", "detailEyebrow")
@@ -945,6 +954,7 @@ class BrowsePage(QWidget):
         self._generation = 0
         self._limit = ROW_LIMIT
         self._view = "grid"
+        self._compact = False
         self._loading = False
         self._warning = ""
         self._stamp = ""
@@ -968,6 +978,7 @@ class BrowsePage(QWidget):
         head = QHBoxLayout(header)
         head.setContentsMargins(24, 18, 24, 14)
         head.setSpacing(10)
+        self._head = head
         heading = QHBoxLayout()
         heading.setSpacing(10)
         heading.addWidget(label("Browse", "pageTitle"), 0, Qt.AlignBottom)
@@ -1001,6 +1012,7 @@ class BrowsePage(QWidget):
         page.addWidget(self.scroll, 1)
         column.setContentsMargins(24, 0, 24, 8)
         column.setSpacing(0)
+        self._column = column
         self.grid_host = QWidget()
         self.grid = QGridLayout(self.grid_host)
         self.grid.setContentsMargins(0, 0, 0, 0)
@@ -1248,6 +1260,22 @@ class BrowsePage(QWidget):
         )
 
     # rendering -------------------------------------------------------------
+    def set_compact(self, compact: bool) -> None:
+        """Shrink page padding, list rows and tile spacing; off restores it."""
+        self._compact = bool(compact)
+        self._head.setContentsMargins(
+            *((16, 12, 16, 10) if compact else (24, 18, 24, 14))
+        )
+        self._column.setContentsMargins(
+            *((16, 0, 16, 4) if compact else (24, 0, 24, 8))
+        )
+        self.grid.setHorizontalSpacing(10 if compact else 16)
+        self.grid.setVerticalSpacing(14 if compact else 22)
+        self.detail.set_compact(compact)
+        if self._view == "list":
+            # Rows are built at a fixed padding, so rebuild the ones on screen.
+            self._render()
+
     def _render(self) -> None:
         self._generation += 1
         self.grid_host.setVisible(self._view == "grid")
@@ -1274,7 +1302,7 @@ class BrowsePage(QWidget):
                 card.setMaximumWidth(cell)
                 self.grid.addWidget(card, index // columns, index % columns)
             else:
-                card = BrowseRow(game)
+                card = BrowseRow(game, compact=self._compact)
                 self.list_column.addWidget(card)
             card.clicked.connect(self.select)  # type: ignore[attr-defined]
             if game.identifier in self._pix:

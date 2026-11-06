@@ -12,8 +12,10 @@ from pathlib import Path
 from typing import Callable, Sequence
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QCheckBox,
+    QColorDialog,
     QComboBox,
     QDialog,
     QFileDialog,
@@ -30,7 +32,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from . import __version__, mal, platform_support, streaming, theme, tmdb
+from . import __version__, mal, platform_support, streaming, theme, tmdb, view_prefs
 from .qt_widgets import Toast, label, run_async
 from .settings import Settings
 from .sources import RawgSource
@@ -235,6 +237,54 @@ class SettingsDialog(QDialog):
             self._theme_buttons[key] = radio
             column.addWidget(SettingRow(text, description, radio))
 
+        compact = QCheckBox()
+        compact.setChecked(view_prefs.compact(self.settings))
+        compact.toggled.connect(self._set_compact)
+        self._compact_box = compact
+        column.addWidget(SettingRow(
+            "Compact mode",
+            "Smaller covers, tighter rows and less padding across the app.",
+            compact,
+        ))
+
+        self._transitions = QComboBox()
+        for key, text in (("off", "Off"), ("subtle", "Subtle"), ("full", "Full")):
+            self._transitions.addItem(text, key)
+        self._transitions.setCurrentIndex(
+            max(0, self._transitions.findData(view_prefs.transitions(self.settings)))
+        )
+        self._transitions.setFixedWidth(150)
+        self._transitions.currentIndexChanged.connect(self._set_transitions)
+        column.addWidget(SettingRow(
+            "Page transitions",
+            "Fade pages in when you switch between them, or switch instantly.",
+            self._transitions,
+        ))
+
+        accent_row = QWidget()
+        accent_layout = QHBoxLayout(accent_row)
+        accent_layout.setContentsMargins(0, 0, 0, 0)
+        accent_layout.setSpacing(8)
+        self._accent_swatch = QLabel()
+        self._accent_swatch.setFixedSize(26, 26)
+        self._accent_swatch.setToolTip("The accent colour in use")
+        accent_layout.addWidget(self._accent_swatch)
+        pick = QPushButton("Choose…")
+        pick.setCursor(Qt.PointingHandCursor)
+        pick.clicked.connect(self._pick_accent)
+        accent_layout.addWidget(pick)
+        reset = QPushButton("Reset")
+        reset.setCursor(Qt.PointingHandCursor)
+        reset.setToolTip("Go back to the accent Lumora ships with")
+        reset.clicked.connect(self._reset_accent)
+        accent_layout.addWidget(reset)
+        self._paint_accent()
+        column.addWidget(SettingRow(
+            "Accent colour",
+            "Used for buttons, highlights and selection throughout the app.",
+            accent_row,
+        ))
+
         missing = QCheckBox()
         missing.setChecked(self.settings.library_show_missing)
         missing.toggled.connect(self.settings.set_library_show_missing)
@@ -266,6 +316,46 @@ class SettingsDialog(QDialog):
         apply = getattr(window, "apply_theme", None)
         if callable(apply):
             apply(mode)
+
+    def _owner(self) -> QWidget | None:
+        """The main window this sheet was opened from, when there is one."""
+        parent = self.parent()
+        return parent if isinstance(parent, QWidget) else None
+
+    def _apply_prefs(self) -> None:
+        """Re-apply compact mode, the accent and transitions live."""
+        apply = getattr(self._owner(), "apply_interface_prefs", None)
+        if callable(apply):
+            apply()
+
+    def _set_compact(self, on: bool) -> None:
+        view_prefs.set_compact(self.settings, bool(on))
+        self._apply_prefs()
+
+    def _set_transitions(self, _index: int = -1) -> None:
+        view_prefs.set_transitions(self.settings, self._transitions.currentData())
+        self._apply_prefs()
+
+    def _paint_accent(self) -> None:
+        self._accent_swatch.setStyleSheet(
+            f"background: {view_prefs.accent(self.settings)};"
+            " border: 1px solid rgba(255, 255, 255, 0.22); border-radius: 7px;"
+        )
+
+    def _pick_accent(self) -> None:
+        chosen = QColorDialog.getColor(
+            QColor(view_prefs.accent(self.settings)), self, "Accent colour"
+        )
+        if not chosen.isValid():
+            return
+        view_prefs.set_accent(self.settings, chosen.name())
+        self._paint_accent()
+        self._apply_prefs()
+
+    def _reset_accent(self) -> None:
+        view_prefs.set_accent(self.settings, view_prefs.DEFAULT_ACCENT)
+        self._paint_accent()
+        self._apply_prefs()
 
     def _pick_folder(self) -> None:
         path = QFileDialog.getExistingDirectory(
@@ -519,6 +609,7 @@ class SettingsDialog(QDialog):
             ("Ctrl+2", "Show the Library view"),
             ("Ctrl+3", "Open Downloads"),
             ("Ctrl+4", "Open Movies & TV"),
+            ("Ctrl+K", "Open the command palette"),
             ("Ctrl+F", "Focus the search field"),
             ("Ctrl+R / F5", "Reload the collection or rescan the library"),
             ("Ctrl+,", "Open Settings"),
