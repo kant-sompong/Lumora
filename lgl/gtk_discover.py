@@ -107,7 +107,7 @@ class DiscoverWindow(Gtk.Window):
         self._simple_page(
             "For you",
             discovery.recommend(self.items, self.liked),
-            "Like what you already have; nothing you own is repeated.",
+            "Closest to the titles you keep in your library.",
             empty_note=(
                 "No recommendations from the loaded titles yet."
                 if self.liked
@@ -125,7 +125,11 @@ class DiscoverWindow(Gtk.Window):
             "Complete the set",
             discovery.suggestions(self.items, self.owned),
             "Fills genres your collection is still missing.",
-            empty_note="No gaps found in the loaded titles.",
+            empty_note=(
+                "Keep a few games to see what would complete the set."
+                if not self.owned
+                else "No gaps found in the loaded titles."
+            ),
         )
 
         buttons = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
@@ -257,14 +261,8 @@ class DiscoverWindow(Gtk.Window):
 def show_discover(parent: Any, settings: Any) -> DiscoverWindow:
     """Open Discover from the app menu, fed by the catalogue and the library."""
     rows = game_rows(getattr(parent, "_games", None) or [])
-    owned = [str(item["key"]) for item in rows]
-    window = DiscoverWindow(
-        parent,
-        settings,
-        rows,
-        liked=library_keys(parent),
-        owned=owned,
-    )
+    kept = library_keys(parent)
+    window = DiscoverWindow(parent, settings, rows, liked=kept, owned=kept)
     window.show_all()
     window.present()
     return window

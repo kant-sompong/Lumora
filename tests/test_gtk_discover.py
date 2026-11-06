@@ -111,6 +111,15 @@ def test_hidden_gems_is_hidden_when_nothing_has_ratings(display):
         window.destroy()
 
 
+def test_complete_the_set_explains_an_empty_library(display):
+    window = gtk_discover.DiscoverWindow(Parent(), Store(), ITEMS)
+    try:
+        assert titles(window, "Complete the set") == []
+        assert "Keep a few games" in window.note_text("Complete the set")
+    finally:
+        window.destroy()
+
+
 def test_collection_gaps_prefer_the_better_rated_fill(display):
     window = gtk_discover.DiscoverWindow(Parent(), Store(), ITEMS, owned=["a"])
     try:
