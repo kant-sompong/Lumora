@@ -167,6 +167,29 @@ frontends render that panel, GTK and Qt both get the page without extra code. Th
 opened and screenshotted under a display; the Qt page was not run.
 
 
+### Qt library and discovery screens (2026-11-06, branch `feature/qt-library-and-discovery`)
+
+Ten items in 3.2 and 3.3 now have a Qt screen behind a new **Library tools** menu entry.
+`tests/test_qt_library_tools.py` and `tests/test_qt_discover.py` add 13 tests; the full suite is
+479 passed, 3 skipped. No window here has been opened on a desktop and GTK has none of them, so
+every item stays unticked.
+
+| Item | Screen | Still missing |
+|------|--------|---------------|
+| 3.2.12 Smart recommendations | Discover, "For you" | GTK; display run |
+| 3.2.18 Similarity explorer | Discover, "More like this" | GTK; display run |
+| 3.2.19 Hidden gems | Discover, "Hidden gems" | GTK; display run |
+| 3.3.28 Collection suggestions | Discover, "Complete the set" | GTK; display run |
+| 3.3.21 Unified favourites | Favourites window, games beside media | media favourites are not stored anywhere yet |
+| 3.3.24 Duplicate detection | Find duplicates window | GTK |
+| 3.3.25 Metadata editor | Edit details window, saved through `LibraryStore` | GTK |
+| 3.3.26 Library tags | Tags window, add/remove plus library-wide counts | tag filtering in Browse |
+| 3.3.27 Bulk actions | Bulk edit window (one selected title today; the dialog takes many) | multi-select in the library grid |
+| 3.3.29 Activity timeline | Activity window | GTK |
+
+`lgl/qt_discover.SeasonCompareDialog` is written and tested but not in the menu: no loaded source
+carries a season, so it would open with empty pickers.
+
 ## 4. Roadmap items still open (from the 0.6.6 notes in thing.md)
 - [ ] Continue Watching shelf widget on the Movies & TV page (the data and rules exist in `media_lists.shelf`).
 - [ ] Resume-from-position (cannot seek because the player is the system player).

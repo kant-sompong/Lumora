@@ -13,6 +13,7 @@ Only the platform-neutral core is used for data (``ArchiveClient``,
 from __future__ import annotations
 
 import sys
+from dataclasses import replace
 from pathlib import Path
 from typing import Sequence
 
@@ -20,6 +21,7 @@ from PySide6.QtCore import QEvent, QObject, Qt, QTimer
 from PySide6.QtGui import QAction, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
+    QDialog,
     QFrame,
     QHBoxLayout,
     QInputDialog,
@@ -41,6 +43,14 @@ from .archive import ArchiveClient, build_download_url
 from .catalog_store import CatalogStore
 from .downloader import DownloadManager, TaskSnapshot
 from .library_store import LibraryStore
+from .qt_discover import ActivityTimelineDialog, DiscoverDialog, FavouritesDialog
+from .qt_library_tools import (
+    BulkEditDialog,
+    DuplicatesDialog,
+    MetadataEditorDialog,
+    TagsDialog,
+    as_entry,
+)
 from .qt_recent import RecentlyViewedDialog
 from .qt_stats import StatisticsDialog
 from .qt_browse import BrowsePage
@@ -444,6 +454,18 @@ class Window(QMainWindow):
         statistics = QAction("Statistics…", self)
         statistics.triggered.connect(self.show_statistics)
         menu.addAction(statistics)
+        library_menu = menu.addMenu("Library tools")
+        for label, slot in (
+            ("Tags…", self.show_tags),
+            ("Edit details…", self.show_metadata_editor),
+            ("Bulk edit…", self.show_bulk_edit),
+            ("Find duplicates…", self.show_duplicates),
+            ("Discover…", self.show_discover),
+            ("Favourites…", self.show_favourites),
+            ("Activity…", self.show_activity),
+        ):
+            action = library_menu.addAction(label)
+            action.triggered.connect(slot)
         tools = QAction("Tools…", self)
         tools.triggered.connect(self.show_tools)
         menu.addAction(tools)
@@ -537,6 +559,121 @@ class Window(QMainWindow):
             self,
         )
         dialog.exec()
+
+    # library tools --------------------------------------------------------
+    def _library_rows(self) -> list[dict]:
+        return [as_entry(entry) for entry in self.library._entries]  # noqa: SLF001
+
+    def _media_rows(self) -> list[dict]:
+        return [
+            {
+                "key": card.key,
+                "title": card.title,
+                "year": card.year,
+                "rating": card.rating,
+                "kind": card.kind,
+            }
+            for card in self.media._all_cards()  # noqa: SLF001
+        ]
+
+    def show_tags(self) -> None:
+        TagsDialog(list(self.library._entries), self._settings, self).exec()  # noqa: SLF001
+
+    def show_metadata_editor(self) -> None:
+        """Correct the selected title's name, description, year or poster."""
+        entries = list(self.library._entries)  # noqa: SLF001
+        if not entries:
+            self.toast.show_message("The library is empty.", error=True)
+            return
+        selected = getattr(self.library, "_selected", "")
+        entry = next((item for item in entries if item.identifier == selected), entries[0])
+        dialog = MetadataEditorDialog(entry, self)
+        if dialog.exec() != QDialog.DialogCode.Accepted or not dialog.changed():
+            return
+        edited = dialog.edited()
+        updated = replace(
+            entry,
+            title=str(edited.get("title") or entry.title),
+            description=str(edited.get("description") or ""),
+            year=str(edited.get("year") or ""),
+            cover_path=str(edited.get("poster") or entry.cover_path),
+        )
+        store = self.library.store
+        if store is None:
+            self.library.set_entries(
+                [updated if item.identifier == entry.identifier else item for item in entries]
+            )
+        else:
+            store.upsert(updated)
+            store.save()
+            self.library.set_entries(store.entries())
+        self.toast.show_message(f"Saved {updated.title!r}.")
+
+    def show_bulk_edit(self) -> None:
+        """Set one field on the selected title."""
+        entries = list(self.library._entries)  # noqa: SLF001
+        selected = getattr(self.library, "_selected", "")
+        if not entries:
+            self.toast.show_message("The library is empty.", error=True)
+            return
+        if not selected:
+            self.toast.show_message("Select a title first.", error=True)
+            return
+        dialog = BulkEditDialog(entries, [selected], self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        rows, changed = dialog.result_entries()
+        if not changed:
+            return
+        by_key = {row["key"]: row for row in rows}
+        replacements = []
+        for item in entries:
+            row = by_key.get(item.identifier)
+            if row is None:
+                continue
+            edits: dict[str, object] = {}
+            if str(row.get("title") or "") != item.title:
+                edits["title"] = str(row.get("title") or "")
+            if str(row.get("description") or "") != item.description:
+                edits["description"] = str(row.get("description") or "")
+            if str(row.get("year") or "") != item.year:
+                edits["year"] = str(row.get("year") or "")
+            if str(row.get("poster") or "") != item.cover_path:
+                edits["cover_path"] = str(row.get("poster") or "")
+            if edits:
+                replacements.append(replace(item, **edits))
+        if not replacements:
+            return
+        store = self.library.store
+        if store is not None:
+            for item in replacements:
+                store.upsert(item)
+            store.save()
+            self.library.set_entries(store.entries())
+        self.toast.show_message(f"Updated {len(replacements)} title(s).")
+
+    def show_duplicates(self) -> None:
+        DuplicatesDialog(self._library_rows(), self).exec()
+
+    def show_discover(self) -> None:
+        """Recommendations, hidden gems, similarity and collection gaps."""
+        rows = self._library_rows() + self._media_rows()
+        liked = [row["key"] for row in self._library_rows() if row.get("favorite")]
+        owned = [row["key"] for row in rows]
+        DiscoverDialog(rows, liked, owned, self).exec()
+
+    def show_favourites(self) -> None:
+        rows = [row | {"kind": "game"} for row in self._library_rows() if row.get("favorite")]
+        FavouritesDialog(rows, self).exec()
+
+    def show_activity(self) -> None:
+        from .qt_stats import build_events
+
+        events = build_events(
+            list(self.library._entries),  # noqa: SLF001
+            recently_viewed.recent(recently_viewed.default_path(), 200),
+        )
+        ActivityTimelineDialog(events, self).exec()
 
     def _search_titles(self) -> list[str]:
         titles = [entry.title for entry in self.library._entries]  # noqa: SLF001
