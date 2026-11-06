@@ -231,10 +231,25 @@ def open_on(page, identifier):
     return card
 
 
-@pytest.mark.parametrize("which", [0, 2, 4], ids=["first", "middle", "last"])
+def first_row(page):
+    """The tiles of the top row, left to right, as they are laid out now."""
+    cards = sorted(
+        page._cards.values(),
+        key=lambda card: (
+            card.mapTo(page, QPoint(0, 0)).y(),
+            card.mapTo(page, QPoint(0, 0)).x(),
+        ),
+    )
+    if not cards:
+        return []
+    top = cards[0].mapTo(page, QPoint(0, 0)).y()
+    return [card for card in cards if abs(card.mapTo(page, QPoint(0, 0)).y() - top) < 5]
+
+
+@pytest.mark.parametrize("spot", ["first", "middle", "last"])
 @pytest.mark.parametrize("detail", [True, False], ids=["detail-open", "detail-closed"])
 @pytest.mark.parametrize("compact", [False, True], ids=["roomy", "compact"])
-def test_the_popover_never_covers_its_own_tile(app, which, detail, compact):
+def test_the_popover_never_covers_its_own_tile(app, spot, detail, compact):
     page = make_page(app, quick_preview=True)
     page.set_compact(compact)
     pump(10)
@@ -249,7 +264,10 @@ def test_the_popover_never_covers_its_own_tile(app, which, detail, compact):
         page.clear_selection()
         pump(10)
 
-    identifier = page._shown[which].identifier
+    row = first_row(page)
+    picker = {"first": row[0], "middle": row[len(row) // 2], "last": row[-1]}
+    tile_card = picker[spot]
+    identifier = next(key for key, value in page._cards.items() if value is tile_card)
     card = open_on(page, identifier)
     preview = page.preview
     tile = QRect(card.mapTo(page, QPoint(0, 0)), card.size())
