@@ -244,8 +244,11 @@ def _year_range_row(
     row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
     row.get_style_context().add_class("filter-row")
     row.set_margin_top(6)
+    # Same heading style as "Released", so the row reads as part of the filter
+    # column instead of a form dropped into it.
     caption = Gtk.Label(label="Years", xalign=0)
-    caption.get_style_context().add_class("dim")
+    caption.get_style_context().add_class("filter-title")
+    caption.set_valign(Gtk.Align.CENTER)
     row.pack_start(caption, False, False, 0)
 
     def changed(*_args) -> bool:
@@ -254,8 +257,11 @@ def _year_range_row(
 
     def entry(placeholder: str) -> Gtk.Entry:
         field = Gtk.Entry()
-        field.set_width_chars(5)
+        field.set_width_chars(6)
         field.set_max_width_chars(6)
+        # .filter-year gives the field the chips' text size and height; without
+        # it the entries tower over the decade chips beside them.
+        field.get_style_context().add_class("filter-year")
         field.set_placeholder_text(placeholder)
         field.set_input_purpose(Gtk.InputPurpose.DIGITS)
         field.set_tooltip_text(
@@ -269,10 +275,13 @@ def _year_range_row(
     start = entry("From")
     end = entry("To")
     dash = Gtk.Label(label="\u2013")
-    dash.get_style_context().add_class("dim")
-    row.pack_start(start, True, True, 0)
+    dash.get_style_context().add_class("filter-title")
+    dash.set_valign(Gtk.Align.CENTER)
+    # Not expanding: the fields keep their six characters instead of stretching
+    # across the column, which is what made them look oversized.
+    row.pack_start(start, False, False, 0)
     row.pack_start(dash, False, False, 0)
-    row.pack_start(end, True, True, 0)
+    row.pack_start(end, False, False, 0)
     return row, start, end
 
 
