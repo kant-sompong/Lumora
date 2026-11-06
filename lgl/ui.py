@@ -6538,6 +6538,7 @@ class MainWindow(Gtk.ApplicationWindow):
         add_item("Command palette…", self.show_palette)
         add_item("Release calendar…", self.show_calendar)
         add_item("Recently viewed…", self.show_recent)
+        add_item("Collections…", lambda: __import__("lgl.gtk_collections", fromlist=["show_collections"]).show_collections(self))
         add_item("Tools…", self.show_tools)
         add_item("Surprise me…", lambda: __import__("lgl.gtk_surprise", fromlist=["surprise"]).surprise(self))
         add_item("Statistics…", lambda: __import__("lgl.gtk_stats", fromlist=["show_statistics"]).show_statistics(self))
