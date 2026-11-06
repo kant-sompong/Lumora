@@ -2331,7 +2331,7 @@ class LibraryDetail(Gtk.Box):
                 kind="game",
                 key=entry.identifier,
                 title=entry.title,
-                subtitle=entry.display_subtitle(),
+                subtitle=entry.display_subtitle,
             )
         self._entry = entry
         self._show_copies(list(copies or []))
