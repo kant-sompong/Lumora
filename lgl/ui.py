@@ -3223,6 +3223,13 @@ class LibraryView(Gtk.Box):
         self._rescan_btn.connect("clicked", lambda *_: self.rescan())
         row.pack_start(self._rescan_btn, False, False, 0)
 
+        # Bulk selection lives in gtk_bulk; the toolbar only hosts its toggle
+        # and the bar it reveals, so the rules stay in one place.
+        from .gtk_bulk import BulkActions
+
+        self.bulk = BulkActions(self)
+        row.pack_start(self.bulk.toggle, False, False, 0)
+
         more = Gtk.MenuButton()
         more.set_tooltip_text("More library actions")
         more.set_valign(Gtk.Align.CENTER)
@@ -3251,6 +3258,7 @@ class LibraryView(Gtk.Box):
         row.pack_start(more, False, False, 0)
 
         toolbar.pack_start(row, False, False, 0)
+        toolbar.pack_start(self.bulk.bar, False, False, 0)
 
         meta = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         meta.get_style_context().add_class("library-meta")
@@ -3480,6 +3488,9 @@ class LibraryView(Gtk.Box):
             self._tiles[entry.identifier] = tile
             self._flow.add(tile)
         self._flow.show_all()
+        bulk = getattr(self, "bulk", None)
+        if bulk is not None:
+            bulk.sync()
 
         if selected_id is not None and selected_id in self._tiles:
             GLib.idle_add(self._reselect_tile, selected_id)
