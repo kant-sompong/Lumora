@@ -1102,7 +1102,7 @@ class LibraryPage(QWidget):
                 kind="game",
                 key=entry.identifier,
                 title=entry.title,
-                subtitle=entry.display_subtitle(),
+                subtitle=entry.display_subtitle,
             )
 
     def clear_selection(self) -> None:
