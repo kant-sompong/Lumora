@@ -54,6 +54,7 @@ from . import magnet as magnetlib  # noqa: E402
 from . import metadata as metalib  # noqa: E402
 from . import theme_gtk  # noqa: E402
 from . import view_prefs
+from .gtk_quick_preview import QuickPreview  # noqa: E402
 from .archive import (  # noqa: E402
     ArchiveClient,
     ArchiveError,
@@ -3300,6 +3301,8 @@ class LibraryView(Gtk.Box):
         self._flow.get_style_context().add_class("library-flow")
         self._flow.get_accessible().set_name("Local game library")
         self._flow.connect("selected-children-changed", self._on_selection_changed)
+        self.preview = QuickPreview(self)
+        self.preview.attach(self._flow)
 
         scroller = Gtk.ScrolledWindow()
         scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
@@ -3473,6 +3476,7 @@ class LibraryView(Gtk.Box):
         return count
 
     def _populate(self, entries: Sequence[LibraryEntry]) -> None:
+        self.preview.grid_rebuilt()
         selected = self._selected_entry()
         selected_id = selected.identifier if selected is not None else None
         for child in list(self._flow.get_children()):
@@ -3487,6 +3491,7 @@ class LibraryView(Gtk.Box):
             )
             self._tiles[entry.identifier] = tile
             self._flow.add(tile)
+            self.preview.track(tile)
         self._flow.show_all()
         bulk = getattr(self, "bulk", None)
         if bulk is not None:
@@ -3842,6 +3847,7 @@ class LibraryView(Gtk.Box):
         return tile.entry if isinstance(tile, LibraryTile) else None
 
     def _on_selection_changed(self, _flow: Gtk.FlowBox) -> None:
+        self.preview.selection_changed()
         entry = self._selected_entry()
         if entry is None:
             self._detail_revealer.set_reveal_child(False)
@@ -3881,6 +3887,7 @@ class LibraryView(Gtk.Box):
         return False
 
     def clear_selection(self) -> None:
+        self.preview.selection_changed()
         self._flow.unselect_all()
         self._detail_revealer.set_reveal_child(False)
         GLib.idle_add(self._release_split)
