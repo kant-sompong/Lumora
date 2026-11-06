@@ -6503,6 +6503,7 @@ class MainWindow(Gtk.ApplicationWindow):
         menu.append(Gtk.SeparatorMenuItem())
         add_item("Command palette…", self.show_palette)
         add_item("Release calendar…", self.show_calendar)
+        add_item("Discover…", lambda: __import__("lgl.gtk_discover", fromlist=["show_discover"]).show_discover(self, self.settings))
         add_item("Recently viewed…", self.show_recent)
         add_item("Tools…", self.show_tools)
         add_item("Settings…", lambda: self.show_settings())
