@@ -397,6 +397,19 @@ QPushButton#kebab {{
     border-radius: {md}px; padding: 0;
 }}
 QPushButton#kebab:hover {{ background: {c['hover']}; }}
+
+/* ---- bulk selection --------------------------------------------------- */
+QWidget#bulkBar {{
+    background: {c['surface']}; border-bottom: 1px solid {alpha(fg, 0.07)};
+}}
+QLabel#bulkCount {{ font-weight: 600; }}
+QLabel#bulkDivider {{ color: {c['faint']}; }}
+QLabel#bulkReport {{ color: {c['muted']}; font-size: {small}px; }}
+QCheckBox#tileCheck {{
+    background: {alpha(c['bg'], 0.82)}; border: 1px solid {alpha(fg, 0.16)};
+    border-radius: {sm}px; padding: 1px 3px; margin: 2px 0 2px 2px;
+}}
+QCheckBox#tileCheck::indicator {{ width: 13px; height: 13px; }}
 """
     if not compact:
         return qss

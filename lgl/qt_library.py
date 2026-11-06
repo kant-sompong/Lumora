@@ -212,7 +212,14 @@ class LibraryCard(QFrame):
 
     def resizeEvent(self, event) -> None:  # noqa: N802
         super().resizeEvent(event)
-        self.cover.setFixedHeight(max(140, self.width()))
+        height = max(140, self.width())
+        self.cover.setFixedHeight(height)
+        # The cover is square and sized from the card's width, which can exceed
+        # the slot the grid first gave the card; raising the card's minimum
+        # height keeps the title (and a bulk check box) below the artwork
+        # instead of under it.
+        rest = self.layout().sizeHint().height() - self.cover.height()
+        self.setMinimumHeight(height + max(0, rest))
 
     def set_selected(self, on: bool) -> None:
         self._flag("selected", on)
@@ -806,6 +813,13 @@ class LibraryPage(QWidget):
         self.filter_btn.setCursor(Qt.PointingHandCursor)
         self.filter_btn.clicked.connect(self._show_filters)
         bar.addWidget(self.filter_btn)
+
+        # Bulk selection: the bar underneath and the actions it runs come
+        # from qt_bulk, which writes the shared library_tools plans.
+        from .qt_bulk import QtBulk
+
+        self.bulk = QtBulk(self)
+        bar.addWidget(self.bulk.toggle)
         self.refresh_btn = IconButton("refresh", "Rescan the library", 17, 34)
         self.refresh_btn.clicked.connect(self.rescan)
         bar.addWidget(self.refresh_btn)
@@ -813,6 +827,7 @@ class LibraryPage(QWidget):
         self.more.clicked.connect(self._more_menu)
         bar.addWidget(self.more)
         layout.addWidget(toolbar)
+        layout.addWidget(self.bulk.bar)
 
         self.stats = label("", "statLine")
         self.stats.setContentsMargins(30, 0, 24, 10)
@@ -1044,6 +1059,10 @@ class LibraryPage(QWidget):
         card = self._cards.get(self._selected)
         if card is not None:
             card.set_selected(True)  # type: ignore[attr-defined]
+        bulk = getattr(self, "bulk", None)
+        if bulk is not None:
+            # The tiles were just rebuilt, so the checks go back on them.
+            bulk.sync()
         self._load_covers()
 
     def _wire(self, card: QWidget, entry: LibraryEntry) -> None:
