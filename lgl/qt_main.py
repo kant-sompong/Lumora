@@ -463,6 +463,7 @@ class Window(QMainWindow):
             ("Discover…", self.show_discover),
             ("Favourites…", self.show_favourites),
             ("Activity…", self.show_activity),
+            ("Collections…", self.show_collections),
         ):
             action = library_menu.addAction(label)
             action.triggered.connect(slot)
@@ -665,6 +666,14 @@ class Window(QMainWindow):
     def show_favourites(self) -> None:
         rows = [row | {"kind": "game"} for row in self._library_rows() if row.get("favorite")]
         FavouritesDialog(rows, self).exec()
+
+    def show_collections(self) -> None:
+        """Create collections and put library titles in them."""
+        from .collections import COLLECTIONS_FILENAME, CollectionStore
+        from .qt_collections import CollectionsDialog
+
+        store = CollectionStore(platform_support.data_dir() / COLLECTIONS_FILENAME)
+        CollectionsDialog(store, list(self.library._entries), self).exec()  # noqa: SLF001
 
     def show_activity(self) -> None:
         from .qt_stats import build_events

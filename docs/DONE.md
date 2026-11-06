@@ -166,3 +166,11 @@ activity timeline, season comparison), all opened from a new **Library tools** m
 downloaded file is touched.
 Verified: `pytest tests` 479 passed, 3 skipped; `python -m compileall lgl` clean.
 Not verified: no window was opened on a desktop, and GTK has none of this yet.
+
+## 2026-11-06 - Collections editor (3.2.15, Qt)
+
+Started and finished the visible half of collections: `lgl/qt_collections.py` lists collections
+with their members, creates, renames, deletes, and adds or removes library titles through
+`CollectionStore`. Opened from **Library tools -> Collections...**.
+Verified: 482 passed, 3 skipped offscreen; `compileall` clean. Not verified: no desktop run, and
+GTK has no collections screen.
