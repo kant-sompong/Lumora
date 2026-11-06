@@ -36,3 +36,5 @@ downloads.json
 library.json
 catalog.json
 config.json
+# Rendered screenshots and probes
+artifacts/
