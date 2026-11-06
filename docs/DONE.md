@@ -174,3 +174,11 @@ with their members, creates, renames, deletes, and adds or removes library title
 `CollectionStore`. Opened from **Library tools -> Collections...**.
 Verified: 482 passed, 3 skipped offscreen; `compileall` clean. Not verified: no desktop run, and
 GTK has no collections screen.
+
+## 2026-11-06 - Keyboard shortcut editor (3.3.30, Qt)
+
+`lgl/shortcut_prefs.py` stores overrides in settings and rejects empty or duplicate bindings;
+`lgl/qt_shortcuts.py` edits them for the actions the window installs, and `qt_main` builds its
+`QShortcut`s from the saved values. Opened from **Library tools -> Keyboard shortcuts...**.
+Verified: 485 passed, 3 skipped offscreen; compileall clean. Not verified: no desktop run, and
+changes take effect the next time the window opens (GTK has no equivalent).
