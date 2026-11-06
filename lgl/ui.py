@@ -6539,6 +6539,8 @@ class MainWindow(Gtk.ApplicationWindow):
         add_item("Release calendar…", self.show_calendar)
         add_item("Recently viewed…", self.show_recent)
         add_item("Tools…", self.show_tools)
+        add_item("Surprise me…", lambda: __import__("lgl.gtk_surprise", fromlist=["surprise"]).surprise(self))
+        add_item("Statistics…", lambda: __import__("lgl.gtk_stats", fromlist=["show_statistics"]).show_statistics(self))
         add_item("Settings…", lambda: self.show_settings())
         add_item("About Lumora", self.show_about)
         menu.show_all()
