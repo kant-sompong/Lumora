@@ -304,7 +304,11 @@ class CollectionsWindow(Gtk.Window):
         collection = self.store.get(collection_id)
         if collection is None or collection.smart:
             return 0
-        added = self.store.add(collection_id, [key])
+        wanted = str(key or "").strip()
+        known = {key_of(entry) for entry in self.entries}
+        if not wanted or wanted not in known:
+            return 0
+        added = self.store.add(collection_id, [wanted])
         self.refresh()
         return added
 
@@ -341,7 +345,9 @@ class CollectionsWindow(Gtk.Window):
             self.delete()
 
     def _add_clicked(self) -> None:
-        self.add_title(str(self.picker.get_active_id() or ""))
+        key = str(self.picker.get_active_id() or "")
+        if key:
+            self.add_title(key)
 
     def _remove_clicked(self) -> None:
         key = self.current_member()

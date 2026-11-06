@@ -100,6 +100,19 @@ def test_blank_and_duplicate_names_are_refused(display):
         win.destroy()
 
 
+def test_a_title_outside_the_library_is_not_added(display):
+    store = CollectionStore()
+    win = window(store=store)
+    try:
+        assert win.create("Co-op") is True
+        assert win.add_title("not-in-library") == 0
+        assert win.members.get_children() == []
+        assert store.members(win.current_id()) == []
+        assert row_titles(win.list) == ["Co-op (0)"]
+    finally:
+        win.destroy()
+
+
 def test_removing_a_title_and_deleting_a_collection(display):
     store = CollectionStore()
     win = window(store=store)
