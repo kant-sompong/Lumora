@@ -470,6 +470,7 @@ class Window(QMainWindow):
             ("Activity…", self.show_activity),
             ("Collections…", self.show_collections),
             ("Keyboard shortcuts…", self.show_shortcuts),
+            ("Profiles…", self.show_profiles),
         ):
             action = library_menu.addAction(label)
             action.triggered.connect(slot)
@@ -672,6 +673,13 @@ class Window(QMainWindow):
     def show_favourites(self) -> None:
         rows = [row | {"kind": "game"} for row in self._library_rows() if row.get("favorite")]
         FavouritesDialog(rows, self).exec()
+
+    def show_profiles(self) -> None:
+        """Choose which profile's library and settings the next start uses."""
+        from .profiles import PROFILES_FILE, Profiles
+        from .qt_profiles import ProfilesDialog
+
+        ProfilesDialog(Profiles(platform_support.data_dir() / PROFILES_FILE), self).exec()
 
     def show_shortcuts(self) -> None:
         """Rebind the keys; the window picks them up the next time it opens."""
