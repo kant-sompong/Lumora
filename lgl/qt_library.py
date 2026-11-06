@@ -58,11 +58,11 @@ from .qt_widgets import (
     ViewToggle,
     cached_image_bytes,
     clear_layout,
+    color,
     label,
     pixmap_from_bytes,
     run_async,
     scroll_page,
-    search_icon,
     space,
 )
 from .util import human_size, is_within
@@ -156,6 +156,8 @@ GRID_GAP = 12
 GRID_GAP_VERTICAL = 14
 #: Narrowest card the grid will place in a row.
 GRID_MIN_CELL = 232
+#: Compact mode packs more columns in: a smaller cell, not just a smaller gap.
+COMPACT_MIN_CELL = 165
 
 
 # --------------------------------------------------------------------------
@@ -764,6 +766,7 @@ class LibraryPage(QWidget):
         self._compact = False
         self._gap = GRID_GAP
         self._vgap = GRID_GAP_VERTICAL
+        self._min_cell = GRID_MIN_CELL
         self.popover: LibraryFilters | None = None
 
         root = QHBoxLayout(self)
@@ -782,14 +785,25 @@ class LibraryPage(QWidget):
         bar.setContentsMargins(24, 16, 24, 10)
         self._bar = bar
         bar.setSpacing(8)
+        # The same pill the header uses: a label beside a borderless field, so
+        # the gap between icon and placeholder is the layout spacing, not a
+        # padding that the icon's action widget already ate into.
+        self._search_pill = QFrame()
+        self._search_pill.setObjectName("librarySearchPill")
+        self._search_pill.setFixedHeight(38)
+        pill_row = QHBoxLayout(self._search_pill)
+        pill_row.setContentsMargins(14, 0, 10, 0)
+        pill_row.setSpacing(4)
+        magnifier = QLabel()
+        magnifier.setPixmap(icon("search", 15, color("faint"), 1.7).pixmap(15, 15))
+        pill_row.addWidget(magnifier, 0, Qt.AlignVCenter)
         self.search = QLineEdit()
         self.search.setObjectName("librarySearch")
         self.search.setPlaceholderText("Search library")
-        self.search.addAction(search_icon(self.palette().color(self.foregroundRole())),
-                              QLineEdit.LeadingPosition)
         self.search.textChanged.connect(self.refresh)
         self.search.setClearButtonEnabled(False)
-        bar.addWidget(self.search, 1)
+        pill_row.addWidget(self.search, 1)
+        bar.addWidget(self._search_pill, 1)
 
         self.view_toggle = ViewToggle("Grid / list")
         self.view_toggle.clicked.connect(self._toggle_view)
@@ -871,11 +885,16 @@ class LibraryPage(QWidget):
         self._bar.setContentsMargins(
             *((16, 10, 16, 6) if compact else (24, 16, 24, 10))
         )
+        self._search_pill.setFixedHeight(32 if compact else 38)
+        self._search_pill.layout().setContentsMargins(
+            *((12, 0, 10, 0) if compact else (14, 0, 10, 0))
+        )
         self._column.setContentsMargins(
             *((16, 2, 16, 12) if compact else (24, 4, 24, 20))
         )
         self._gap = 8 if compact else GRID_GAP
         self._vgap = 8 if compact else GRID_GAP_VERTICAL
+        self._min_cell = COMPACT_MIN_CELL if compact else GRID_MIN_CELL
         self.grid.setHorizontalSpacing(self._gap)
         self.grid.setVerticalSpacing(self._vgap)
         self.detail.set_compact(compact)
@@ -1013,10 +1032,7 @@ class LibraryPage(QWidget):
         if self._view == "grid":
             columns = self._columns()
             available = max(self.scroll.viewport().width() - 48, 200)
-            cell = max(180, (available - self._gap * (columns - 1)) // columns)
-            if self._compact:
-                # The gap alone barely shows; a denser grid needs smaller tiles.
-                cell = max(150, min(cell, 190))
+            cell = max(150, (available - self._gap * (columns - 1)) // columns)
             for index, entry in enumerate(self._shown):
                 card: QWidget = LibraryCard(entry)
                 card.setMinimumWidth(min(200, cell))
@@ -1054,7 +1070,7 @@ class LibraryPage(QWidget):
 
     def _columns(self) -> int:
         width = max(self.scroll.viewport().width() - 48, 200)
-        return max(1, int((width + self._gap) // (GRID_MIN_CELL + self._gap)))
+        return max(1, int((width + self._gap) // (self._min_cell + self._gap)))
 
     def eventFilter(self, watched, event) -> bool:  # noqa: N802
         if watched is self.scroll.viewport() and event.type() == QEvent.Resize:

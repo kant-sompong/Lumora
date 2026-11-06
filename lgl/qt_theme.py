@@ -126,17 +126,27 @@ QLineEdit, QComboBox, QSpinBox {{
     selection-background-color: {alpha(c['accent'], 0.45)};
 }}
 QLineEdit:focus, QComboBox:focus, QSpinBox:focus {{ border: 1px solid {c['accent']}; }}
-QLineEdit#librarySearch {{
+/* Same shape as the header's Browse pill: the magnifier is a label beside a
+   borderless field, so the gap between them is the layout's 8px spacing. */
+QFrame#librarySearchPill {{
     background: {alpha(fg, 0.05)}; border: 1px solid {alpha(fg, 0.08)};
-    border-radius: 20px; padding: 9px 16px 9px 38px;
+    border-radius: 19px;
 }}
-QLineEdit#librarySearch:focus {{ border: 1px solid {c['accent']}; }}
-/* The leading icon is an action widget, a QToolButton: without this it took
-   the raised button styling and showed as a boxed gap inside the field. */
-QLineEdit#librarySearch QToolButton {{
-    background: transparent; border: none; padding: 0; margin-left: 10px;
-}}
+QLineEdit#librarySearch {{ background: transparent; border: none; padding: 0; }}
 QComboBox::drop-down {{ border: none; width: 24px; }}
+/* Spin boxes: the default sub-control rects left the arrows clipped at the
+   right edge, so the buttons are given their own width and radius here.  QSS
+   cannot draw an arrow without an image, so SpinBox paints the chevrons. */
+QSpinBox {{ padding: 7px 30px 7px 10px; }}
+QSpinBox::up-button, QSpinBox::down-button {{
+    subcontrol-origin: border; width: 24px; background: {c['raised']};
+    border-left: 1px solid {alpha(fg, 0.12)};
+}}
+QSpinBox::up-button {{ subcontrol-position: top right; border-top-right-radius: {md}px; }}
+QSpinBox::down-button {{
+    subcontrol-position: bottom right; border-bottom-right-radius: {md}px;
+}}
+QSpinBox::up-arrow, QSpinBox::down-arrow {{ image: none; width: 0; height: 0; }}
 QComboBox QAbstractItemView {{
     background: {c['raised']}; border: 1px solid {c['divider']};
     selection-background-color: {alpha(c['accent'], 0.25)}; outline: none; padding: 4px;
@@ -174,7 +184,7 @@ QRadioButton::indicator {{
     border: 1px solid {alpha(fg, 0.28)}; background: transparent;
 }}
 QRadioButton::indicator:checked {{
-    border: 4px solid {c['accent_fill']}; background: {c['bg']};
+    background: {c['accent_fill']}; border: 4px solid {c['bg']};
 }}
 
 /* ---- scroll bars: thin overlay style -------------------------------- */
@@ -409,8 +419,9 @@ QPushButton#small {{ padding: 2px 7px; }}
 QPushButton#pill {{ padding: 3px 10px; }}
 QPushButton#filterRow {{ padding: 2px 4px; }}
 QPushButton#sheetTab {{ padding: 4px 10px; }}
-QLineEdit, QComboBox, QSpinBox {{ padding: 4px 7px; }}
-QLineEdit#librarySearch {{ padding: 5px 12px 5px 30px; border-radius: 16px; }}
+QLineEdit, QComboBox {{ padding: 4px 7px; }}
+QFrame#librarySearchPill {{ border-radius: 16px; }}
+QSpinBox {{ padding: 4px 26px 4px 7px; }}
 QMenu::item {{ padding: 4px 20px 4px 12px; }}
 QLabel#coverTitle {{ font-size: {small}px; }}
 QLabel#coverMeta, QLabel#listMeta {{ font-size: {small}px; }}

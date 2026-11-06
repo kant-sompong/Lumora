@@ -18,7 +18,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 pytest.importorskip("PySide6.QtWidgets")
 pytest.importorskip("PySide6.QtTest")
 
-from PySide6.QtCore import Qt  # noqa: E402
+from PySide6.QtCore import QPoint, Qt  # noqa: E402
 from PySide6.QtGui import QColor, QKeySequence  # noqa: E402
 from PySide6.QtTest import QTest  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
@@ -303,6 +303,58 @@ def test_transitions_fade_then_switch_instantly(app, window, settings):
 # --------------------------------------------------------------------------
 
 
+def runs_of(columns: list[int], join: int = 3) -> list[tuple[int, int]]:
+    """Group ink columns into runs, tolerating ``join`` px inside a glyph run."""
+    runs: list[list[int]] = []
+    for x in columns:
+        if runs and x - runs[-1][1] <= join:
+            runs[-1][1] = x
+        else:
+            runs.append([x, x])
+    return [(start, end) for start, end in runs]
+
+
+def icon_to_text_gap(window):
+    """Measure the icon and the placeholder in the rendered window.
+
+    Returns ``(icon_run, text_run, gap)`` in field coordinates: the number of
+    pixels between the magnifier's right edge and the first text pixel.
+    """
+    pill = window.library._search_pill
+    window.library.search.clear()
+    application = QApplication.instance()
+    application.processEvents()
+    assert pill.width() > 100, f"the search pill was never laid out ({pill.width()}px)"
+    image = window.grab().toImage()
+    origin = pill.mapTo(window, QPoint(0, 0))
+    left, top = origin.x(), origin.y()
+    width, height = pill.width(), pill.height()
+    background = image.pixelColor(left + width - 14, top + height // 2).lightness()
+    columns: list[int] = []
+    for x in range(left + 2, left + width - 2):
+        for y in range(top + 5, top + height - 5):
+            if abs(image.pixelColor(x, y).lightness() - background) > 25:
+                columns.append(x - left)
+                break
+    runs = runs_of(columns)
+    assert len(runs) >= 2, f"no icon and text found in the search pill: runs={runs}"
+    icon, text = runs[0], runs[1]
+    return icon, text, text[0] - icon[1] - 1
+
+
+def test_library_search_icon_and_placeholder_sit_together(app, window, settings):
+    """Room to the right of the magnifier is 8px, not a 40px hole."""
+    window.show_view("library")
+    pump(app)
+    icon, text, roomy_gap = icon_to_text_gap(window)
+    view_prefs.set_compact(settings, True)
+    window.apply_interface_prefs()
+    pump(app)
+    icon, text, compact_gap = icon_to_text_gap(window)
+    assert roomy_gap <= 8, f"roomy gap is {roomy_gap}px (icon {icon}, text {text})"
+    assert compact_gap <= 8, f"compact gap is {compact_gap}px (icon {icon}, text {text})"
+
+
 def test_compact_resizes_grid_cards_already_drawn(app, window, settings, tmp_path):
     """Toggling compact in grid view must resize the cards, not just the gaps."""
     window.library.set_entries([_entry(tmp_path)])
@@ -330,12 +382,96 @@ def test_compact_library_search_keeps_the_icon_and_the_pill(app, window, setting
     pump(app)
     sheet = QApplication.instance().styleSheet()
     compact_block = sheet.split("compact density", 1)[1]
-    body = rule(compact_block, "QLineEdit#librarySearch")
-    assert "border-radius" in body, f"compact library search lost its pill: {body!r}"
-    assert "30px" in body, f"compact library search left padding is wrong: {body!r}"
-    icon = rule(sheet, "QLineEdit#librarySearch QToolButton")
-    assert icon, "the leading search icon still takes the raised button styling"
-    assert "transparent" in icon
+    assert "border-radius" in rule(compact_block, "QFrame#librarySearchPill")
+    assert "transparent" in rule(sheet, "QLineEdit#librarySearch")
+    assert window.library._search_pill.height() == 32
+
+
+def _many_entries(tmp_path, count: int = 8) -> list[LibraryEntry]:
+    made = []
+    for index in range(count):
+        folder = tmp_path / f"game-{index}"
+        folder.mkdir(exist_ok=True)
+        made.append(LibraryEntry(
+            identifier=f"game-{index}", title=f"Game {index}", year="1999",
+            size=1024 + index, folder=str(folder), status="ready",
+        ))
+    return made
+
+
+def visible_columns(window) -> int:
+    """How many distinct card columns the library grid actually placed."""
+    return len({card.x() for card in window.library._cards.values()})
+
+
+def test_compact_grid_fits_more_columns_at_the_same_width(app, window, settings, tmp_path):
+    """Compact mode must pack more tiles per row, not just smaller ones."""
+    window.library.set_entries(_many_entries(tmp_path))
+    window.show_view("library")
+    window.library._view = "grid"
+    window.library._render()
+    pump(app)
+    roomy = visible_columns(window)
+
+    view_prefs.set_compact(settings, True)
+    window.apply_interface_prefs()
+    pump(app)
+    compact = visible_columns(window)
+
+    assert compact >= 6, f"only {compact} columns at 1280px (roomy had {roomy})"
+    assert compact > roomy, f"compact {compact} is not denser than roomy {roomy}"
+
+
+def test_switches_and_radios_are_painted_shapes_in_the_accent(app, window, settings):
+    """The toggles are a track and a knob, and they take the chosen accent."""
+    from lgl.qt_settings import RadioDot, Switch
+
+    view_prefs.set_accent(settings, "#8b5cf6")
+    window.apply_interface_prefs()
+    pump(app)
+    palette = qt_widgets.THEME_STATE["palette"]
+    accent_fill = QColor(palette["accent_fill"])
+
+    switch = Switch(True)
+    switch.show()
+    pump(app, 0.05)
+    image = switch.grab().toImage()
+    corner = image.pixelColor(1, 1)
+    track = image.pixelColor(6, 10)
+    knob = image.pixelColor(28, 10)
+    assert track.alpha() > 0 and track != corner, "the switch is painted as a filled square"
+    assert knob != track, "the switch has no knob"
+    assert (track.red(), track.green(), track.blue()) == (
+        accent_fill.red(), accent_fill.green(), accent_fill.blue()
+    ), f"the track is not the accent: {track.name()} vs {accent_fill.name()}"
+
+    dot = RadioDot(True)
+    dot.show()
+    pump(app, 0.05)
+    centre = dot.grab().toImage().pixelColor(10, 10)
+    assert (centre.red(), centre.green(), centre.blue()) == (
+        accent_fill.red(), accent_fill.green(), accent_fill.blue()
+    ), f"the radio dot is not the accent: {centre.name()}"
+
+    # The spin box buttons used to clip, and then hide, their arrows entirely.
+    spin = qt_settings.SpinBox()
+    spin.setRange(0, 99)
+    spin.setValue(30)
+    spin.setFixedSize(84, 30)
+    spin.show()
+    pump(app, 0.05)
+    shot = spin.grab().toImage()
+    button = shot.pixelColor(shot.width() - 3, shot.height() // 2).lightness()
+    for top in (0, shot.height() // 2):
+        arrow_pixels = sum(
+            1
+            for x in range(shot.width() - 22, shot.width() - 2)
+            for y in range(top + 2, top + shot.height() // 2 - 2)
+            if abs(shot.pixelColor(x, y).lightness() - button) > 20
+        )
+        assert arrow_pixels > 10, (
+            f"no chevron in the spin box button at y={top}: {arrow_pixels} px"
+        )
 
 
 def test_custom_accent_reaches_tabs_and_list_selection(app, window, settings):

@@ -11,8 +11,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Callable, Sequence
 
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor
+from PySide6.QtCore import QPointF, QRectF, QSize, Qt
+from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import (
     QCheckBox,
     QColorDialog,
@@ -28,17 +28,137 @@ from PySide6.QtWidgets import (
     QScrollArea,
     QSpinBox,
     QStackedWidget,
+    QStyle,
+    QStyleOptionSpinBox,
     QVBoxLayout,
     QWidget,
 )
 
 from . import __version__, mal, platform_support, streaming, theme, tmdb, view_prefs
-from .qt_widgets import Toast, label, run_async
+from .qt_widgets import Toast, alpha_color, color, label, run_async
 from .settings import Settings
 from .sources import RawgSource
 
 TABS = (("general", "General"), ("locations", "Locations"),
         ("providers", "Providers"), ("media", "Media"), ("shortcuts", "Shortcuts"))
+
+
+class Switch(QCheckBox):
+    """A checkbox painted as a switch: a track with a knob.
+
+    QSS can style a checkbox indicator but cannot draw a knob, and a filled
+    square does not read as a switch.  QSS also cannot follow the accent for a
+    two-part shape, so these toggles paint themselves.  It is still a
+    ``QCheckBox``, so ``toggled`` and ``setChecked`` behave as before.
+    """
+
+    TRACK_WIDTH = 38
+    TRACK_HEIGHT = 20
+
+    def __init__(self, checked: bool = False, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setChecked(checked)
+        self.setCursor(Qt.PointingHandCursor)
+        self.setFixedSize(self.TRACK_WIDTH, self.TRACK_HEIGHT)
+
+    def sizeHint(self) -> QSize:  # noqa: N802 - Qt API
+        return QSize(self.TRACK_WIDTH, self.TRACK_HEIGHT)
+
+    def hitButton(self, pos) -> bool:  # noqa: N802 - the whole track is the target
+        return self.rect().contains(pos)
+
+    def paintEvent(self, _event) -> None:  # noqa: N802 - Qt API
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        width, height = self.TRACK_WIDTH, self.TRACK_HEIGHT
+        rect = QRectF(1, 1, width - 2, height - 2)
+        on = self.isChecked()
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(color("accent_fill") if on else alpha_color("text", 0.18))
+        painter.drawRoundedRect(rect, rect.height() / 2, rect.height() / 2)
+        knob = height - 8
+        left = rect.right() - knob - 2 if on else rect.left() + 2
+        painter.setBrush(color("on_accent") if on else alpha_color("text", 0.72))
+        painter.drawEllipse(QRectF(left, rect.top() + 2, knob, knob))
+        if self.hasFocus():
+            # Keep the ring inside the widget: an outward one gets clipped and
+            # reads as a square corner at the top and bottom.
+            painter.setBrush(Qt.NoBrush)
+            painter.setPen(QPen(color("accent"), 1.2))
+            inside = rect.adjusted(1.2, 1.2, -1.2, -1.2)
+            painter.drawRoundedRect(inside, inside.height() / 2, inside.height() / 2)
+
+
+class RadioDot(QRadioButton):
+    """A radio painted as a ring with a dot, so picked and unpicked match."""
+
+    SIZE = 22
+
+    def __init__(self, checked: bool = False, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setChecked(checked)
+        self.setCursor(Qt.PointingHandCursor)
+        self.setFixedSize(self.SIZE, self.SIZE)
+
+    def sizeHint(self) -> QSize:  # noqa: N802 - Qt API
+        return QSize(self.SIZE, self.SIZE)
+
+    def hitButton(self, pos) -> bool:  # noqa: N802 - the whole ring is the target
+        return self.rect().contains(pos)
+
+    def paintEvent(self, _event) -> None:  # noqa: N802 - Qt API
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        on = self.isChecked()
+        ring = QRectF(3, 3, self.SIZE - 6, self.SIZE - 6)
+        painter.setBrush(Qt.NoBrush)
+        painter.setPen(QPen(
+            color("accent_fill") if on else alpha_color("text", 0.32), 1.6
+        ))
+        painter.drawEllipse(ring)
+        if on:
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(color("accent_fill"))
+            painter.drawEllipse(ring.adjusted(5, 5, -5, -5))
+        if self.hasFocus():
+            painter.setBrush(Qt.NoBrush)
+            painter.setPen(QPen(color("accent"), 1.2))
+            painter.drawEllipse(QRectF(1.2, 1.2, self.SIZE - 2.4, self.SIZE - 2.4))
+
+
+class SpinBox(QSpinBox):
+    """A spin box that paints its own chevrons.
+
+    QSS can size the up and down buttons but cannot draw an arrow without an
+    ``image:``, so the arrows came out invisible (and clipped before that).
+    These are drawn inside the button rects the style reports, sized to them.
+    """
+
+    def paintEvent(self, event) -> None:  # noqa: N802 - Qt API
+        super().paintEvent(event)
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        option = QStyleOptionSpinBox()
+        self.initStyleOption(option)
+        pen = QPen(alpha_color("text", 0.68), 1.6)
+        pen.setCapStyle(Qt.RoundCap)
+        pen.setJoinStyle(Qt.RoundJoin)
+        painter.setPen(pen)
+        painter.setBrush(Qt.NoBrush)
+        for sub, up in ((QStyle.SC_SpinBoxUp, True), (QStyle.SC_SpinBoxDown, False)):
+            box = self.style().subControlRect(QStyle.CC_SpinBox, option, sub, self)
+            width = min(8.0, box.width() - 8.0)
+            height = min(5.0, box.height() - 6.0)
+            if width < 4 or height < 2:
+                continue
+            cx, cy = box.center().x() + 0.5, box.center().y() + 0.5
+            tip = cy - height / 2 if up else cy + height / 2
+            base = cy + height / 2 if up else cy - height / 2
+            painter.drawPolyline([
+                QPointF(cx - width / 2, base),
+                QPointF(cx, tip),
+                QPointF(cx + width / 2, base),
+            ])
 
 
 class SettingRow(QWidget):
@@ -168,8 +288,7 @@ class SettingsDialog(QDialog):
         ))
 
         if platform_support.notification_backend():
-            notify = QCheckBox()
-            notify.setChecked(bool(self.settings.get("desktop_notifications", True)))
+            notify = Switch(bool(self.settings.get("desktop_notifications", True)))
             notify.toggled.connect(
                 lambda on: self.settings.set("desktop_notifications", bool(on))
             )
@@ -179,8 +298,7 @@ class SettingsDialog(QDialog):
                 notify,
             ))
 
-        rescan = QCheckBox()
-        rescan.setChecked(bool(self.settings.get("rescan_on_startup", True)))
+        rescan = Switch(bool(self.settings.get("rescan_on_startup", True)))
         rescan.toggled.connect(lambda on: self.settings.set("rescan_on_startup", bool(on)))
         column.addWidget(SettingRow(
             "Rescan library on startup",
@@ -231,14 +349,12 @@ class SettingsDialog(QDialog):
             ("light", "Light", "Use a light palette for this window."),
             ("dark", "Dark", "Use a dark palette for this window."),
         ):
-            radio = QRadioButton()
-            radio.setChecked(theme.normalize_mode(self.settings.theme) == key)
+            radio = RadioDot(theme.normalize_mode(self.settings.theme) == key)
             radio.toggled.connect(lambda on, k=key: self._set_theme(k) if on else None)
             self._theme_buttons[key] = radio
             column.addWidget(SettingRow(text, description, radio))
 
-        compact = QCheckBox()
-        compact.setChecked(view_prefs.compact(self.settings))
+        compact = Switch(view_prefs.compact(self.settings))
         compact.toggled.connect(self._set_compact)
         self._compact_box = compact
         column.addWidget(SettingRow(
@@ -285,8 +401,7 @@ class SettingsDialog(QDialog):
             accent_row,
         ))
 
-        missing = QCheckBox()
-        missing.setChecked(self.settings.library_show_missing)
+        missing = Switch(self.settings.library_show_missing)
         missing.toggled.connect(self.settings.set_library_show_missing)
         column.addWidget(SettingRow(
             "Show missing library entries",
@@ -302,7 +417,7 @@ class SettingsDialog(QDialog):
         return body
 
     def _spin(self, low: int, high: int, value: int) -> QSpinBox:
-        box = QSpinBox()
+        box = SpinBox()
         box.setRange(low, high)
         box.setValue(int(value))
         box.setFixedWidth(84)
@@ -582,8 +697,7 @@ class SettingsDialog(QDialog):
             self._audio,
         ))
 
-        autoplay = QCheckBox()
-        autoplay.setChecked(bool(self.settings.get("media_autoplay", True)))
+        autoplay = Switch(bool(self.settings.get("media_autoplay", True)))
         autoplay.toggled.connect(lambda on: self.settings.set("media_autoplay", bool(on)))
         column.addWidget(SettingRow(
             "Autoplay", "Start playing as soon as an episode or movie opens.", autoplay
@@ -677,4 +791,4 @@ class AboutDialog(QDialog):
         column.addLayout(row)
 
 
-__all__ = ["AboutDialog", "SettingsDialog"]
+__all__ = ["AboutDialog", "RadioDot", "SettingsDialog", "SpinBox", "Switch"]
