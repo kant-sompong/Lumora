@@ -115,10 +115,10 @@ class HiddenGemsPage(Gtk.Box):
         self.list = Gtk.ListBox()
         self.list.set_selection_mode(Gtk.SelectionMode.SINGLE)
         self.list.connect("row-selected", self._on_selected)
-        scroller = Gtk.ScrolledWindow()
-        scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-        scroller.add(self.list)
-        self.pack_start(scroller, True, True, 0)
+        self.scroller = Gtk.ScrolledWindow()
+        self.scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        self.scroller.add(self.list)
+        self.pack_start(self.scroller, True, True, 0)
 
         self.detail = Gtk.Label(label=HINT, xalign=0)
         self.detail.set_line_wrap(True)
@@ -196,7 +196,11 @@ class HiddenGemsPage(Gtk.Box):
         self.refresh_btn.set_sensitive(True)
         self.status.set_text(result.note())
         self.error.set_text(result.error_text)
-        if result.error_text:
+        failed = bool(result.error_text)
+        # A failure leaves one readable line, not empty boxes.
+        self.scroller.set_visible(not failed)
+        self.detail.set_visible(not failed)
+        if failed:
             self.error.show()
         else:
             self.error.hide()

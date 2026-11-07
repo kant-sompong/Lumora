@@ -195,7 +195,11 @@ class HiddenGemsPanel(QWidget):
         self.refresh_btn.setEnabled(True)
         self.status.setText(result.note())
         self.error.setText(result.error_text)
-        self.error.setVisible(bool(result.error_text))
+        failed = bool(result.error_text)
+        self.error.setVisible(failed)
+        # A failure leaves one readable line, not empty boxes.
+        self.list.setVisible(not failed)
+        self.detail.setVisible(not failed)
         if result.cutoff:
             source = (
                 "from the control" if result.max_popularity
@@ -219,6 +223,8 @@ class HiddenGemsPanel(QWidget):
         self.status.setText("")
         self.error.setText(f"Could not load: {season_data.reason_of(exc)}")
         self.error.setVisible(True)
+        self.list.setVisible(False)
+        self.detail.setVisible(False)
 
     # -- behaviour ------------------------------------------------------
     def _on_selected(self, current: QListWidgetItem | None, _previous: Any = None) -> None:

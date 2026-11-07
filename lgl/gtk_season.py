@@ -98,6 +98,8 @@ class SeasonCompareWindow(Gtk.Window):
         outer.pack_start(self.error, False, False, 0)
 
         self.lists: dict[str, Gtk.ListBox] = {}
+        self.section_heads: dict[str, Gtk.Label] = {}
+        self.scrollers: dict[str, Gtk.ScrolledWindow] = {}
         for key, title in SECTIONS:
             label = Gtk.Label(label=title, xalign=0)
             label.get_style_context().add_class("section-label")
@@ -111,6 +113,8 @@ class SeasonCompareWindow(Gtk.Window):
             scroller.add(listing)
             outer.pack_start(scroller, True, True, 0)
             self.lists[key] = listing
+            self.section_heads[key] = label
+            self.scrollers[key] = scroller
 
         self.detail = Gtk.Label(label=HINT, xalign=0)
         self.detail.set_line_wrap(True)
@@ -211,6 +215,10 @@ class SeasonCompareWindow(Gtk.Window):
             listing = self.lists[key]
             for child in listing.get_children():
                 listing.remove(child)
+            # A failure shows the error line and the controls, not three
+            # empty boxes under their headings.
+            self.section_heads[key].set_visible(not error)
+            self.scrollers[key].set_visible(not error)
             for entry in getattr(result, key):
                 row = Gtk.ListBoxRow()
                 row.entry = dict(entry)

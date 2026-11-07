@@ -60,6 +60,7 @@ def test_refresh_lists_gems_with_score_and_popularity_rank(tmp_path):
     assert view.error.get_visible() is False
     assert int(view.popularity.get_value()) == 0
     assert "median of the fetched titles" in view.cutoff_note.get_text()
+    assert view.scroller.get_visible() is True
 
 
 def test_selecting_a_gem_shows_its_numbers(tmp_path):
@@ -79,8 +80,9 @@ def test_a_network_failure_is_a_line_not_a_blank_page(tmp_path):
     assert view.error.get_visible() is True
     assert view.error.get_text() == "Could not load: AniList: the request timed out"
     assert labels(view.list) == []
-    # the page still explains itself
-    assert view.detail.get_text() == gtk_hidden.HINT
+    # The empty list and the hint under it are hidden, not left as boxes.
+    assert view.scroller.get_visible() is False
+    assert view.detail.get_visible() is False
 
 
 def test_a_failed_load_is_retried_when_the_tab_is_opened_again(tmp_path):

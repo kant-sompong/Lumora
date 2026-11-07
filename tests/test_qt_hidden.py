@@ -63,6 +63,7 @@ def test_refresh_lists_gems_with_score_and_popularity_rank(app, tmp_path):
     assert page.error.isHidden() is True
     assert page.popularity.value() == 0
     assert "median of the fetched titles" in page.cutoff_note.text()
+    assert page.list.isHidden() is False
 
 
 def test_selecting_a_gem_shows_its_numbers(app, tmp_path):
@@ -103,9 +104,11 @@ def test_a_network_failure_is_a_line_not_a_blank_page(app, tmp_path):
     assert page.error.isHidden() is False
     assert page.error.text() == "Could not load: AniList: the request timed out"
     assert lines(page.list) == []
-    # The controls and the explanation remain; the page is never empty.
+    # The controls and the explanation remain; the empty list does not.
     assert page.score.value() == 78
     assert page.list.count() == 0
+    assert page.list.isHidden() is True
+    assert page.detail.isHidden() is True
 
 
 def test_a_failed_load_is_retried_when_the_tab_is_opened_again(app, tmp_path):

@@ -99,6 +99,7 @@ class SeasonCompareDialog(QDialog):
         layout.addWidget(self.error)
 
         self.lists: dict[str, QListWidget] = {}
+        self.section_heads: dict[str, QLabel] = {}
         for key, title in SECTIONS:
             label = QLabel(title, self)
             label.setObjectName("filter-head")
@@ -108,6 +109,7 @@ class SeasonCompareDialog(QDialog):
             widget.currentItemChanged.connect(self._on_selected)
             layout.addWidget(widget)
             self.lists[key] = widget
+            self.section_heads[key] = label
 
         self.detail = QLabel(HINT, self)
         self.detail.setObjectName("detail-note")
@@ -195,6 +197,10 @@ class SeasonCompareDialog(QDialog):
         for key, _title in SECTIONS:
             widget = self.lists[key]
             widget.clear()
+            # A failure shows the error line and the controls, not three
+            # empty boxes under their headings.
+            widget.setVisible(not error)
+            self.section_heads[key].setVisible(not error)
             for entry in getattr(result, key):
                 item = QListWidgetItem(season_data.entry_line(entry))
                 item.setData(ENTRY_ROLE, dict(entry))
