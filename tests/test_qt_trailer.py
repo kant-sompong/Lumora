@@ -118,6 +118,23 @@ def test_the_trailer_button_sits_with_watch_now_not_beside_back(app, card):
     assert page.trailer_btn.parentWidget() is page.detail_hero
 
 
+def test_a_failed_lookup_says_so_under_the_actions(app, monkeypatch, calls, card):
+    result = trailer_data.TrailerResult(error="TMDB (/movie/603/videos): offline")
+    page = page_with(app, monkeypatch, result, card=card)
+
+    assert page.trailer_btn.isHidden() is True
+    assert page.trailer_note.isHidden() is False
+    assert page.trailer_note.text() == "Trailer not available"
+    assert calls == []
+
+
+def test_no_trailer_without_a_failure_stays_quiet(app, monkeypatch, calls, card):
+    page = page_with(app, monkeypatch, trailer_data.TrailerResult(), card=card)
+
+    assert page.trailer_btn.isHidden() is True
+    assert page.trailer_note.isHidden() is True
+
+
 def test_the_fallback_dialog_never_opens_a_browser_by_itself(app, monkeypatch):
     opened: list[str] = []
     monkeypatch.setattr(platform_support, "open_url", lambda url: opened.append(url))

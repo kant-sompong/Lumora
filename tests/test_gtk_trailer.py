@@ -33,6 +33,7 @@ class Dummy:
         self._detail_token = 1
         self._settings = settings or Settings()
         self._detail_state = {"trailer_button": Gtk.Button(label="Trailer")}
+        self._trailer_note = Gtk.Label(label="")
         self.opened: list[str] = []
         self.play_calls: list[dict] = []
 
@@ -77,6 +78,19 @@ def test_no_trailer_keeps_the_button_hidden():
     dummy = Dummy()
     movies_ui.MoviesWindow._apply_trailer(dummy, 1, trailer_data.TrailerResult())
     assert dummy._detail_state["trailer_button"].get_visible() is False
+    assert dummy._trailer_note.get_visible() is False
+
+
+def test_a_failed_lookup_shows_one_dim_line():
+    dummy = Dummy()
+    movies_ui.MoviesWindow._apply_trailer(
+        dummy, 1,
+        trailer_data.TrailerResult(error="TMDB (/movie/603/videos): offline"),
+    )
+
+    assert dummy._detail_state["trailer_button"].get_visible() is False
+    assert dummy._trailer_note.get_visible() is True
+    assert dummy._trailer_note.get_text() == "Trailer not available"
 
 
 def test_autoplay_on_starts_the_trailer_muted():
