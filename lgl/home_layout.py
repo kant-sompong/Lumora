@@ -10,8 +10,12 @@ from typing import Any
 
 SETTINGS_KEY = "home_layout"
 POSTER = "poster"
+LARGE = "large"
 COMPACT = "compact"
-LAYOUTS = (POSTER, COMPACT)
+LAYOUTS = (POSTER, LARGE, COMPACT)
+CHOICES = ((POSTER, "Poster"), (LARGE, "Large"), (COMPACT, "Compact"))
+#: Card width multiplier per layout; the grid multiplies its base width by this.
+SCALES = {POSTER: 1.0, LARGE: 1.3, COMPACT: 0.78}
 MAX_SHELVES = 12
 
 #: Shelf id -> label shown in the customiser.
@@ -30,6 +34,11 @@ DEFAULT_ORDER = list(_IDS)
 
 def label(shelf: str) -> str:
     return _LABELS.get(shelf, shelf)
+
+
+def scale(value: Any) -> float:
+    """Card width multiplier for a layout name; unknown values use the poster size."""
+    return SCALES.get(layout_of(value), SCALES[POSTER])
 
 
 def layout_of(value: Any) -> str:
@@ -134,8 +143,10 @@ class HomeLayout:
 
 
 __all__ = [
+    "CHOICES",
     "COMPACT",
     "DEFAULT_ORDER",
+    "LARGE",
     "LAYOUTS",
     "POSTER",
     "SETTINGS_KEY",
@@ -143,4 +154,5 @@ __all__ = [
     "HomeLayout",
     "label",
     "layout_of",
+    "scale",
 ]

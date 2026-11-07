@@ -33,14 +33,23 @@ def font_family() -> str:
     return '"Segoe UI Variable Text", "Segoe UI", "Cantarell", "Noto Sans", sans-serif'
 
 
-def build_stylesheet(resolved: str) -> str:
-    """Return the application QSS for ``"dark"`` or ``"light"``."""
+def build_stylesheet(
+    resolved: str, *, compact: bool = False, accent: str | None = None
+) -> str:
+    """Return the application QSS for ``"dark"`` or ``"light"``.
+
+    ``accent`` retints the accent family through :func:`lgl.theme.with_accent`,
+    and ``compact`` appends the denser padding block used by compact mode.  Both
+    default to the shipped look, so existing callers are unaffected.
+    """
     c = dict(theme.palette(resolved))
+    if accent:
+        c = theme.with_accent(c, accent)
     fg = c["text"]
     sm, md, lg = RADIUS["sm"], RADIUS["md"], RADIUS["lg"]
     body, small, title, page = TYPE["body"], TYPE["small"], TYPE["title"], TYPE["page"]
 
-    return f"""
+    qss = f"""
 * {{
     font-family: {font_family()};
     font-size: {body}px;
@@ -122,10 +131,24 @@ QLineEdit#librarySearch {{
     border-radius: 20px; padding: 9px 16px 9px 38px;
 }}
 QLineEdit#librarySearch:focus {{ border: 1px solid {c['accent']}; }}
+/* The leading icon is an action widget, a QToolButton: without this it took
+   the raised button styling and showed as a boxed gap inside the field. */
+QLineEdit#librarySearch QToolButton {{
+    background: transparent; border: none; padding: 0; margin-left: 10px;
+}}
 QComboBox::drop-down {{ border: none; width: 24px; }}
 QComboBox QAbstractItemView {{
     background: {c['raised']}; border: 1px solid {c['divider']};
     selection-background-color: {alpha(c['accent'], 0.25)}; outline: none; padding: 4px;
+}}
+QListWidget {{
+    background: {c['surface']}; border: 1px solid {alpha(fg, 0.10)};
+    border-radius: {md}px; padding: 4px; outline: none;
+}}
+QListWidget::item {{ padding: 6px 8px; border-radius: {sm}px; }}
+QListWidget::item:hover {{ background: {alpha(fg, 0.06)}; }}
+QListWidget::item:selected {{
+    background: {alpha(c['accent'], 0.30)}; color: {fg};
 }}
 
 QMenu {{
@@ -322,7 +345,7 @@ QPushButton#sheetTab {{
 }}
 QPushButton#sheetTab:hover {{ background: {alpha(fg, 0.05)}; color: {fg}; }}
 QPushButton#sheetTab:checked {{
-    background: {alpha(fg, 0.12)}; color: {fg};
+    background: {alpha(c['accent'], 0.22)}; color: {fg};
 }}
 QLabel#settLabel {{ font-weight: 600; }}
 QLabel#settDesc {{ color: {c['muted']}; font-size: {small + 1}px; }}
@@ -374,6 +397,38 @@ QPushButton#kebab {{
     border-radius: {md}px; padding: 0;
 }}
 QPushButton#kebab:hover {{ background: {c['hover']}; }}
+
+/* ---- bulk selection --------------------------------------------------- */
+QWidget#bulkBar {{
+    background: {c['surface']}; border-bottom: 1px solid {alpha(fg, 0.07)};
+}}
+QLabel#bulkCount {{ font-weight: 600; }}
+QLabel#bulkDivider {{ color: {c['faint']}; }}
+QLabel#bulkReport {{ color: {c['muted']}; font-size: {small}px; }}
+QCheckBox#tileCheck {{
+    background: {alpha(c['bg'], 0.82)}; border: 1px solid {alpha(fg, 0.16)};
+    border-radius: {sm}px; padding: 1px 3px; margin: 2px 0 2px 2px;
+}}
+QCheckBox#tileCheck::indicator {{ width: 13px; height: 13px; }}
+"""
+    if not compact:
+        return qss
+    # Only padding and type sizes change: colours still come from the palette
+    # above, so an accent or a theme switch keeps working in compact mode.
+    return qss + f"""
+/* ---- compact density -------------------------------------------------- */
+QPushButton, QToolButton {{ padding: 3px 9px; }}
+QPushButton#small {{ padding: 2px 7px; }}
+QPushButton#pill {{ padding: 3px 10px; }}
+QPushButton#filterRow {{ padding: 2px 4px; }}
+QPushButton#sheetTab {{ padding: 4px 10px; }}
+QLineEdit, QComboBox, QSpinBox {{ padding: 4px 7px; }}
+QLineEdit#librarySearch {{ padding: 5px 12px 5px 30px; border-radius: 16px; }}
+QMenu::item {{ padding: 4px 20px 4px 12px; }}
+QLabel#coverTitle {{ font-size: {small}px; }}
+QLabel#coverMeta, QLabel#listMeta {{ font-size: {small}px; }}
+QLabel#listTitle {{ font-size: {body}px; }}
+QFrame#coverCard {{ border-radius: {sm}px; }}
 """
 
 

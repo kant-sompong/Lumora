@@ -15,14 +15,15 @@ from __future__ import annotations
 import sys
 from dataclasses import replace
 from pathlib import Path
-from typing import Sequence
+from typing import Any, Sequence
 
-from PySide6.QtCore import QEvent, QObject, Qt, QTimer
+from PySide6.QtCore import QEasingCurve, QEvent, QObject, QPropertyAnimation, Qt, QTimer
 from PySide6.QtGui import QAction, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
     QDialog,
     QFrame,
+    QGraphicsOpacityEffect,
     QHBoxLayout,
     QInputDialog,
     QLabel,
@@ -38,6 +39,7 @@ from PySide6.QtWidgets import (
 from . import discovery
 from . import recently_viewed
 from . import suggestions
+from . import view_prefs
 from . import __version__, magnet as magnetlib, platform_support, theme
 from .archive import ArchiveClient, build_download_url
 from .catalog_store import CatalogStore
@@ -79,7 +81,14 @@ from .settings import Settings
 
 APP_TITLE = "Lumora"
 RAIL_WIDTH = 72
+COMPACT_RAIL_WIDTH = 64
 HEADER_HEIGHT = 64
+COMPACT_HEADER_HEIGHT = 56
+SEARCH_HEIGHT = 40
+COMPACT_SEARCH_HEIGHT = 34
+#: Length of the page fade, in milliseconds, and of the longer "full" amount.
+TRANSITION_MS = 150
+FULL_TRANSITION_MS = 240
 
 
 class Window(QMainWindow):
@@ -128,7 +137,8 @@ class Window(QMainWindow):
         shell.addWidget(body, 1)
 
         self.browse = BrowsePage(
-            client, cache_root=platform_support.cache_dir(), catalog=self.catalog
+            client, cache_root=platform_support.cache_dir(), catalog=self.catalog,
+            settings=self._settings,
         )
         self.browse.download_requested.connect(self._download_requested)
         self.browse.files_download_requested.connect(self._files_download_requested)
@@ -157,6 +167,14 @@ class Window(QMainWindow):
         self.stack.addWidget(self.media)
 
         self.toast = Toast(root)
+        # The interface preferences are applied before the first page is shown,
+        # so a restart opens with the compact, accent and motion the user chose.
+        self._compact = False
+        self._accent = view_prefs.DEFAULT_ACCENT
+        self._transition_mode = "subtle"
+        self._transition_anim: QPropertyAnimation | None = None
+        self._palette: Any = None
+        self.apply_interface_prefs()
         self._install_shortcuts()
         self.show_view("Library")
         self._sync_rail()
@@ -184,6 +202,7 @@ class Window(QMainWindow):
         rail = QWidget()
         rail.setObjectName("rail")
         rail.setFixedWidth(RAIL_WIDTH)
+        self._rail = rail
         column = QVBoxLayout(rail)
         column.setContentsMargins(4, 10, 4, 10)
         column.setSpacing(2)
@@ -213,6 +232,7 @@ class Window(QMainWindow):
         header = QFrame()
         header.setObjectName("headerBar")
         header.setFixedHeight(HEADER_HEIGHT)
+        self._header = header
         row = QHBoxLayout(header)
         row.setContentsMargins(12, 0, 14, 0)
         row.setSpacing(6)
@@ -229,7 +249,8 @@ class Window(QMainWindow):
 
         pill = QFrame()
         pill.setObjectName("searchPill")
-        pill.setFixedHeight(40)
+        pill.setFixedHeight(SEARCH_HEIGHT)
+        self._search_pill = pill
         pill.setMinimumWidth(360)
         pill.setMaximumWidth(520)
         pill_row = QHBoxLayout(pill)
@@ -276,8 +297,15 @@ class Window(QMainWindow):
             sequence = keys.get(shortcut_id) or DEFAULTS[shortcut_id]
             shortcut = QShortcut(QKeySequence(sequence), self)
             shortcut.activated.connect(callback)
-        for extra, callback in (("Ctrl+K", self.focus_search), ("F5", self.refresh_all)):
+        for extra, callback in (("Ctrl+K", self.show_palette), ("F5", self.refresh_all)):
             QShortcut(QKeySequence(extra), self).activated.connect(callback)
+
+    def show_palette(self) -> Any:
+        """Open the command palette; Ctrl+K and the menu both land here."""
+        from .qt_palette import show_palette
+
+        self._palette = show_palette(self)
+        return self._palette
 
     # navigation -----------------------------------------------------------
     VIEW_TITLES = {
@@ -302,7 +330,7 @@ class Window(QMainWindow):
             "downloads": self.downloads,
             "media": self.media,
         }[key]
-        self.stack.setCurrentWidget(page)  # type: ignore[arg-type]
+        self._transition_to(page)  # type: ignore[arg-type]
         self.browse.detail.hide() if key != "browse" else None
         self._remember(key)
         self._current = key
@@ -343,7 +371,7 @@ class Window(QMainWindow):
         }.get(key)
         if page is None:
             return
-        self.stack.setCurrentWidget(page)
+        self._transition_to(page)
         self._current = key
         self._sync_rail()
         self._sync_search_field(key)
@@ -410,10 +438,82 @@ class Window(QMainWindow):
         except Exception:  # noqa: BLE001
             pass
 
+    # interface preferences -------------------------------------------------
+    def apply_interface_prefs(self) -> None:
+        """Apply compact mode, the accent colour and the transition amount.
+
+        Called on start-up and again from the Settings sheet, so every switch
+        there has an effect without a restart.  A preference that cannot be read
+        falls back to the shipped look rather than failing.
+        """
+        try:
+            prefs = view_prefs.effective(self._settings)
+        except (AttributeError, TypeError, ValueError):
+            return
+        self._compact = bool(prefs[view_prefs.COMPACT])
+        self._accent = str(prefs[view_prefs.ACCENT])
+        self._transition_mode = str(prefs[view_prefs.TRANSITIONS])
+        self.apply_theme(self._settings.theme)
+        header = getattr(self, "_header", None)
+        if header is not None:
+            header.setFixedHeight(
+                COMPACT_HEADER_HEIGHT if self._compact else HEADER_HEIGHT
+            )
+        pill = getattr(self, "_search_pill", None)
+        if pill is not None:
+            pill.setFixedHeight(
+                COMPACT_SEARCH_HEIGHT if self._compact else SEARCH_HEIGHT
+            )
+        rail = getattr(self, "_rail", None)
+        if rail is not None:
+            rail.setFixedWidth(COMPACT_RAIL_WIDTH if self._compact else RAIL_WIDTH)
+        for page in (
+            getattr(self, "browse", None),
+            getattr(self, "library", None),
+            getattr(self, "media", None),
+        ):
+            setter = getattr(page, "set_compact", None)
+            if callable(setter):
+                setter(self._compact)
+        self.update()
+
+    def transition_duration(self) -> int:
+        """Milliseconds a page fade takes; ``0`` means switch instantly."""
+        if self._transition_mode == "off":
+            return 0
+        return FULL_TRANSITION_MS if self._transition_mode == "full" else TRANSITION_MS
+
+    def _transition_to(self, page: QWidget | None) -> None:
+        """Show ``page``, fading it in unless transitions are off."""
+        if page is None or page is self.stack.currentWidget():
+            return
+        duration = self.transition_duration()
+        if duration <= 0:
+            self.stack.setCurrentWidget(page)
+            return
+        effect = QGraphicsOpacityEffect(page)
+        effect.setOpacity(0.0)
+        page.setGraphicsEffect(effect)
+        animation = QPropertyAnimation(effect, b"opacity", self)
+        animation.setDuration(duration)
+        animation.setStartValue(0.0)
+        animation.setEndValue(1.0)
+        animation.setEasingCurve(QEasingCurve.OutCubic)
+        animation.finished.connect(lambda: page.setGraphicsEffect(None))
+        self.stack.setCurrentWidget(page)
+        self._transition_anim = animation
+        animation.start()
+
     # menu / dialogs -------------------------------------------------------
-    def _show_menu(self) -> None:
+    def _build_menu(self) -> QMenu:
+        """The header menu, built but not shown, so tests can inspect it."""
         menu = QMenu(self)
         menu.setWindowFlags(menu.windowFlags() | Qt.FramelessWindowHint | Qt.NoDropShadowWindowHint)
+        palette = QAction("Command palette…", self)
+        palette.setShortcut(QKeySequence("Ctrl+K"))
+        palette.triggered.connect(self.show_palette)
+        menu.addAction(palette)
+        menu.addSeparator()
         sources = QAction("Website Sources…", self)
         sources.triggered.connect(self.show_sources)
         menu.addAction(sources)
@@ -483,6 +583,10 @@ class Window(QMainWindow):
         about = QAction(f"About {APP_TITLE}", self)
         about.triggered.connect(self.show_about)
         menu.addAction(about)
+        return menu
+
+    def _show_menu(self) -> None:
+        menu = self._build_menu()
         menu.exec(self.menu_btn.mapToGlobal(self.menu_btn.rect().bottomLeft()))
 
     def show_sources(self) -> None:
@@ -734,6 +838,7 @@ class Window(QMainWindow):
         dialog = SettingsDialog(self._settings, self)
         dialog.show_tab(tab)
         dialog.exec()
+        self.apply_interface_prefs()
 
     def show_about(self) -> None:
         AboutDialog(self).exec()
@@ -964,7 +1069,11 @@ class Window(QMainWindow):
         app = QApplication.instance()
         if app is None:
             return
-        apply_theme(app, mode)
+        apply_theme(
+            app, mode,
+            compact=getattr(self, "_compact", False),
+            accent=getattr(self, "_accent", None),
+        )
         for widget in app.allWidgets():
             style = widget.style()
             style.unpolish(widget)
@@ -999,15 +1108,23 @@ def resolved_theme(app: QApplication, mode: str = "system") -> str:
     return theme.resolve(theme.normalize_mode(mode), system_dark=scheme == Qt.ColorScheme.Dark)
 
 
-def apply_theme(app: QApplication, mode: str = "system") -> str:
+def apply_theme(
+    app: QApplication,
+    mode: str = "system",
+    *,
+    compact: bool = False,
+    accent: str | None = None,
+) -> str:
     resolved = resolved_theme(app, mode)
-    set_theme(resolved)
+    set_theme(resolved, accent=accent)
     app.setStyle("Fusion")
-    app.setStyleSheet(build_stylesheet(resolved))
+    app.setStyleSheet(build_stylesheet(resolved, compact=compact, accent=accent))
     palette = app.palette()
     from PySide6.QtGui import QColor
 
     colours = theme.palette(resolved)
+    if accent:
+        colours = theme.with_accent(colours, accent)
     palette.setColor(palette.ColorRole.Window, QColor(colours["bg"]))
     palette.setColor(palette.ColorRole.WindowText, QColor(colours["text"]))
     palette.setColor(palette.ColorRole.Base, QColor(colours["surface"]))

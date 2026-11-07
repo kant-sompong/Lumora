@@ -27,11 +27,13 @@ from PySide6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QSizePolicy,
+    QSpinBox,
     QToolButton,
     QVBoxLayout,
     QWidget,
 )
 
+from . import browse_filters
 from . import platform_support
 from .archive import ArchiveClient, ArchiveItem, GameSummary
 from .qt_archive import (
@@ -165,7 +167,7 @@ class BrowseRow(QFrame):
 
     clicked = Signal(str)
 
-    def __init__(self, game: GameSummary) -> None:
+    def __init__(self, game: GameSummary, *, compact: bool = False) -> None:
         super().__init__()
         self.setObjectName("listRow")
         self.setProperty("selected", False)
@@ -174,8 +176,9 @@ class BrowseRow(QFrame):
         self.identifier = game.identifier
         self.game = game
         column = QVBoxLayout(self)
-        column.setContentsMargins(4, 9, 4, 9)
-        column.setSpacing(2)
+        pad = 4 if compact else 9
+        column.setContentsMargins(4, pad, 4, pad)
+        column.setSpacing(1 if compact else 2)
         title = ElideLabel(bare_title(game.title) or game.identifier)
         title.setObjectName("listTitle")
         column.addWidget(title)
@@ -210,11 +213,14 @@ class BrowseFilters(QFrame):
         self.setObjectName("filters")
         self.setFixedWidth(284)
         self.genres: set[str] = set()
+        self.exclude_genres: set[str] = set()
         self.size = "any"
-        self.year = "all"
+        self.min_year = 0
+        self.max_year = 0
         self.license = "all"
         self.format = "all"
         self._genre_rows: dict[str, CheckRow] = {}
+        self._exclude_buttons: dict[str, QToolButton] = {}
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
@@ -229,6 +235,13 @@ class BrowseFilters(QFrame):
         column.setContentsMargins(18, 16, 18, 22)
         column.setSpacing(4)
 
+        # The genre block is hidden when no loaded title carries a genre, so a
+        # control is never offered that could not match anything.
+        self._genre_block = QWidget()
+        genre_column = QVBoxLayout(self._genre_block)
+        genre_column.setContentsMargins(0, 0, 0, 0)
+        genre_column.setSpacing(1)
+
         head = QHBoxLayout()
         head.setContentsMargins(2, 0, 2, 6)
         genre_head = label("Genre", "filterGroup")
@@ -238,11 +251,12 @@ class BrowseFilters(QFrame):
         self.genre_total.setCursor(Qt.PointingHandCursor)
         self.genre_total.setToolTip("Clear the genre filter")
         head.addWidget(self.genre_total)
-        column.addLayout(head)
+        genre_column.addLayout(head)
 
         self._genre_host = QVBoxLayout()
         self._genre_host.setSpacing(1)
-        column.addLayout(self._genre_host)
+        genre_column.addLayout(self._genre_host)
+        column.addWidget(self._genre_block)
 
         self._group(column, "Size", top=12)
         self._size_group = QButtonGroup(self)
@@ -250,11 +264,36 @@ class BrowseFilters(QFrame):
         column.addWidget(self._pill_flow(SIZE_FILTERS, self._size_group, "any"))
         self._size_group.buttonClicked.connect(self._pick_size)
 
-        self._group(column, "Released", top=14)
+        # Released stays as shortcuts over the year range under it: a decade
+        # chip fills the two boxes, so there is one year state and the summary
+        # line can never disagree with the controls.
+        self._year_block = QWidget()
+        year_column = QVBoxLayout(self._year_block)
+        year_column.setContentsMargins(0, 0, 0, 0)
+        year_column.setSpacing(4)
+        self._group(year_column, "Released", top=14)
         self._year_group = QButtonGroup(self)
         self._year_group.setExclusive(True)
-        column.addWidget(self._pill_flow(YEAR_FILTERS, self._year_group, "all"))
+        self._year_pills = self._pill_flow(YEAR_FILTERS, self._year_group, "all")
+        year_column.addWidget(self._year_pills)
         self._year_group.buttonClicked.connect(self._pick_year)
+
+        years = QHBoxLayout()
+        years.setContentsMargins(2, 8, 2, 0)
+        years.addWidget(label("Years", "filterGroup"))
+        years.addStretch(1)
+        year_column.addLayout(years)
+        spin_row = QHBoxLayout()
+        spin_row.setContentsMargins(2, 0, 2, 0)
+        spin_row.setSpacing(4)
+        self._from_spin = self._year_spin("From")
+        self._to_spin = self._year_spin("To")
+        spin_row.addWidget(self._from_spin)
+        spin_row.addWidget(label("–"))
+        spin_row.addWidget(self._to_spin)
+        spin_row.addStretch(1)
+        year_column.addLayout(spin_row)
+        column.addWidget(self._year_block)
 
         self._group(column, "Licence", top=14)
         self._license_group = QButtonGroup(self)
@@ -273,6 +312,11 @@ class BrowseFilters(QFrame):
             btn.setChecked(key == "all")
             column.addWidget(btn)
         self._format_group.buttonClicked.connect(self._pick_format)
+
+        self.summary = label("", "filterSummary", wrap=True)
+        self.summary.setContentsMargins(2, 14, 2, 0)
+        self.summary.hide()
+        column.addWidget(self.summary)
 
         self._group(column, "Availability", top=14)
         reset = QPushButton("Reset all filters")
@@ -318,35 +362,122 @@ class BrowseFilters(QFrame):
         group.addButton(btn)
         return btn
 
+    def _year_spin(self, placeholder: str) -> QSpinBox:
+        """A year box where 0 reads as "Any", which is how "no bound" is stored."""
+        spin = QSpinBox(self)
+        spin.setRange(0, 2200)
+        spin.setSpecialValueText("Any")
+        spin.setValue(0)
+        spin.setFixedWidth(78)
+        spin.setToolTip(f"{placeholder} year; Any means no bound")
+        spin.setAccessibleName(f"{placeholder} year")
+        spin.valueChanged.connect(lambda _value: self._pick_years())
+        return spin
+
     # genres ---------------------------------------------------------------
     def set_genres(self, genres: Sequence[tuple[str, int]], total: int) -> None:
         clear_layout(self._genre_host)
         self._genre_rows.clear()
         self.genre_total.setText(f"All {total}")
         keep = {value.casefold() for value in self.genres}
+        excluded = {value.casefold() for value in self.exclude_genres}
         self.genres = set()
+        self.exclude_genres = set()
         for name, count in genres:
             row = CheckRow(name, count, checked=name.casefold() in keep)
             row.toggled.connect(lambda on, n=name: self._toggle_genre(n, on))
-            self._genre_host.addWidget(row)
+
+            never = QToolButton()
+            never.setText("\u2715")
+            never.setObjectName("genreExclude")
+            never.setCheckable(True)
+            never.setCursor(Qt.PointingHandCursor)
+            never.setToolTip(f"Never show titles tagged {name}")
+            never.setAccessibleName(f"Exclude {name}")
+            never.setChecked(name.casefold() in excluded)
+            never.toggled.connect(lambda on, n=name: self._toggle_exclude(n, on))
+
+            holder = QWidget()
+            line = QHBoxLayout(holder)
+            line.setContentsMargins(0, 0, 0, 0)
+            line.setSpacing(2)
+            line.addWidget(row, 1)
+            line.addWidget(never)
+            self._genre_host.addWidget(holder)
+
             self._genre_rows[name] = row
+            self._exclude_buttons[name] = never
             if row.isChecked():
                 self.genres.add(name)
+            if never.isChecked():
+                self.exclude_genres.add(name)
+        self.update_summary()
 
     def _toggle_genre(self, name: str, on: bool) -> None:
         if on:
             self.genres.add(name)
+            self.exclude_genres.discard(name)
+            self._set_excluded(name, False)
         else:
             self.genres.discard(name)
+        self.update_summary()
         self.changed.emit()
 
+    def _toggle_exclude(self, name: str, on: bool) -> None:
+        """Never show this genre; it cannot be included at the same time."""
+        if on:
+            self.exclude_genres.add(name)
+            self.genres.discard(name)
+            row = self._genre_rows.get(name)
+            if row is not None and row.isChecked():
+                row.setChecked(False)
+        else:
+            self.exclude_genres.discard(name)
+        self.update_summary()
+        self.changed.emit()
+
+    def _set_excluded(self, name: str, value: bool) -> None:
+        button = self._exclude_buttons.get(name)
+        if button is None or button.isChecked() == value:
+            return
+        button.blockSignals(True)
+        try:
+            button.setChecked(value)
+        finally:
+            button.blockSignals(False)
+
     def clear_genres(self) -> None:
-        if not self.genres:
+        if not self.genres and not self.exclude_genres:
             return
         self.genres.clear()
+        self.exclude_genres.clear()
         for row in self._genre_rows.values():
             row.setChecked(False)
+        for name in self._exclude_buttons:
+            self._set_excluded(name, False)
+        self.update_summary()
         self.changed.emit()
+
+    # the content filters both frontends share -----------------------------
+    def content_filters(self) -> browse_filters.Filters:
+        return browse_filters.filters_for(
+            min_year=self.min_year or None,
+            max_year=self.max_year or None,
+            genres=self.genres,
+            exclude_genres=self.exclude_genres,
+        )
+
+    def update_summary(self) -> None:
+        """Show what is being applied, or nothing when nothing is filtered."""
+        names = {name.casefold(): name for name in self.genres | self.exclude_genres}
+        text = browse_filters.summary(self.content_filters(), display=names)
+        self.summary.setText(text)
+        self.summary.setVisible(bool(text))
+
+    def set_fields(self, present: set[str]) -> None:
+        """Hide a section when no loaded title has the field it filters on."""
+        self._genre_block.setVisible(browse_filters.GENRES in present)
+        self._year_block.setVisible(browse_filters.YEAR in present)
 
     # pickers --------------------------------------------------------------
     def _pick_size(self, button: QPushButton) -> None:
@@ -354,8 +485,30 @@ class BrowseFilters(QFrame):
         self.changed.emit()
 
     def _pick_year(self, button: QPushButton) -> None:
-        self.year = str(button.property("key"))
+        """A century chip is a shortcut: it fills the two year boxes."""
+        low, high = browse_filters.bucket_bounds(str(button.property("key")))
+        for spin, value in ((self._from_spin, low), (self._to_spin, high)):
+            spin.blockSignals(True)
+            try:
+                spin.setValue(int(value or 0))
+            finally:
+                spin.blockSignals(False)
+        self._pick_years()
+
+    def _pick_years(self) -> None:
+        """The two year boxes are the year filter; the chips follow them."""
+        self.min_year = self._from_spin.value()
+        self.max_year = self._to_spin.value()
+        self._sync_year_pills()
+        self.update_summary()
         self.changed.emit()
+
+    def _sync_year_pills(self) -> None:
+        bucket = browse_filters.bucket_for(
+            self.min_year or None, self.max_year or None
+        )
+        for button in self._year_group.buttons():
+            button.setChecked(str(button.property("key")) == bucket)
 
     def _pick_license(self, button: QPushButton) -> None:
         self.license = str(button.property("key"))
@@ -367,17 +520,29 @@ class BrowseFilters(QFrame):
 
     def reset(self) -> None:
         self.genres.clear()
+        self.exclude_genres.clear()
         for row in self._genre_rows.values():
             row.setChecked(False)
+        for name in self._exclude_buttons:
+            self._set_excluded(name, False)
         for group, attr, value in (
             (self._size_group, "size", "any"),
-            (self._year_group, "year", "all"),
             (self._license_group, "license", "all"),
             (self._format_group, "format", "all"),
         ):
             setattr(self, attr, value)
             for button in group.buttons():
                 button.setChecked(str(button.property("key")) == value)
+        for spin in (self._from_spin, self._to_spin):
+            spin.blockSignals(True)
+            try:
+                spin.setValue(0)
+            finally:
+                spin.blockSignals(False)
+        self.min_year = 0
+        self.max_year = 0
+        self._sync_year_pills()
+        self.update_summary()
         self.changed.emit()
 
 
@@ -486,6 +651,13 @@ class BrowseDetail(QFrame):
     external_requested = Signal(str, str)
     mirror_requested = Signal(str)
 
+    def set_compact(self, compact: bool) -> None:
+        """Denser padding in the selected-game panel."""
+        self._column.setContentsMargins(
+            *((14, 10, 14, 12) if compact else (18, 16, 18, 18))
+        )
+        self._column.setSpacing(4 if compact else 6)
+
     def __init__(self) -> None:
         super().__init__()
         self.setObjectName("detail")
@@ -502,6 +674,7 @@ class BrowseDetail(QFrame):
         outer.addWidget(scroll)
         column.setContentsMargins(18, 16, 18, 18)
         column.setSpacing(6)
+        self._column = column
 
         head = QHBoxLayout()
         eyebrow = label("SELECTED GAME", "detailEyebrow")
@@ -761,10 +934,12 @@ class BrowsePage(QWidget):
     def __init__(self, client: ArchiveClient | None = None,
                  cache_root: Path | None = None,
                  formats_for: Callable[[str], Sequence[str]] | None = None,
-                 catalog: object | None = None) -> None:
+                 catalog: object | None = None,
+                 settings: object | None = None) -> None:
         super().__init__()
         self.client = client
         self.catalog = catalog
+        self.settings = settings
         self._cache_root = cache_root
         self._formats_for = formats_for or (lambda _identifier: ())
         self._games: list[GameSummary] = []
@@ -781,6 +956,7 @@ class BrowsePage(QWidget):
         self._generation = 0
         self._limit = ROW_LIMIT
         self._view = "grid"
+        self._compact = False
         self._loading = False
         self._warning = ""
         self._stamp = ""
@@ -804,6 +980,7 @@ class BrowsePage(QWidget):
         head = QHBoxLayout(header)
         head.setContentsMargins(24, 18, 24, 14)
         head.setSpacing(10)
+        self._head = head
         heading = QHBoxLayout()
         heading.setSpacing(10)
         heading.addWidget(label("Browse", "pageTitle"), 0, Qt.AlignBottom)
@@ -837,11 +1014,18 @@ class BrowsePage(QWidget):
         page.addWidget(self.scroll, 1)
         column.setContentsMargins(24, 0, 24, 8)
         column.setSpacing(0)
+        self._column = column
         self.grid_host = QWidget()
         self.grid = QGridLayout(self.grid_host)
         self.grid.setContentsMargins(0, 0, 0, 0)
         self.grid.setHorizontalSpacing(16)
         self.grid.setVerticalSpacing(22)
+        self.shelves_host = QWidget()
+        self.shelves_column = QVBoxLayout(self.shelves_host)
+        self.shelves_column.setContentsMargins(0, 4, 0, 10)
+        self.shelves_column.setSpacing(6)
+        self.shelves_host.hide()
+        column.addWidget(self.shelves_host)
         column.addWidget(self.grid_host)
         self.list_host = QWidget()
         self.list_column = QVBoxLayout(self.list_host)
@@ -1021,12 +1205,16 @@ class BrowsePage(QWidget):
 
     # filtering -------------------------------------------------------------
     def refresh(self) -> None:
+        self.filters.set_fields(browse_filters.available(self._games))
+        self.filters.update_summary()
         shown = filter_games(
             self._games,
             query=self._query(),
-            year=self.filters.year,
             license_=self.filters.license,
             genres=self.filters.genres,
+            exclude_genres=self.filters.exclude_genres,
+            min_year=self.filters.min_year or None,
+            max_year=self.filters.max_year or None,
             size=self.filters.size,
         )
         if self.filters.format != "all":
@@ -1034,6 +1222,7 @@ class BrowsePage(QWidget):
                      if format_matches(self._formats_for(g.identifier), self.filters.format)]
         self._shown = sort_games(shown, self._sort_key, self._descending)
         self._limit = ROW_LIMIT
+        self._render_shelves()
         if self._view == "grid":
             self.list_host.hide()
             self.grid_host.show()
@@ -1080,6 +1269,22 @@ class BrowsePage(QWidget):
         )
 
     # rendering -------------------------------------------------------------
+    def set_compact(self, compact: bool) -> None:
+        """Shrink page padding, list rows and tile spacing; off restores it."""
+        self._compact = bool(compact)
+        self._head.setContentsMargins(
+            *((16, 12, 16, 10) if compact else (24, 18, 24, 14))
+        )
+        self._column.setContentsMargins(
+            *((16, 0, 16, 4) if compact else (24, 0, 24, 8))
+        )
+        self.grid.setHorizontalSpacing(10 if compact else 16)
+        self.grid.setVerticalSpacing(14 if compact else 22)
+        self.detail.set_compact(compact)
+        if self._view == "list":
+            # Rows are built at a fixed padding, so rebuild the ones on screen.
+            self._render()
+
     def _render(self) -> None:
         self._generation += 1
         self.grid_host.setVisible(self._view == "grid")
@@ -1097,8 +1302,9 @@ class BrowsePage(QWidget):
         limit = min(len(self._shown), self._limit)
         visible = self._shown[:limit]
         columns = self._columns()
-        available = max(self.scroll.viewport().width() - 48, CARD_MIN)
-        cell = max(CARD_MIN, (available - 16 * (columns - 1)) // columns)
+        base = self._card_min()
+        available = max(self.scroll.viewport().width() - 48, base)
+        cell = max(base, (available - 16 * (columns - 1)) // columns)
         for index, game in enumerate(visible):
             if self._view == "grid":
                 card: QWidget = BrowseCard(game)
@@ -1106,7 +1312,7 @@ class BrowsePage(QWidget):
                 card.setMaximumWidth(cell)
                 self.grid.addWidget(card, index // columns, index % columns)
             else:
-                card = BrowseRow(game)
+                card = BrowseRow(game, compact=self._compact)
                 self.list_column.addWidget(card)
             card.clicked.connect(self.select)  # type: ignore[attr-defined]
             if game.identifier in self._pix:
@@ -1127,9 +1333,62 @@ class BrowsePage(QWidget):
             self._cards[self._selected].set_selected(True)  # type: ignore[attr-defined]
         self._load_covers()
 
+    def _card_min(self) -> int:
+        """Base card width for the chosen home layout."""
+        from . import home_layout
+
+        if self.settings is None:
+            return CARD_MIN
+        try:
+            return max(90, int(CARD_MIN * home_layout.scale(home_layout.HomeLayout(self.settings).layout())))
+        except Exception:  # noqa: BLE001 - a broken settings file must not break Browse
+            return CARD_MIN
+
+    def _render_shelves(self) -> None:
+        """Custom shelves above the grid, one row of titles each."""
+        from . import shelves as shelves_lib
+
+        if self.shelves_column.count():
+            clear_layout(self.shelves_column)
+        if self.settings is None or not self._games:
+            self.shelves_host.hide()
+            return
+        rows = [
+            {
+                "key": game.identifier,
+                "title": game.title,
+                "year": game.year,
+                "genres": list(game.subjects),
+                "rating": None,
+            }
+            for game in self._games
+        ]
+        rendered = shelves_lib.render(self.settings, rows)
+        for name, items in rendered:
+            self.shelves_column.addWidget(label(name.upper(), "detailEyebrow"))
+            line = QWidget()
+            flow = QHBoxLayout(line)
+            flow.setContentsMargins(0, 0, 0, 0)
+            flow.setSpacing(8)
+            for item in items:
+                key = str(item.get("key") or "")
+                pill = QPushButton(str(item.get("title") or key))
+                pill.setObjectName("shelfPill")
+                pill.setCursor(Qt.PointingHandCursor)
+                pill.clicked.connect(lambda _=False, k=key: self._open_shelf_item(k))
+                flow.addWidget(pill)
+            flow.addStretch(1)
+            self.shelves_column.addWidget(line)
+        self.shelves_host.setVisible(bool(rendered))
+
+    def _open_shelf_item(self, key: str) -> None:
+        if key and self.game(key) is not None:
+            self.select(key)
+
     def _columns(self) -> int:
-        width = max(self.scroll.viewport().width() - 48, CARD_MIN)
-        return max(1, int((width + 16) // (CARD_MIN + 16)))
+        base = self._card_min()
+        width = max(self.scroll.viewport().width() - 48, base)
+        return max(1, int((width + 16) // (base + 16)))
 
     def resizeEvent(self, event) -> None:  # noqa: N802
         super().resizeEvent(event)

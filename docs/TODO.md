@@ -51,6 +51,13 @@ The owner's words: "tell what anime/tv/movie episode come out what day".
    2026-11-05: typing `libr` showed `Go to Library`, Enter switched the view and closed the
    palette (`shots-gtk/10-palette.png`). **Qt: not run**, there is no PySide6 here.
 2. [ ] Custom Dashboard Layout — rearrange, resize or hide homepage sections.
+   Qt (2026-11-06): reorder, hide/show and reset already existed; `HomeLayout` now also carries a
+   third card size (`LARGE`, 1.3x) beside poster and compact, and the Browse grid scales its card
+   width from it. Arbitrary free resizing and per-shelf placement are still missing, and nothing
+   was run on a desktop.
+   GTK (2026-11-06): `ui.card_cover_size()` scales the cover from the chosen layout
+   (compact 118 px, poster 150 px, large 195 px) and `apply_interface_prefs` rebuilds the grid.
+   Also not run here.
 3. [ ] Dynamic Artwork Backgrounds — use blurred poster artwork as page backgrounds.
 4. [ ] Quick Preview — preview title information without opening its detail page.
 5. [x] Compact Mode — fit more content on screen.
@@ -70,6 +77,14 @@ The owner's words: "tell what anime/tv/movie episode come out what day".
    preference. Run on a display 2026-11-05: the stack reported `crossfade 140` and then
    `none 0` after choosing Off. **Qt: not run.**
 8. [ ] Custom Home Sections — create homepage shelves using saved filters.
+   Qt (2026-11-06, `feature/qt-home-shelves`): `BrowsePage` draws `shelves.render` rows above the
+   grid from the loaded catalogue, each title a pill that opens its detail panel; the Shelves…
+   editor in Tools → Home screen creates and removes them. Four tests and an offscreen render
+   (`shots-qt/home-shelves.png`). **Not run on a desktop**, so the item stays unticked.
+   GTK (2026-11-06, `feature/gtk-home-shelves`): the same rows are drawn above the cover grid by
+   `MainWindow._rebuild_shelves`, and Tools → Home screen → Shelves… opens a GTK 3 editor
+   (`lgl/gtk_shelves.py`). **Not run**: this sandbox has no Gtk-3.0 typelib, no Xvfb and sudo is
+   blocked, so `tests/test_gtk_home.py` skips here; CI's Linux job should run it under xvfb.
 9. [ ] Recently Viewed History — quickly revisit previously opened titles.
    Shared: `lgl/recently_viewed.py` (atomic JSON beside the library index, capped at 100,
    de-duplicated per kind and key, junk-tolerant) with 9 tests in `tests/test_recently_viewed.py`.

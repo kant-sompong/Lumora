@@ -175,7 +175,7 @@ def _home(settings: Any) -> Section:
             label="Card layout",
             kind=CHOICE,
             value=layout.layout(),
-            options=((home_layout.POSTER, "Poster"), (home_layout.COMPACT, "Compact")),
+            options=home_layout.CHOICES,
             action="home.layout",
         )
     )
@@ -189,6 +189,14 @@ def _home(settings: Any) -> Section:
                 action=f"home.shelf.{shelf[0]}",
             )
         )
+    section.rows.append(
+        Row(
+            label="Shelves…",
+            kind=BUTTON,
+            action="home.shelves",
+            description="Create a shelf from a saved genre, or remove one.",
+        )
+    )
     section.rows.append(Row(label="Restore defaults", kind=BUTTON, action="home.reset"))
     return section
 

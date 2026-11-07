@@ -39,7 +39,7 @@ from gi.repository import (  # noqa: E402
 )
 
 from . import recently_viewed
-from . import anipm, framextv, mal, media_history, streaming, tmdb  # noqa: E402
+from . import anipm, framextv, mal, media_history, streaming, tmdb, view_prefs  # noqa: E402
 from .mal import (  # noqa: E402
     AnimeDetails,
     AnimeItem,
@@ -2516,6 +2516,12 @@ class MoviesWindow(Gtk.Box):
         head = Gtk.Label(label="Episodes", xalign=0)
         head.get_style_context().add_class("movie-section-title")
         body.pack_start(head, False, False, 0)
+        note = view_prefs.spoiler_note(self._settings)
+        if note:
+            hint = Gtk.Label(label=note, xalign=0)
+            hint.set_line_wrap(True)
+            hint.get_style_context().add_class("movie-meta")
+            body.pack_start(hint, False, False, 0)
         status = Gtk.Label(label="Loading episodes from ani.pm…", xalign=0)
         status.set_line_wrap(True)
         status.get_style_context().add_class("movie-status")
@@ -2591,8 +2597,9 @@ class MoviesWindow(Gtk.Box):
             row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
             row.get_style_context().add_class("movie-episode-row")
             name_text = f"Episode {ep.number}"
-            if ep.title:
-                name_text += f" · {ep.title}"
+            shown = view_prefs.episode_title(self._settings, ep.title)
+            if shown:
+                name_text += f" · {shown}"
             name = Gtk.Label(label=name_text, xalign=0)
             name.set_ellipsize(Pango.EllipsizeMode.END)
             name.set_max_width_chars(48)
@@ -3397,6 +3404,14 @@ class MoviesWindow(Gtk.Box):
         heading = Gtk.Label(label="Episodes", xalign=0)
         heading.get_style_context().add_class("movie-section-title")
         box.pack_start(heading, False, False, 0)
+        # The note sits with the list it explains: hidden titles must not read
+        # as missing data, and the way out is one line away.
+        note = view_prefs.spoiler_note(self._settings)
+        if note:
+            hint = Gtk.Label(label=note, xalign=0)
+            hint.set_line_wrap(True)
+            hint.get_style_context().add_class("movie-meta")
+            box.pack_start(hint, False, False, 0)
 
         tabs_scroller = Gtk.ScrolledWindow()
         tabs_scroller.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.NEVER)
@@ -3499,7 +3514,10 @@ class MoviesWindow(Gtk.Box):
             line.pack_start(number, False, False, 0)
 
             text = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
-            label = Gtk.Label(label=episode.title, xalign=0)
+            label = Gtk.Label(
+                label=view_prefs.episode_title(self._settings, episode.title),
+                xalign=0,
+            )
             label.set_ellipsize(Pango.EllipsizeMode.END)
             label.get_style_context().add_class("movie-episode")
             text.pack_start(label, False, False, 0)

@@ -220,6 +220,18 @@ class ToolsWindow(Gtk.Window):
         if action == "diagnostics.create":
             self._run_in_thread(self._report, lambda path: self._say(f"Support report saved to {path}."))
             return
+        if action == "home.shelves":
+            from .gtk_shelves import ShelvesDialog
+
+            dialog = ShelvesDialog(self.settings, self)
+            dialog.run()
+            dialog.destroy()
+            self._say("Shelves saved.")
+            self.reload()
+            refresh = getattr(self._parent, "apply_interface_prefs", None)
+            if callable(refresh):
+                refresh()
+            return
         message = tool_panels.apply(
             action,
             self.settings,

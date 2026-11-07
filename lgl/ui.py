@@ -45,6 +45,7 @@ from gi.repository import (  # noqa: E402
     PangoCairo,
 )
 
+from . import browse_filters
 from . import recently_viewed
 from . import APP_ID, APP_NAME, __version__, platform_support  # noqa: E402
 from . import external_dm  # noqa: E402
@@ -54,6 +55,7 @@ from . import magnet as magnetlib  # noqa: E402
 from . import metadata as metalib  # noqa: E402
 from . import theme_gtk  # noqa: E402
 from . import view_prefs
+from .gtk_quick_preview import QuickPreview  # noqa: E402
 from .archive import (  # noqa: E402
     ArchiveClient,
     ArchiveError,
@@ -231,6 +233,58 @@ def _filter_footer(on_reset: Callable[..., None]) -> Gtk.Box:
     reset.connect("clicked", lambda *_: on_reset())
     footer.pack_start(reset, False, False, 0)
     return footer
+
+
+def _year_range_row(
+    on_change: Callable[[], None],
+) -> tuple[Gtk.Box, Gtk.Entry, Gtk.Entry]:
+    """From/to year fields: the only place the Browse year filter is stored.
+
+    A half-typed year never filters anything, because the range is read when the
+    box is confirmed (Enter) or left, not on every keystroke.
+    """
+    row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+    row.get_style_context().add_class("filter-row")
+    row.set_margin_top(6)
+    # Same heading style as "Released", so the row reads as part of the filter
+    # column instead of a form dropped into it.
+    caption = Gtk.Label(label="Years", xalign=0)
+    caption.get_style_context().add_class("filter-title")
+    caption.set_valign(Gtk.Align.CENTER)
+    row.pack_start(caption, False, False, 0)
+
+    def changed(*_args) -> bool:
+        on_change()
+        return False
+
+    def entry(placeholder: str) -> Gtk.Entry:
+        field = Gtk.Entry()
+        field.set_width_chars(6)
+        field.set_max_width_chars(6)
+        # .filter-year gives the field the chips' text size and height; without
+        # it the entries tower over the decade chips beside them.
+        field.get_style_context().add_class("filter-year")
+        field.set_placeholder_text(placeholder)
+        field.set_input_purpose(Gtk.InputPurpose.DIGITS)
+        field.set_tooltip_text(
+            f"{placeholder} year, e.g. 1995. Empty means no bound."
+        )
+        field.get_accessible().set_name(f"{placeholder} year")
+        field.connect("activate", changed)
+        field.connect("focus-out-event", changed)
+        return field
+
+    start = entry("From")
+    end = entry("To")
+    dash = Gtk.Label(label="\u2013")
+    dash.get_style_context().add_class("filter-title")
+    dash.set_valign(Gtk.Align.CENTER)
+    # Not expanding: the fields keep their six characters instead of stretching
+    # across the column, which is what made them look oversized.
+    row.pack_start(start, False, False, 0)
+    row.pack_start(dash, False, False, 0)
+    row.pack_start(end, False, False, 0)
+    return row, start, end
 
 
 def _section_label(text: str) -> Gtk.Label:
@@ -648,6 +702,20 @@ def set_compact_layout(compact: bool) -> bool:
     return changed
 
 
+def card_cover_size(layout_name: str = "poster") -> tuple[int, int]:
+    """Cover size in the Browse grid for a home card layout.
+
+    Compact mode keeps its own, smaller size; poster and large differ only by
+    the multiplier in :func:`lgl.home_layout.scale`.
+    """
+    from . import home_layout
+
+    if _COMPACT_LAYOUT:
+        return 118, 177
+    factor = home_layout.scale(layout_name)
+    return int(150 * factor), int(225 * factor)
+
+
 class BrowseTile(Gtk.FlowBoxChild):
     """One cover in the Browse grid: artwork, then name and one meta line."""
 
@@ -656,12 +724,16 @@ class BrowseTile(Gtk.FlowBoxChild):
 
     def __init__(self, window: "MainWindow", game: GameSummary) -> None:
         super().__init__()
+        from . import home_layout
+
         self.game = game
         self._window = window
         self._token = 0
-        if _COMPACT_LAYOUT:
-            self.COVER_WIDTH = 118
-            self.COVER_HEIGHT = 177
+        try:
+            layout_name = home_layout.HomeLayout(getattr(window, "settings", None)).layout()
+        except (AttributeError, TypeError, ValueError):
+            layout_name = "poster"
+        self.COVER_WIDTH, self.COVER_HEIGHT = card_cover_size(layout_name)
         self.get_style_context().add_class("browse-tile")
 
         card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
@@ -1532,26 +1604,6 @@ def _license_group(url: str) -> str:
     if "creativecommons" in text or "/licenses/" in text:
         return "cc"
     return "other"
-
-
-def _year_matches(year: str, bucket: str) -> bool:
-    if bucket == "all":
-        return True
-    try:
-        value = int(str(year)[:4])
-    except (TypeError, ValueError):
-        return False
-    if bucket == "pre1990":
-        return value < 1990
-    if bucket == "1990s":
-        return 1990 <= value < 2000
-    if bucket == "2000s":
-        return 2000 <= value < 2010
-    if bucket == "2010s":
-        return 2010 <= value < 2020
-    if bucket == "2020s":
-        return value >= 2020
-    return True
 
 
 def _has_format(item: ArchiveItem | None, bucket: str) -> bool:
@@ -3173,6 +3225,13 @@ class LibraryView(Gtk.Box):
         self._rescan_btn.connect("clicked", lambda *_: self.rescan())
         row.pack_start(self._rescan_btn, False, False, 0)
 
+        # Bulk selection lives in gtk_bulk; the toolbar only hosts its toggle
+        # and the bar it reveals, so the rules stay in one place.
+        from .gtk_bulk import BulkActions
+
+        self.bulk = BulkActions(self)
+        row.pack_start(self.bulk.toggle, False, False, 0)
+
         more = Gtk.MenuButton()
         more.set_tooltip_text("More library actions")
         more.set_valign(Gtk.Align.CENTER)
@@ -3201,6 +3260,7 @@ class LibraryView(Gtk.Box):
         row.pack_start(more, False, False, 0)
 
         toolbar.pack_start(row, False, False, 0)
+        toolbar.pack_start(self.bulk.bar, False, False, 0)
 
         meta = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         meta.get_style_context().add_class("library-meta")
@@ -3242,6 +3302,8 @@ class LibraryView(Gtk.Box):
         self._flow.get_style_context().add_class("library-flow")
         self._flow.get_accessible().set_name("Local game library")
         self._flow.connect("selected-children-changed", self._on_selection_changed)
+        self.preview = QuickPreview(self)
+        self.preview.attach(self._flow)
 
         scroller = Gtk.ScrolledWindow()
         scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
@@ -3415,6 +3477,7 @@ class LibraryView(Gtk.Box):
         return count
 
     def _populate(self, entries: Sequence[LibraryEntry]) -> None:
+        self.preview.grid_rebuilt()
         selected = self._selected_entry()
         selected_id = selected.identifier if selected is not None else None
         for child in list(self._flow.get_children()):
@@ -3429,7 +3492,11 @@ class LibraryView(Gtk.Box):
             )
             self._tiles[entry.identifier] = tile
             self._flow.add(tile)
+            self.preview.track(tile)
         self._flow.show_all()
+        bulk = getattr(self, "bulk", None)
+        if bulk is not None:
+            bulk.sync()
 
         if selected_id is not None and selected_id in self._tiles:
             GLib.idle_add(self._reselect_tile, selected_id)
@@ -3781,6 +3848,7 @@ class LibraryView(Gtk.Box):
         return tile.entry if isinstance(tile, LibraryTile) else None
 
     def _on_selection_changed(self, _flow: Gtk.FlowBox) -> None:
+        self.preview.selection_changed()
         entry = self._selected_entry()
         if entry is None:
             self._detail_revealer.set_reveal_child(False)
@@ -3820,6 +3888,7 @@ class LibraryView(Gtk.Box):
         return False
 
     def clear_selection(self) -> None:
+        self.preview.selection_changed()
         self._flow.unselect_all()
         self._detail_revealer.set_reveal_child(False)
         GLib.idle_add(self._release_split)
@@ -6415,6 +6484,7 @@ class MainWindow(Gtk.ApplicationWindow):
         pill = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         pill.get_style_context().add_class("search-pill")
         self._search = Gtk.SearchEntry()
+        __import__("lgl.gtk_suggest", fromlist=["attach"]).attach(self._search, self)
         self._search.set_placeholder_text("Search games")
         self._search.set_width_chars(18)
         self._search.set_max_width_chars(28)
@@ -6504,10 +6574,19 @@ class MainWindow(Gtk.ApplicationWindow):
         menu.append(Gtk.SeparatorMenuItem())
         add_item("Command palette…", self.show_palette)
         add_item("Release calendar…", self.show_calendar)
+        add_item("Discover…", lambda: __import__("lgl.gtk_discover", fromlist=["show_discover"]).show_discover(self, self.settings))
+        add_item("Tags…", lambda: __import__("lgl.gtk_library_tools", fromlist=["show_tags"]).show_tags(self, self.settings))
+        add_item("Find duplicates…", lambda: __import__("lgl.gtk_library_tools", fromlist=["show_duplicates"]).show_duplicates(self))
+        add_item("Edit details…", lambda: __import__("lgl.gtk_library_tools", fromlist=["show_edit_details"]).show_edit_details(self))
+        add_item("Favourites…", lambda: __import__("lgl.gtk_activity", fromlist=["show_favourites"]).show_favourites(self))
+        add_item("Activity…", lambda: __import__("lgl.gtk_activity", fromlist=["show_activity"]).show_activity(self))
         add_item("Recently viewed…", self.show_recent)
         add_item("Keyboard shortcuts…", self.show_shortcuts)
         add_item("Profiles…", self.show_profiles)
+        add_item("Collections…", lambda: __import__("lgl.gtk_collections", fromlist=["show_collections"]).show_collections(self))
         add_item("Tools…", self.show_tools)
+        add_item("Surprise me…", lambda: __import__("lgl.gtk_surprise", fromlist=["surprise"]).surprise(self))
+        add_item("Statistics…", lambda: __import__("lgl.gtk_stats", fromlist=["show_statistics"]).show_statistics(self))
         add_item("Settings…", lambda: self.show_settings())
         add_item("About Lumora", self.show_about)
         menu.show_all()
@@ -6873,10 +6952,19 @@ class MainWindow(Gtk.ApplicationWindow):
         grid_scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
         grid_scroller.add(self._browse_flow)
         self._browse_scroller = grid_scroller
+        self._browse_grid_page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        self._shelves_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        self._shelves_box.set_margin_start(24)
+        self._shelves_box.set_margin_end(24)
+        self._shelves_box.set_margin_top(8)
+        self._shelves_box.set_margin_bottom(4)
+        self._shelves_box.set_visible(False)
+        self._browse_grid_page.pack_start(self._shelves_box, False, False, 0)
+        self._browse_grid_page.pack_start(grid_scroller, True, True, 0)
         grid_adjustment = grid_scroller.get_vadjustment()
         if grid_adjustment is not None:
             grid_adjustment.connect("value-changed", self._on_grid_scrolled)
-        self._sidebar_stack.add_named(grid_scroller, "grid")
+        self._sidebar_stack.add_named(self._browse_grid_page, "grid")
 
         self._list = Gtk.ListBox()
         self._list.set_selection_mode(Gtk.SelectionMode.SINGLE)
@@ -6954,18 +7042,10 @@ class MainWindow(Gtk.ApplicationWindow):
         self._format_combo = LibraryView._combo(
             _FORMAT_FILTERS, "Filter by main file format", "Filter by format"
         )
-        self._archive_genre_combo = _Picker(
-            (("all", "All genres"),),
-            tooltip="Filter by genre",
-            accessible="Filter by genre",
-            searchable=True,
-            width=210,
-        )
         for combo in (
             self._year_combo,
             self._license_combo,
             self._format_combo,
-            self._archive_genre_combo,
         ):
             combo.set_no_show_all(True)
             combo.hide()
@@ -6977,7 +7057,10 @@ class MainWindow(Gtk.ApplicationWindow):
         self._size_bucket = "all"
         self._genre_counts: list[tuple[str, int]] = []
         self._genre_checks: dict[str, Gtk.CheckButton] = {}
+        self._genre_excludes: dict[str, Gtk.ToggleButton] = {}
         self._genre_expanded = False
+        self._include_genres: set[str] = set()
+        self._exclude_genres: set[str] = set()
 
         # Genre ------------------------------------------------------------
         self._genre_more = Gtk.Button(label="All")
@@ -6985,6 +7068,7 @@ class MainWindow(Gtk.ApplicationWindow):
         self._genre_more.set_tooltip_text("Show every genre")
         self._genre_more.connect("clicked", lambda *_: self._toggle_genres())
         genre_section = self._filter_section("Genre", self._genre_more)
+        self._genre_section = genre_section
         self._genre_list = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=1)
         # Expanded to every genre the list would otherwise run the height of the
         # whole column; keep it a compact, scrollable block instead.
@@ -7005,9 +7089,29 @@ class MainWindow(Gtk.ApplicationWindow):
         size_section.pack_start(self._size_chips, False, False, 0)
         body.pack_start(size_section, False, False, 0)
 
-        # Year / Licence / Format ------------------------------------------
+        # Released / Licence / Format --------------------------------------
+        # Released stays as shortcuts over the year range under it: a decade
+        # chip fills the two year fields, so there is one year state and the
+        # summary line can never disagree with the controls.
+        year_section = self._filter_section("Released")
+        self._year_chips = self._chip_row(
+            list(_YEAR_FILTERS), self._on_filter_chip, self._year_combo
+        )
+        self._chip_groups[id(self._year_combo)] = (
+            self._year_combo,
+            self._year_chips.chips,  # type: ignore[attr-defined]
+        )
+        year_section.pack_start(self._year_chips, False, False, 0)
+        (
+            self._year_row,
+            self._year_from_entry,
+            self._year_to_entry,
+        ) = _year_range_row(self._on_year_entry_changed)
+        year_section.pack_start(self._year_row, False, False, 0)
+        self._year_section = year_section
+        body.pack_start(year_section, False, False, 0)
+
         for title, combo, options in (
-            ("Released", self._year_combo, _YEAR_FILTERS),
             ("Licence", self._license_combo, _LICENSE_FILTERS),
             ("File format", self._format_combo, _FORMAT_FILTERS),
         ):
@@ -7017,6 +7121,16 @@ class MainWindow(Gtk.ApplicationWindow):
             section.pack_start(row, False, False, 0)
             body.pack_start(section, False, False, 0)
 
+        # What is actually being applied, in words: a filter that is on is
+        # never invisible, and an empty line means nothing is filtered.
+        self._filter_summary = Gtk.Label(label="", xalign=0)
+        self._filter_summary.set_line_wrap(True)
+        self._filter_summary.get_style_context().add_class("dim")
+        self._filter_summary.get_style_context().add_class("small")
+        self._filter_summary.set_no_show_all(True)
+        self._filter_summary.hide()
+        body.pack_start(self._filter_summary, False, False, 0)
+
         # Reset sits in its own footer: there is no availability filter here, so
         # a heading above one link was an empty section.
         body.pack_start(_filter_footer(self._reset_archive_filters), False, False, 0)
@@ -7025,6 +7139,66 @@ class MainWindow(Gtk.ApplicationWindow):
         column.pack_start(scroller, True, True, 0)
         self._sync_chips()
         return column
+
+    # -- content filters (year range and genres) -----------------------------
+
+    def _year_bounds(self) -> tuple[int | None, int | None]:
+        """The years in the two fields, in order; ``None`` means no bound."""
+        start = getattr(self, "_year_from_entry", None)
+        end = getattr(self, "_year_to_entry", None)
+        low = browse_filters.year_number(start.get_text()) if start else None
+        high = browse_filters.year_number(end.get_text()) if end else None
+        if low is not None and high is not None and low > high:
+            low, high = high, low
+        return low, high
+
+    def _set_year_bounds(self, low: int | None, high: int | None) -> None:
+        if getattr(self, "_year_from_entry", None) is not None:
+            self._year_from_entry.set_text("" if low is None else str(low))
+        if getattr(self, "_year_to_entry", None) is not None:
+            self._year_to_entry.set_text("" if high is None else str(high))
+
+    def _on_year_entry_changed(self, *_args) -> bool:
+        self._apply_filter()
+        return False
+
+    def _browse_content_filters(self) -> browse_filters.Filters:
+        """The year range and genre choices, in the form content_filters reads."""
+        low, high = self._year_bounds()
+        return browse_filters.filters_for(
+            min_year=low,
+            max_year=high,
+            genres=self._include_genres,
+            exclude_genres=self._exclude_genres,
+        )
+
+    def _genre_display(self) -> dict[str, str]:
+        chosen = self._include_genres | self._exclude_genres
+        return {name.casefold(): name for name in chosen}
+
+    def _update_filter_summary(self) -> None:
+        """Show the content_filters summary and hide facets no title carries."""
+        summary = getattr(self, "_filter_summary", None)
+        if summary is None:
+            return
+        text = browse_filters.summary(
+            self._browse_content_filters(), display=self._genre_display()
+        )
+        summary.set_text(text)
+        self._show_filter_widget(summary, bool(text))
+        present = browse_filters.available(self._games)
+        for section, field in (
+            (getattr(self, "_genre_section", None), browse_filters.GENRES),
+            (getattr(self, "_year_section", None), browse_filters.YEAR),
+        ):
+            if section is not None:
+                self._show_filter_widget(section, field in present)
+
+    @staticmethod
+    def _show_filter_widget(widget: Gtk.Widget, visible: bool) -> None:
+        """Show or hide a filter control; the next show_all() must not undo it."""
+        widget.set_no_show_all(not visible)
+        widget.set_visible(visible)
 
     def _filter_section(self, title: str,
                         extra: Gtk.Widget | None = None) -> Gtk.Box:
@@ -7083,7 +7257,10 @@ class MainWindow(Gtk.ApplicationWindow):
 
     def _sync_chips(self) -> None:
         for combo, widgets in list(getattr(self, "_chip_groups", {}).values()):
-            self._mark_chips(widgets, combo.get_active_id() or "all")
+            current = combo.get_active_id() or "all"
+            if combo is getattr(self, "_year_combo", None):
+                current = browse_filters.bucket_for(*self._year_bounds())
+            self._mark_chips(widgets, current)
         if hasattr(self, "_size_chips"):
             self._mark_chips(
                 getattr(self._size_chips, "chips", []),
@@ -7102,21 +7279,45 @@ class MainWindow(Gtk.ApplicationWindow):
             combo.set_active_id(value)
         finally:
             self._syncing_chips = False
+        if combo is getattr(self, "_year_combo", None):
+            self._set_year_bounds(*browse_filters.bucket_bounds(value))
         self._sync_chips()
         self._apply_filter()
 
-    def _on_genre_row(self, button: Gtk.CheckButton, value: str) -> None:
-        if not button.get_active():
+    def _on_genre_row(self, button: Gtk.CheckButton, label: str) -> None:
+        """Include one genre; several may be included at once."""
+        if self._syncing_chips:
             return
+        if button.get_active():
+            self._include_genres.add(label)
+            self._exclude_genres.discard(label)
+        else:
+            self._include_genres.discard(label)
+        self._sync_genre_toggles()
+        self._apply_filter()
+
+    def _on_genre_exclude_toggled(self, button: Gtk.ToggleButton, label: str) -> None:
+        """Never show one genre; it cannot be included at the same time."""
+        if self._syncing_chips:
+            return
+        if button.get_active():
+            self._exclude_genres.add(label)
+            self._include_genres.discard(label)
+        else:
+            self._exclude_genres.discard(label)
+        self._sync_genre_toggles()
+        self._apply_filter()
+
+    def _sync_genre_toggles(self) -> None:
+        """Put both controls back in step with the two genre sets."""
         self._syncing_chips = True
         try:
-            self._archive_genre_combo.set_active_id(value)
             for label, check in self._genre_checks.items():
-                if label != value and check.get_active():
-                    check.set_active(False)
+                check.set_active(label in self._include_genres)
+            for label, toggle in self._genre_excludes.items():
+                toggle.set_active(label in self._exclude_genres)
         finally:
             self._syncing_chips = False
-        self._apply_filter()
 
     def _toggle_genres(self) -> None:
         self._genre_expanded = not self._genre_expanded
@@ -7126,27 +7327,42 @@ class MainWindow(Gtk.ApplicationWindow):
         if not hasattr(self, "_genre_list"):
             return
         counts = getattr(self, "_genre_counts", [])
-        current = self._archive_genre_combo.get_active_id() or "all"
         labels = [label for label, _count in counts]
-        if current != "all" and current not in labels:
+        chosen = self._include_genres | self._exclude_genres
+        if chosen and not chosen.issubset(set(labels)):
             self._genre_expanded = True
         for child in list(self._genre_list.get_children()):
             self._genre_list.remove(child)
         self._genre_checks = {}
-        limit = len(counts) if self._genre_expanded else 6
-        for label, count in counts[:limit]:
-            line = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-            line.get_style_context().add_class("filter-row")
-            check = Gtk.CheckButton(label=label)
-            check.get_style_context().add_class("filter-check")
-            check.set_active(label == current)
-            check.connect("toggled", self._on_genre_row, label)
-            line.pack_start(check, True, True, 0)
-            number = Gtk.Label(label=count_label(count))
-            number.get_style_context().add_class("filter-count")
-            line.pack_end(number, False, False, 0)
-            self._genre_list.pack_start(line, False, False, 0)
-            self._genre_checks[label] = check
+        self._genre_excludes = {}
+        self._syncing_chips = True
+        try:
+            limit = len(counts) if self._genre_expanded else 6
+            for label, count in counts[:limit]:
+                line = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+                line.get_style_context().add_class("filter-row")
+                check = Gtk.CheckButton(label=label)
+                check.get_style_context().add_class("filter-check")
+                check.set_active(label in self._include_genres)
+                check.set_tooltip_text(f"Only show titles tagged {label}")
+                check.connect("toggled", self._on_genre_row, label)
+                line.pack_start(check, True, True, 0)
+                number = Gtk.Label(label=count_label(count))
+                number.get_style_context().add_class("filter-count")
+                line.pack_end(number, False, False, 0)
+                never = Gtk.ToggleButton(label="\u2715")
+                never.get_style_context().add_class("chip")
+                never.set_relief(Gtk.ReliefStyle.NONE)
+                never.set_active(label in self._exclude_genres)
+                never.set_tooltip_text(f"Never show titles tagged {label}")
+                never.get_accessible().set_name(f"Exclude {label}")
+                never.connect("toggled", self._on_genre_exclude_toggled, label)
+                line.pack_end(never, False, False, 0)
+                self._genre_list.pack_start(line, False, False, 0)
+                self._genre_checks[label] = check
+                self._genre_excludes[label] = never
+        finally:
+            self._syncing_chips = False
         if len(counts) > 6:
             self._genre_more.set_label(
                 "Less" if self._genre_expanded else f"All {len(counts)}"
@@ -7157,15 +7373,15 @@ class MainWindow(Gtk.ApplicationWindow):
         self._genre_list.show_all()
 
     def _archive_filters_active(self) -> bool:
+        low, high = self._year_bounds()
         return bool(
-            any(
+            low is not None
+            or high is not None
+            or self._include_genres
+            or self._exclude_genres
+            or any(
                 combo.get_active_id() not in (None, "all")
-                for combo in (
-                    self._year_combo,
-                    self._license_combo,
-                    self._format_combo,
-                    self._archive_genre_combo,
-                )
+                for combo in (self._license_combo, self._format_combo)
             )
             or getattr(self, "_size_bucket", "all") not in (None, "all")
         )
@@ -7206,9 +7422,60 @@ class MainWindow(Gtk.ApplicationWindow):
         finally:
             self._grid_selecting = False
         flow.show_all()
+        self._rebuild_shelves()
         self._load_visible_covers()
         if selected and selected in self._grid_tiles:
             GLib.idle_add(self._restore_grid_selection, selected)
+
+    def _rebuild_shelves(self) -> None:
+        """Custom shelves above the cover grid, drawn from the loaded catalogue."""
+        from . import shelves as shelves_lib
+
+        box = getattr(self, "_shelves_box", None)
+        if box is None:
+            return
+        for child in list(box.get_children()):
+            box.remove(child)
+        rows = [
+            {
+                "key": game.identifier,
+                "title": game.title,
+                "year": game.year,
+                "genres": list(game.subjects),
+                "rating": None,
+            }
+            for game in self._games
+        ]
+        rendered = shelves_lib.render(getattr(self, "settings", None), rows)
+        for name, items in rendered:
+            heading = Gtk.Label(label=name.upper(), xalign=0)
+            heading.get_style_context().add_class("shelf-title")
+            heading.set_margin_top(6)
+            box.pack_start(heading, False, False, 0)
+            flow = Gtk.FlowBox()
+            flow.set_selection_mode(Gtk.SelectionMode.NONE)
+            flow.set_homogeneous(False)
+            flow.set_min_children_per_line(1)
+            flow.set_max_children_per_line(12)
+            flow.set_column_spacing(6)
+            flow.set_row_spacing(4)
+            for item in items:
+                key = str(item.get("key") or "")
+                button = Gtk.Button(label=str(item.get("title") or key))
+                button.get_style_context().add_class("chip")
+                button.set_relief(Gtk.ReliefStyle.NONE)
+                button.set_tooltip_text(str(item.get("title") or key))
+                button.connect("clicked", self._on_shelf_item, key)
+                flow.add(button)
+            box.pack_start(flow, False, False, 0)
+        box.set_visible(bool(rendered))
+        if rendered:
+            box.show_all()
+
+    def _on_shelf_item(self, _button: Gtk.Button, key: str) -> None:
+        game = next((item for item in self._games if item.identifier == key), None)
+        if game is not None:
+            self._select_game(game)
 
     def _restore_grid_selection(self, identifier: str) -> bool:
         tile = self._grid_tiles.get(identifier)
@@ -7276,35 +7543,12 @@ class MainWindow(Gtk.ApplicationWindow):
 
     def _sync_archive_genres(self) -> None:
         """Keep the genre list in step with the tags present, with counts."""
-        combo = getattr(self, "_archive_genre_combo", None)
-        if combo is None:
-            return
         titles = {
             _bare_title(game.title)
             for game in self._games
             if str(game.title or "").strip()
         }
         self._genre_counts = genre_counts(self._games, titles=titles)
-        labels = [label for label, _count in self._genre_counts]
-        model = combo.get_model()
-        existing = [str(row[0]) for row in model] if model is not None else []
-        current = combo.get_active_id() or "all"
-        if existing != ["all"] + labels:
-            blocked = False
-            try:
-                combo.handler_block_by_func(self._on_archive_filter_changed)
-                blocked = True
-            except (TypeError, AttributeError):
-                blocked = False
-            try:
-                combo.remove_all()
-                combo.append("all", "All genres")
-                for label in labels:
-                    combo.append(label, label)
-                combo.set_active_id(current if current in ["all"] + labels else "all")
-            finally:
-                if blocked:
-                    combo.handler_unblock_by_func(self._on_archive_filter_changed)
         self._rebuild_genre_rows()
 
     def _on_archive_filter_changed(self, *_args) -> None:
@@ -7359,37 +7603,30 @@ class MainWindow(Gtk.ApplicationWindow):
             self._year_combo,
             self._license_combo,
             self._format_combo,
-            self._archive_genre_combo,
         ):
             combo.set_active_id("all")
+        self._set_year_bounds(None, None)
         self._size_bucket = "all"
+        self._include_genres = set()
+        self._exclude_genres = set()
+        self._sync_genre_toggles()
         self._sync_chips()
         self._apply_filter()
 
     def _filter_archive(self, games: Sequence[GameSummary]) -> list[GameSummary]:
-        year = self._year_combo.get_active_id() or "all"
         license_group = self._license_combo.get_active_id() or "all"
         fmt = self._format_combo.get_active_id() or "all"
-        genre = self._archive_genre_combo.get_active_id() or "all"
         size = getattr(self, "_size_bucket", "all")
+        content = self._browse_content_filters()
 
         def keep(game: GameSummary) -> bool:
             if not size_matches(game.item_size, size):
-                return False
-            if not _year_matches(game.year, year):
                 return False
             if license_group != "all" and _license_group(game.licenseurl) != license_group:
                 return False
             if fmt != "all" and not _has_format(self._items.get(game.identifier), fmt):
                 return False
-            if genre != "all":
-                wanted = genre.casefold()
-                if not any(
-                    " ".join(str(tag).split()).casefold() == wanted
-                    for tag in game.subjects
-                ):
-                    return False
-            return True
+            return browse_filters.matches(game, content)
 
         return [game for game in games if keep(game)]
 
@@ -7479,6 +7716,10 @@ class MainWindow(Gtk.ApplicationWindow):
             refresh = getattr(getattr(self, "library_view", None), "refresh", None)
             if callable(refresh):
                 refresh()
+        visible = getattr(self, "_visible_games", None)
+        rebuild = getattr(self, "_rebuild_grid", None)
+        if callable(rebuild) and visible is not None:
+            rebuild(visible)
         theme_gtk.set_accent(prefs[view_prefs.ACCENT])
         self._apply_transitions(str(prefs[view_prefs.TRANSITIONS]))
         self.queue_resize()
@@ -8184,6 +8425,7 @@ class MainWindow(Gtk.ApplicationWindow):
 
         filters_active = self._archive_filters_active()
         self._sync_chips()
+        self._update_filter_summary()
         fmt = self._format_combo.get_active_id() or "all"
         if fmt != "all":
             self._format_note.set_text(

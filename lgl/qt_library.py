@@ -45,6 +45,7 @@ from .library import MANIFEST_NAME, scan_game_folder
 from .util import LaunchError
 from .library_store import LibraryEntry, LibraryStore, SORT_DEFAULT_DESCENDING, STATUSES
 from .qt_icons import icon, paint_icon
+from .qt_quick_preview import QuickPreview
 from .qt_widgets import (
     CoverArt,
     CoverGrid,
@@ -212,7 +213,14 @@ class LibraryCard(QFrame):
 
     def resizeEvent(self, event) -> None:  # noqa: N802
         super().resizeEvent(event)
-        self.cover.setFixedHeight(max(140, self.width()))
+        height = max(140, self.width())
+        self.cover.setFixedHeight(height)
+        # The cover is square and sized from the card's width, which can exceed
+        # the slot the grid first gave the card; raising the card's minimum
+        # height keeps the title (and a bulk check box) below the artwork
+        # instead of under it.
+        rest = self.layout().sizeHint().height() - self.cover.height()
+        self.setMinimumHeight(height + max(0, rest))
 
     def set_selected(self, on: bool) -> None:
         self._flag("selected", on)
@@ -241,7 +249,7 @@ class LibraryRow(QFrame):
 
     clicked = Signal(str)
 
-    def __init__(self, entry: LibraryEntry) -> None:
+    def __init__(self, entry: LibraryEntry, *, compact: bool = False) -> None:
         super().__init__()
         self.setObjectName("listRow")
         self.setProperty("selected", False)
@@ -250,9 +258,10 @@ class LibraryRow(QFrame):
         self.identifier = entry.identifier
         self.entry = entry
         row = QHBoxLayout(self)
-        row.setContentsMargins(4, 9, 4, 9)
+        pad = 4 if compact else 9
+        row.setContentsMargins(4, pad, 4, pad)
         column = QVBoxLayout()
-        column.setSpacing(2)
+        column.setSpacing(1 if compact else 2)
         name = ElideLabel(entry.title or entry.identifier)
         name.setObjectName("listTitle")
         column.addWidget(name)
@@ -467,6 +476,13 @@ class LibraryDetail(QFrame):
         ("PLATFORMS", "platforms"),
         ("SOURCE", "metadata_provider"),
     )
+
+    def set_compact(self, compact: bool) -> None:
+        """Denser padding in the selected-game panel."""
+        self._column.setContentsMargins(
+            *((14, 10, 14, 12) if compact else (20, 16, 20, 18))
+        )
+        self._column.setSpacing(4 if compact else 6)
 
     def __init__(self) -> None:
         super().__init__()
@@ -753,6 +769,9 @@ class LibraryPage(QWidget):
         self._descending: bool | None = None
         self._sort_key = "size"
         self._view = "grid"
+        self._compact = False
+        self._gap = GRID_GAP
+        self._vgap = GRID_GAP_VERTICAL
         self.popover: LibraryFilters | None = None
 
         root = QHBoxLayout(self)
@@ -769,6 +788,7 @@ class LibraryPage(QWidget):
         toolbar = QWidget()
         bar = QHBoxLayout(toolbar)
         bar.setContentsMargins(24, 16, 24, 10)
+        self._bar = bar
         bar.setSpacing(8)
         self.search = QLineEdit()
         self.search.setObjectName("librarySearch")
@@ -794,6 +814,13 @@ class LibraryPage(QWidget):
         self.filter_btn.setCursor(Qt.PointingHandCursor)
         self.filter_btn.clicked.connect(self._show_filters)
         bar.addWidget(self.filter_btn)
+
+        # Bulk selection: the bar underneath and the actions it runs come
+        # from qt_bulk, which writes the shared library_tools plans.
+        from .qt_bulk import QtBulk
+
+        self.bulk = QtBulk(self)
+        bar.addWidget(self.bulk.toggle)
         self.refresh_btn = IconButton("refresh", "Rescan the library", 17, 34)
         self.refresh_btn.clicked.connect(self.rescan)
         bar.addWidget(self.refresh_btn)
@@ -801,6 +828,7 @@ class LibraryPage(QWidget):
         self.more.clicked.connect(self._more_menu)
         bar.addWidget(self.more)
         layout.addWidget(toolbar)
+        layout.addWidget(self.bulk.bar)
 
         self.stats = label("", "statLine")
         self.stats.setContentsMargins(30, 0, 24, 10)
@@ -813,11 +841,12 @@ class LibraryPage(QWidget):
         # panel.
         self.scroll.viewport().installEventFilter(self)
         column.setContentsMargins(24, 4, 24, 20)
+        self._column = column
         self.grid_host = QWidget()
         self.grid = QGridLayout(self.grid_host)
         self.grid.setContentsMargins(0, 0, 0, 0)
-        self.grid.setHorizontalSpacing(GRID_GAP)
-        self.grid.setVerticalSpacing(GRID_GAP_VERTICAL)
+        self.grid.setHorizontalSpacing(self._gap)
+        self.grid.setVerticalSpacing(self._vgap)
         column.addWidget(self.grid_host)
         self.list_host = QWidget()
         self.list_column = QVBoxLayout(self.list_host)
@@ -839,6 +868,9 @@ class LibraryPage(QWidget):
         self.detail.action.connect(self._on_action)
         root.addWidget(self.detail)
 
+        # Hover preview: off unless Tools -> Interface turns it on.
+        self.preview = QuickPreview(self)
+
     # data ------------------------------------------------------------------
     def genres(self) -> list[str]:
         if self.store is not None:
@@ -851,6 +883,24 @@ class LibraryPage(QWidget):
     def set_entries(self, entries: Sequence[LibraryEntry]) -> None:
         self._entries = list(entries)
         self.refresh()
+
+    def set_compact(self, compact: bool) -> None:
+        """Shrink padding, row height and tile spacing; off restores the look."""
+        self._compact = bool(compact)
+        self._bar.setContentsMargins(
+            *((16, 10, 16, 6) if compact else (24, 16, 24, 10))
+        )
+        self._column.setContentsMargins(
+            *((16, 2, 16, 12) if compact else (24, 4, 24, 20))
+        )
+        self._gap = 8 if compact else GRID_GAP
+        self._vgap = 8 if compact else GRID_GAP_VERTICAL
+        self.grid.setHorizontalSpacing(self._gap)
+        self.grid.setVerticalSpacing(self._vgap)
+        self.detail.set_compact(compact)
+        # Grid cards carry their own width, so rebuild whichever view is up:
+        # otherwise an already-drawn grid keeps the old tile size.
+        self._render()
 
     def rescan(self) -> None:
         if self.store is None:
@@ -982,7 +1032,10 @@ class LibraryPage(QWidget):
         if self._view == "grid":
             columns = self._columns()
             available = max(self.scroll.viewport().width() - 48, 200)
-            cell = max(180, (available - GRID_GAP * (columns - 1)) // columns)
+            cell = max(180, (available - self._gap * (columns - 1)) // columns)
+            if self._compact:
+                # The gap alone barely shows; a denser grid needs smaller tiles.
+                cell = max(150, min(cell, 190))
             for index, entry in enumerate(self._shown):
                 card: QWidget = LibraryCard(entry)
                 card.setMinimumWidth(min(200, cell))
@@ -991,7 +1044,7 @@ class LibraryPage(QWidget):
                 self._wire(card, entry)
         else:
             for entry in self._shown:
-                card = LibraryRow(entry)
+                card = LibraryRow(entry, compact=self._compact)
                 self.list_column.addWidget(card)
                 self._wire(card, entry)
 
@@ -1010,17 +1063,24 @@ class LibraryPage(QWidget):
         card = self._cards.get(self._selected)
         if card is not None:
             card.set_selected(True)  # type: ignore[attr-defined]
+        bulk = getattr(self, "bulk", None)
+        if bulk is not None:
+            # The tiles were just rebuilt, so the checks go back on them.
+            bulk.sync()
         self._load_covers()
+        # The tiles were just replaced; an open preview re-anchors to the new one.
+        self.preview.cards_rebuilt()
 
     def _wire(self, card: QWidget, entry: LibraryEntry) -> None:
         card.clicked.connect(self.select)  # type: ignore[attr-defined]
+        self.preview.track(card, entry)
         self._cards[entry.identifier] = card
         if entry.identifier in self._pix:
             card.set_pixmap(self._pix[entry.identifier]) if hasattr(card, "set_pixmap") else None
 
     def _columns(self) -> int:
         width = max(self.scroll.viewport().width() - 48, 200)
-        return max(1, int((width + GRID_GAP) // (GRID_MIN_CELL + GRID_GAP)))
+        return max(1, int((width + self._gap) // (GRID_MIN_CELL + self._gap)))
 
     def eventFilter(self, watched, event) -> bool:  # noqa: N802
         if watched is self.scroll.viewport() and event.type() == QEvent.Resize:
@@ -1086,6 +1146,7 @@ class LibraryPage(QWidget):
         return next((e for e in self._entries if e.identifier == identifier), None)
 
     def select(self, identifier: str) -> None:
+        self.preview.selection_changed()
         previous = self._cards.get(self._selected)
         if previous is not None:
             previous.set_selected(False)  # type: ignore[attr-defined]
