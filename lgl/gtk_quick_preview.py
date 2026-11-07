@@ -265,6 +265,7 @@ class QuickPreview(Gtk.Popover):
         )
         self._motion_id = toplevel.connect("motion-notify-event", self._on_motion)
         toplevel.connect("leave-notify-event", self._on_window_leave)
+        toplevel.connect("key-press-event", self._on_window_key)
         self._watched.append(toplevel)
         self._window = toplevel
         try:
@@ -430,6 +431,19 @@ class QuickPreview(Gtk.Popover):
         """The pointer left the window the tiles live in."""
         self._update(None)
         return False
+
+    def _on_window_key(self, _widget: Gtk.Widget, event: Gdk.EventKey) -> bool:
+        """Escape closes an open preview, wherever the keyboard focus is.
+
+        Connected to the toplevel so a hover-opened preview closes even when
+        the search box still has the focus.  ``True`` stops the event, so the
+        widget that owns the focus does not also act on it; with no preview
+        open the key goes through untouched.
+        """
+        if event.keyval != Gdk.KEY_Escape or not self.get_visible():
+            return False
+        self.dismiss()
+        return True
 
     def _hover(self, tile: Gtk.Widget) -> None:
         entry = self._tiles.get(tile)
