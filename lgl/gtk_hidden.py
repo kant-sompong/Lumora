@@ -24,6 +24,10 @@ from gi.repository import GLib, Gtk  # noqa: E402
 
 from . import hidden_gems  # noqa: E402
 
+#: Where the two thresholds live in the app settings.
+MIN_SCORE_KEY = "hidden_gems_min_score"
+MAX_POPULARITY_KEY = "hidden_gems_max_popularity"
+
 HINT = "Select a title to see its score and popularity."
 BLURB = (
     "AniList anime only: games and TMDB titles have no score and popularity "
@@ -73,13 +77,13 @@ class HiddenGemsPage(Gtk.Box):
         self.score = Gtk.SpinButton.new_with_range(0, 100, 1)
         self.score.set_digits(0)
         self.score.set_width_chars(4)
-        self.score.set_value(hidden_gems.clean_score(min_score))
+        self.score.set_value(self._saved_score(min_score))
         controls.pack_start(self.score, False, False, 0)
         controls.pack_start(Gtk.Label(label="Popularity below"), False, False, 0)
         self.popularity = Gtk.SpinButton.new_with_range(0, hidden_gems.MAX_POPULARITY, 100)
         self.popularity.set_digits(0)
         self.popularity.set_width_chars(8)
-        self.popularity.set_value(hidden_gems.clean_popularity(max_popularity))
+        self.popularity.set_value(self._saved_popularity(max_popularity))
         self.popularity.set_tooltip_text(
             "0 uses the median popularity of the fetched titles."
         )
@@ -121,6 +125,23 @@ class HiddenGemsPage(Gtk.Box):
         self.detail.get_style_context().add_class("dim-label")
         self.pack_start(self.detail, False, False, 0)
 
+    # -- saved thresholds ------------------------------------------------
+    def _saved_score(self, fallback: int) -> int:
+        saved = self.settings.get(MIN_SCORE_KEY) if self.settings is not None else None
+        return hidden_gems.clean_score(fallback if saved is None else saved)
+
+    def _saved_popularity(self, fallback: int) -> int:
+        saved = (
+            self.settings.get(MAX_POPULARITY_KEY) if self.settings is not None else None
+        )
+        return hidden_gems.clean_popularity(fallback if saved is None else saved)
+
+    def _remember(self, score: int, popularity: int) -> None:
+        """Save both controls as they are; 0 stays 0 rather than the median."""
+        if self.settings is None:
+            return
+        self.settings.update(**{MIN_SCORE_KEY: score, MAX_POPULARITY_KEY: popularity})
+
     # -- thresholds -----------------------------------------------------
     def thresholds(self) -> tuple[int, int]:
         """The two numbers in the controls, cleaned to what the module expects."""
@@ -146,6 +167,7 @@ class HiddenGemsPage(Gtk.Box):
         self.error.set_text("")
         self.error.hide()
         score, popularity = self.thresholds()
+        self._remember(score, popularity)
         excluded = list(self.excluded)
 
         def load() -> None:
@@ -177,8 +199,6 @@ class HiddenGemsPage(Gtk.Box):
             self.error.show()
         else:
             self.error.hide()
-        if result.cutoff and not int(self.popularity.get_value()):
-            self.popularity.set_value(result.cutoff)
         if result.cutoff:
             self.cutoff_note.set_text(
                 f"Popularity below {result.cutoff:,} "

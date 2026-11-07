@@ -13,6 +13,7 @@ except (ValueError, ImportError):  # pragma: no cover - GTK 3 typelib missing
     pytest.skip("GTK 3 is not installed", allow_module_level=True)
 
 from lgl import gtk_hidden  # noqa: E402
+from lgl.settings import Settings  # noqa: E402
 
 CATALOGUE = [
     {"id": 1, "title": {"english": "Mega Hit"}, "averageScore": 90, "popularity": 100000,
@@ -57,7 +58,8 @@ def test_refresh_lists_gems_with_score_and_popularity_rank(tmp_path):
     ]
     assert view.status.get_text() == "3 of 6 titles score 78+ with popularity under 350."
     assert view.error.get_visible() is False
-    assert int(view.popularity.get_value()) == 350
+    assert int(view.popularity.get_value()) == 0
+    assert "median of the fetched titles" in view.cutoff_note.get_text()
 
 
 def test_selecting_a_gem_shows_its_numbers(tmp_path):
@@ -79,6 +81,26 @@ def test_a_network_failure_is_a_line_not_a_blank_page(tmp_path):
     assert labels(view.list) == []
     # the page still explains itself
     assert view.detail.get_text() == gtk_hidden.HINT
+
+
+def test_thresholds_are_saved_and_the_median_stays_out_of_the_control(tmp_path):
+    settings = Settings(tmp_path / "config.json")
+    view = gtk_hidden.HiddenGemsPage(
+        settings, post=post, cache_path=tmp_path / "hidden-gems.json", threaded=False
+    )
+    view.score.set_value(85)
+    view.refresh()
+
+    assert settings.get("hidden_gems_min_score") == 85
+    assert settings.get("hidden_gems_max_popularity") == 0
+    # The median that was used (350) is described in the note only.
+    assert int(view.popularity.get_value()) == 0
+
+    again = gtk_hidden.HiddenGemsPage(
+        settings, post=post, cache_path=tmp_path / "hidden-gems.json", threaded=False
+    )
+    assert int(again.score.get_value()) == 85
+    assert int(again.popularity.get_value()) == 0
 
 
 def test_raising_the_score_suggests_lowering_it(tmp_path):
