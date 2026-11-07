@@ -126,6 +126,28 @@ def test_thresholds_are_saved_and_the_median_stays_out_of_the_control(tmp_path):
     assert int(again.popularity.get_value()) == 0
 
 
+def test_one_refresh_writes_both_thresholds_in_one_save(tmp_path):
+    class Counting(Settings):
+        def __init__(self, path):
+            super().__init__(path)
+            self.writes = 0
+
+        def save(self):
+            self.writes += 1
+            super().save()
+
+    settings = Counting(tmp_path / "config.json")
+    view = gtk_hidden.HiddenGemsPage(
+        settings, post=post, cache_path=tmp_path / "hidden-gems.json", threaded=False
+    )
+    view.score.set_value(85)
+    view.refresh()
+
+    assert settings.writes == 1
+    assert settings.get("hidden_gems_min_score") == 85
+    assert settings.get("hidden_gems_max_popularity") == 0
+
+
 def test_raising_the_score_suggests_lowering_it(tmp_path):
     view = page(tmp_path)
     view.refresh()

@@ -182,6 +182,28 @@ def test_a_successful_load_still_fills_the_page_with_the_list(app, tmp_path):
     assert page.detail.isHidden() is False
 
 
+def test_one_refresh_writes_both_thresholds_in_one_save(app, tmp_path):
+    class Counting(Settings):
+        def __init__(self, path):
+            super().__init__(path)
+            self.writes = 0
+
+        def save(self):
+            self.writes += 1
+            super().save()
+
+    settings = Counting(tmp_path / "config.json")
+    page = qt_hidden.HiddenGemsPanel(
+        settings, post=post, cache_path=tmp_path / "hidden-gems.json", threaded=False
+    )
+    page.score.setValue(85)
+    page.refresh()
+
+    assert settings.writes == 1
+    assert settings.get("hidden_gems_min_score") == 85
+    assert settings.get("hidden_gems_max_popularity") == 0
+
+
 def test_a_second_refresh_is_answered_by_the_cache(app, tmp_path):
     page = panel(tmp_path)
     page.refresh()
