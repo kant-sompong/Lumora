@@ -38,7 +38,7 @@ from gi.repository import (  # noqa: E402
     PangoCairo,
 )
 
-from . import recently_viewed
+from . import artwork_background, platform_support, recently_viewed  # noqa: E402
 from . import (  # noqa: E402
     anipm,
     framextv,
@@ -618,6 +618,165 @@ def _fetch_pixbuf(url: str, size: tuple[int, int]):
         max(1, int(pixbuf.get_height() * scale)),
         GdkPixbuf.InterpType.BILINEAR,
     )
+
+
+def _pixbuf_pixels(pixbuf) -> bytes:
+    """RGB bytes with the row padding removed, which is what the blur expects."""
+    width, height = pixbuf.get_width(), pixbuf.get_height()
+    channels = pixbuf.get_n_channels()
+    stride = pixbuf.get_rowstride()
+    data = pixbuf.get_pixels()
+    out = bytearray()
+    for y in range(height):
+        row = y * stride
+        for x in range(width):
+            index = row + x * channels
+            out += data[index : index + 3]
+    return bytes(out)
+
+
+class ArtworkBackdrop:
+    """Heavily blurred cover art painted behind a page's content.
+
+    A draw handler paints the cached picture first, so the page's own widgets
+    sit on top of it.  Decoding and blurring happen on a worker thread; the
+    picture fades in unless transitions are switched off in the preferences.
+    """
+
+    OPACITY = 0.55
+
+    def __init__(self, widget: Gtk.Widget, settings: Any) -> None:
+        self.widget = widget
+        self.settings = settings
+        self.pixbuf = None
+        self.alpha = 0.0
+        self.source = ""
+        self._token = 0
+        widget.connect("draw", self._draw)
+
+    def clear(self) -> None:
+        self._token += 1
+        self.pixbuf = None
+        self.alpha = 0.0
+        self.source = ""
+        self.widget.queue_draw()
+
+    def show_file(self, path: Any) -> None:
+        """Blur a local cover file (the library's cover art)."""
+        name = str(path or "").strip()
+        if not name or not view_prefs.artwork_backgrounds(self.settings):
+            self.clear()
+            return
+        self._token += 1
+        token = self._token
+
+        def work() -> None:
+            try:
+                pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(
+                    name,
+                    artwork_background.SAMPLE_WIDTH,
+                    artwork_background.SAMPLE_HEIGHT,
+                    False,
+                )
+            except GLib.Error:
+                return
+            GLib.idle_add(self._decoded, token, name, pixbuf)
+
+        threading.Thread(target=work, daemon=True, name="lgl-artwork").start()
+
+    def _decoded(self, token: int, name: str, pixbuf) -> bool:
+        if token != self._token:
+            return False
+        self.show_pixbuf(name, pixbuf)
+        return False
+
+    def show_pixbuf(self, source: Any, pixbuf) -> None:
+        """Blur an already-decoded picture (a title page's backdrop)."""
+        name = str(source or "").strip()
+        if pixbuf is None or not name:
+            self.clear()
+            return
+        if not view_prefs.artwork_backgrounds(self.settings):
+            self.clear()
+            return
+        if (
+            pixbuf.get_width() > artwork_background.SAMPLE_WIDTH
+            or pixbuf.get_height() > artwork_background.SAMPLE_HEIGHT
+        ):
+            scaled = pixbuf.scale_simple(
+                artwork_background.SAMPLE_WIDTH,
+                artwork_background.SAMPLE_HEIGHT,
+                GdkPixbuf.InterpType.BILINEAR,
+            )
+        else:
+            scaled = pixbuf
+        if scaled is None:
+            self.clear()
+            return
+        pixels = _pixbuf_pixels(scaled)
+        self._build(name, pixels, scaled.get_width(), scaled.get_height())
+
+    def _build(self, name: str, pixels: bytes, width: int, height: int) -> None:
+        self.source = name
+        self._token += 1
+        token = self._token
+        out_width, out_height = artwork_background.BACKGROUND_SIZE
+        cache_dir = platform_support.cache_dir()
+
+        def work() -> None:
+            path = artwork_background.make_background(
+                name,
+                out_width,
+                out_height,
+                load=lambda _s: (pixels, width, height),
+                cache_dir=cache_dir,
+            )
+            if path is not None:
+                GLib.idle_add(self._ready, token, str(path))
+
+        threading.Thread(target=work, daemon=True, name="lgl-artwork").start()
+
+    def _ready(self, token: int, path: str) -> bool:
+        if token != self._token:
+            return False
+        try:
+            self.pixbuf = GdkPixbuf.Pixbuf.new_from_file(path)
+        except GLib.Error:
+            return False
+        if view_prefs.transitions(self.settings) == "off":
+            self.alpha = 1.0
+            self.widget.queue_draw()
+        else:
+            self.alpha = 0.0
+            GLib.timeout_add(16, self._tick, token)
+        self.widget.queue_draw()
+        return False
+
+    def _tick(self, token: int) -> bool:
+        if token != self._token:
+            return False
+        self.alpha = min(1.0, self.alpha + 0.09)
+        self.widget.queue_draw()
+        return self.alpha < 1.0
+
+    def _draw(self, widget: Gtk.Widget, cr) -> bool:
+        if self.pixbuf is None or self.alpha <= 0:
+            return False
+        width, height = widget.get_allocated_width(), widget.get_allocated_height()
+        picture_width, picture_height = self.pixbuf.get_width(), self.pixbuf.get_height()
+        if width <= 1 or height <= 1 or picture_width <= 0 or picture_height <= 0:
+            return False
+        scale = max(width / picture_width, height / picture_height)
+        cr.save()
+        cr.translate(
+            (width - picture_width * scale) / 2,
+            (height - picture_height * scale) / 2,
+        )
+        cr.scale(scale, scale)
+        Gdk.cairo_set_source_pixbuf(cr, self.pixbuf, 0, 0)
+        cr.paint_with_alpha(self.OPACITY * self.alpha)
+        cr.restore()
+        return False
 
 
 class Images:
@@ -3238,6 +3397,7 @@ class MoviesWindow(Gtk.Box):
         page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         page.set_valign(Gtk.Align.START)
         page.get_style_context().add_class("movie-detail-body")
+        self._artwork = ArtworkBackdrop(page, self._settings)
 
         overlay = Gtk.Overlay()
         overlay.set_size_request(-1, 420)
@@ -3366,6 +3526,8 @@ class MoviesWindow(Gtk.Box):
                 backdrop.set_pixbuf(pixbuf)
             except Exception:  # noqa: BLE001 - the page may have been replaced
                 pass
+            if pixbuf is not None:
+                self._artwork.show_pixbuf(url, pixbuf)
             return False
 
         self._images.load(url, DETAIL_BACKDROP_SIZE, apply)

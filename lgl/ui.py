@@ -2089,6 +2089,9 @@ class LibraryDetail(Gtk.Box):
     def __init__(self, view: "LibraryView") -> None:
         super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         self._view = view
+        from .movies_ui import ArtworkBackdrop
+
+        self._artwork = ArtworkBackdrop(self, view._settings)
         self._entry: LibraryEntry | None = None
         self._compat_token = 0
         self._updating = False
@@ -2410,6 +2413,7 @@ class LibraryDetail(Gtk.Box):
         self._favorite.set_active(bool(entry.favorite))
         self._updating = False
         self._sync_favorite()
+        self._artwork.show_file(entry.cover_path)
 
         self._verify_btn.set_sensitive(True)
         self._progress_box.hide()

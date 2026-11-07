@@ -15,8 +15,9 @@ from pathlib import Path
 from typing import Callable, Sequence
 
 from PySide6.QtCore import QEvent, Qt, QTimer, Signal
-from PySide6.QtGui import QPixmap
+from PySide6.QtGui import QImage, QPainter, QPixmap
 from PySide6.QtWidgets import (
+    QApplication,
     QCheckBox,
     QComboBox,
     QDialog,
@@ -37,7 +38,14 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from . import external_dm, integrity, platform_support, recently_viewed
+from . import (
+    artwork_background,
+    external_dm,
+    integrity,
+    platform_support,
+    recently_viewed,
+    view_prefs,
+)
 from .archive import ArchiveClient, ArchiveItem
 from .launch import launch as launch_program
 from .launch import plan_launch
@@ -746,6 +754,146 @@ class LibraryFilters(Popover):
 # --------------------------------------------------------------------------
 
 
+def _image_pixels(image: QImage) -> bytes:
+    """RGB bytes with no row padding, which is what the blur expects."""
+    width, height = image.width(), image.height()
+    raw = image.constBits().tobytes()
+    stride = image.bytesPerLine()
+    if stride == width * 3:
+        return raw[: width * height * 3]
+    out = bytearray()
+    for y in range(height):
+        out += raw[y * stride : y * stride + width * 3]
+    return bytes(out)
+
+
+class ArtworkBackdrop:
+    """Heavily blurred cover art painted behind a page's content.
+
+    The blur runs on the shared worker pool; the page only ever paints a
+    finished QImage, at 55% opacity so text keeps its contrast on both themes.
+    """
+
+    #: The page paints its theme colour first and the picture over it at this
+    #: opacity, so body text keeps its contrast in both themes.
+    OPACITY = 0.55
+    #: Page surfaces that paint an opaque background would hide the picture;
+    #: they become translucent only while a backdrop is showing.
+    REVEAL_NAMES = ("pageBody", "detail", "qt_scrollarea_viewport")
+
+    def __init__(self, page: QWidget, settings: Any = None) -> None:
+        self.page = page
+        self.settings = settings
+        self.image: QImage | None = None
+        self.alpha = 0.0
+        self.source = ""
+        self._token = 0
+        self._surfaces: list[tuple[QWidget, str]] = []
+        self._timer = QTimer(page)
+        self._timer.setInterval(16)
+        self._timer.timeout.connect(self._tick)
+
+    def clear(self) -> None:
+        self._token += 1
+        self._timer.stop()
+        self.image = None
+        self.alpha = 0.0
+        self.source = ""
+        self._restore_surfaces()
+        self.page.update()
+
+    def _restore_surfaces(self) -> None:
+        for widget, previous in self._surfaces:
+            try:
+                widget.setStyleSheet(previous)
+            except RuntimeError:  # the page was rebuilt underneath us
+                pass
+        self._surfaces = []
+
+    def _reveal_surfaces(self) -> None:
+        """Let the page's own painted background show through its content."""
+        self._restore_surfaces()
+        for widget in [self.page, *self.page.findChildren(QWidget)]:
+            name = widget.objectName()
+            if name not in self.REVEAL_NAMES:
+                continue
+            previous = widget.styleSheet()
+            if previous:
+                continue
+            widget.setStyleSheet(f"#{name} {{ background-color: transparent; }}")
+            self._surfaces.append((widget, previous))
+
+    def show_image(self, source: Any, image: QImage | None) -> None:
+        """Blur ``image`` for ``source`` and fade it in behind the page."""
+        name = str(source or "").strip()
+        if image is None or image.isNull() or not name:
+            self.clear()
+            return
+        if not view_prefs.artwork_backgrounds(self.settings):
+            self.clear()
+            return
+        sample = image.convertToFormat(QImage.Format_RGB888).scaled(
+            artwork_background.SAMPLE_WIDTH,
+            artwork_background.SAMPLE_HEIGHT,
+            Qt.IgnoreAspectRatio,
+            Qt.SmoothTransformation,
+        )
+        pixels = _image_pixels(sample)
+        self.source = name
+        self._token += 1
+        token = self._token
+        width, height = artwork_background.BACKGROUND_SIZE
+        cache_dir = platform_support.cache_dir()
+
+        def work() -> object:
+            return artwork_background.make_background(
+                name,
+                width,
+                height,
+                load=lambda _s: (pixels, artwork_background.SAMPLE_WIDTH, artwork_background.SAMPLE_HEIGHT),
+                cache_dir=cache_dir,
+            )
+
+        def done(path: object) -> None:
+            if token != self._token or not path:
+                return
+            picture = QImage(str(path))
+            if picture.isNull():
+                return
+            self.image = picture
+            self._reveal_surfaces()
+            if view_prefs.transitions(self.settings) == "off":
+                self.alpha = 1.0
+                self.page.update()
+            else:
+                self.alpha = 0.0
+                self._timer.start()
+            self.page.update()
+
+        run_async(work, done, lambda _exc: None)
+
+    def _tick(self) -> None:
+        self.alpha = min(1.0, self.alpha + 0.09)
+        self.page.update()
+        if self.alpha >= 1.0:
+            self._timer.stop()
+
+    def paint(self) -> None:
+        if self.image is None or self.alpha <= 0:
+            return
+        painter = QPainter(self.page)
+        # The theme's own colour always sits underneath the picture, so a light
+        # theme stays light enough for dark body text.  The application palette
+        # is the themed one; a page's own palette may still be the style default.
+        app = QApplication.instance()
+        base = (app.palette() if app is not None else self.page.palette()).window()
+        painter.fillRect(self.page.rect(), base)
+        painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
+        painter.setOpacity(self.OPACITY * self.alpha)
+        painter.drawImage(self.page.rect(), self.image)
+        painter.end()
+
+
 class LibraryPage(QWidget):
     """Installed games: search, sort, filter, grid/list and detail panel."""
 
@@ -867,6 +1015,8 @@ class LibraryPage(QWidget):
         self.detail.closed.connect(self.clear_selection)
         self.detail.action.connect(self._on_action)
         root.addWidget(self.detail)
+
+        self._artwork = ArtworkBackdrop(self, settings)
 
         # Hover preview: off unless Tools -> Interface turns it on.
         self.preview = QuickPreview(self)
@@ -1140,6 +1290,7 @@ class LibraryPage(QWidget):
             entry = self._entry(identifier)
             if entry is not None:
                 self.detail.show_entry(entry, pix)
+                self._artwork.show_image(entry.cover_path, pix.toImage())
 
     # selection -------------------------------------------------------------
     def _entry(self, identifier: str) -> LibraryEntry | None:
@@ -1156,8 +1307,13 @@ class LibraryPage(QWidget):
             card.set_selected(True)  # type: ignore[attr-defined]
         entry = self._entry(identifier)
         if entry is not None:
-            self.detail.show_entry(entry, self._pix.get(identifier))
+            pix = self._pix.get(identifier)
+            self.detail.show_entry(entry, pix)
             self.detail.show()
+            if pix is not None and entry.cover_path:
+                self._artwork.show_image(entry.cover_path, pix.toImage())
+            else:
+                self._artwork.clear()
             recently_viewed.record(
                 recently_viewed.default_path(),
                 kind="game",
@@ -1172,6 +1328,12 @@ class LibraryPage(QWidget):
             card.set_selected(False)  # type: ignore[attr-defined]
         self._selected = ""
         self.detail.hide()
+        self._artwork.clear()
+
+    def paintEvent(self, event) -> None:  # noqa: N802
+        """Paint the blurred artwork behind the page, then its content."""
+        super().paintEvent(event)
+        self._artwork.paint()
 
     # filters ---------------------------------------------------------------
     def _show_filters(self) -> None:
