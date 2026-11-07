@@ -388,6 +388,14 @@ QPushButton#carouselArrow {{
 QPushButton#carouselArrow:hover {{ background: {c['raised']}; }}
 QLabel#mediaNote {{ color: {c['muted']}; font-size: {body}px; }}
 
+/* ---- embedded player -------------------------------------------------- */
+QWidget#playerPage, QFrame#playerStage {{ background: #000000; }}
+QWidget#playerFallback {{ background: {c['bg']}; }}
+QFrame#playerBar {{
+    background: {c['surface']}; border-bottom: 1px solid {alpha(fg, 0.07)};
+}}
+QLabel#playerTitle {{ font-weight: 700; font-size: {body + 1}px; }}
+
 /* ---- misc -------------------------------------------------------------- */
 QFrame#metabar {{ background: {alpha(fg, 0.05)}; }}
 QLabel#statusBar {{ color: {alpha(fg, 0.34)}; font-size: {small}px; }}
