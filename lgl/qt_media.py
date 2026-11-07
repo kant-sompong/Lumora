@@ -30,9 +30,20 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from . import mal, media_history, platform_support, streaming, tmdb, view_prefs
+from . import (
+    mal,
+    media_history,
+    platform_support,
+    streaming,
+    tmdb,
+    trailer_data,
+    trailers,
+    view_prefs,
+)
 from . import recently_viewed
 from .qt_icons import icon, paint_icon
+from .qt_library import ArtworkBackdrop
+from .qt_player import EmbeddedPlayer, make_player
 from .qt_widgets import (
     CoverArt,
     ElideLabel,
@@ -416,13 +427,17 @@ class EpisodeRow(QFrame):
         super().mouseReleaseEvent(event)
 
 
-class PlayerDialog(QDialog):
-    """Embedded player when Qt WebEngine is available, otherwise the browser."""
+class TrailerDialog(QDialog):
+    """A trailer in the embedded WebEngine view, or a browser button.
+
+    Nothing opens automatically when this build
+    has no WebEngine: the user presses the button themselves.
+    """
 
     def __init__(self, url: str, title: str, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("sheet")
-        self.setWindowTitle(title or "Play")
+        self.setWindowTitle(f"Trailer · {title}" if title else "Trailer")
         self.resize(1120, 700)
         column = QVBoxLayout(self)
         column.setContentsMargins(0, 0, 0, 0)
@@ -434,8 +449,6 @@ class PlayerDialog(QDialog):
 
             view = QWebEngineView(self)
             page = view.page()
-            # The provider pages use their own fullscreen button; let them ask
-            # Qt for it instead of silently staying windowed.
             page.settings().setAttribute(
                 QWebEngineSettings.WebAttribute.FullScreenSupportEnabled, True
             )
@@ -453,19 +466,18 @@ class PlayerDialog(QDialog):
             inner.setContentsMargins(28, 28, 28, 24)
             inner.setSpacing(10)
             inner.addStretch(1)
-            inner.addWidget(label("Playback opens in your browser", "pageTitle"))
+            inner.addWidget(label("Open trailer in your browser", "pageTitle"))
             inner.addWidget(label(
-                "This build has no embedded player, so the provider page opens in your "
-                "default browser instead. Nothing is downloaded.",
+                "This build has no embedded browser, so the trailer cannot play "
+                "here. Nothing opens until you press the button.",
                 "detailNote", wrap=True,
             ))
-            open_btn = QPushButton("Open in browser")
+            open_btn = QPushButton("Open trailer in your browser")
             open_btn.setObjectName("suggested")
             open_btn.clicked.connect(lambda: platform_support.open_url(url))
             inner.addWidget(open_btn, 0, Qt.AlignLeft)
             inner.addStretch(1)
             column.addWidget(panel, 1)
-            platform_support.open_url(url)
         else:
             column.addWidget(view, 1)
         close = QPushButton("Close")
@@ -488,7 +500,8 @@ class MediaPage(QWidget):
     configure_requested = Signal()
 
     def __init__(self, settings: Settings | None = None,
-                 cache_root: Path | None = None) -> None:
+                 cache_root: Path | None = None,
+                 player_factory: Callable[[QWidget], EmbeddedPlayer] | None = None) -> None:
         super().__init__()
         self.settings = settings
         self._cache_root = cache_root or platform_support.cache_dir()
@@ -502,6 +515,7 @@ class MediaPage(QWidget):
         self._anime_items: list[Card] = []
         self._detail_card: Card | None = None
         self._loaded = False
+        self._artwork = ArtworkBackdrop(self, settings)
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -580,6 +594,13 @@ class MediaPage(QWidget):
         self._detail_page, detail_column = self._page()
         self.stack.addWidget(self._detail_page)
         self._build_detail(detail_column)
+        # The player is a page of this Media page, not a dialog: Watch swaps the
+        # stack, so the window never closes and nothing flickers.
+        self._player_factory = player_factory or make_player
+        self.player = self._player_factory(self)
+        self.player.back_requested.connect(self._leave_player)
+        self.stack.addWidget(self.player)
+        self._player_return: QWidget | None = None
         self.show_section("home")
 
     # scaffolding -----------------------------------------------------------
@@ -763,6 +784,13 @@ class MediaPage(QWidget):
         self.detail_back.setCursor(Qt.PointingHandCursor)
         self.detail_back.clicked.connect(lambda: self.show_section(self._section))
         top.addWidget(self.detail_back)
+        # Hidden until TMDB says this title has a trailer we can embed.
+        self.trailer_btn = QPushButton("▶  Trailer")
+        self.trailer_btn.setObjectName("heroAction")
+        self.trailer_btn.setCursor(Qt.PointingHandCursor)
+        self.trailer_btn.setVisible(False)
+        self.trailer_btn.clicked.connect(self._open_trailer)
+        top.addWidget(self.trailer_btn)
         top.addStretch(1)
         column.addLayout(top)
         self.detail_hero = HeroPanel()
@@ -799,7 +827,16 @@ class MediaPage(QWidget):
 
     # navigation ------------------------------------------------------------
     def show_section(self, key: str) -> None:
+        # Choosing a section from the media bar while the video plays stops it,
+        # so a hidden page never keeps playing sound.
+        if (
+            getattr(self, "player", None) is not None
+            and self.stack.currentWidget() is self.player
+        ):
+            self.player.stop_playback()
+            self._player_return = None
         self._section = key
+        self._artwork.clear()
         if hasattr(self, "provider_combo"):
             self._fill_provider_combo(key)
         for name, button in self._nav.items():
@@ -1146,8 +1183,25 @@ class MediaPage(QWidget):
         )
         self.stack.setCurrentWidget(self._detail_page)
         self._load_image(card.backdrop_url or card.poster_url, f"backdrop-{card.key}",
-                         self.detail_hero.set_pixmap)
+                         self._detail_backdrop)
+        self._detail_trailer = None
+        self.trailer_btn.setVisible(False)
         self._load_episodes(card)
+        self._load_trailer(card)
+
+    def _detail_backdrop(self, pix: QPixmap | None) -> None:
+        """Show the backdrop on the hero and blur a copy behind the page."""
+        self.detail_hero.set_pixmap(pix)
+        card = getattr(self, "_detail_card", None)
+        if pix is None or card is None:
+            self._artwork.clear()
+            return
+        self._artwork.show_image(card.backdrop_url or card.poster_url, pix.toImage())
+
+    def paintEvent(self, event) -> None:  # noqa: N802
+        """Paint the blurred artwork behind the page, then its content."""
+        super().paintEvent(event)
+        self._artwork.paint()
 
     def _sync_spoiler_note(self) -> None:
         """Say the mode is on, and where to turn it off, beside the episodes."""
@@ -1240,6 +1294,46 @@ class MediaPage(QWidget):
 
         run_async(work, done, lambda exc: self._note_error(exc))
 
+    def _load_trailer(self, card: Card) -> None:
+        """Ask TMDB for this title's trailer without blocking the page."""
+        if card.kind not in ("movie", "tv") or card.tmdb_id <= 0:
+            return
+        client = getattr(self, "_tmdb", None)
+        fetch = getattr(client, "get", None)
+
+        def work() -> object:
+            return trailer_data.load_trailer(
+                card.kind, card.tmdb_id, settings=self.settings, fetch=fetch
+            )
+
+        def done(result: object) -> None:
+            if getattr(self, "_detail_card", None) is not card:
+                return
+            trailer = getattr(result, "trailer", None)
+            self._detail_trailer = trailer
+            self.trailer_btn.setVisible(trailer is not None)
+            if trailer is None:
+                return
+            self.trailer_btn.setToolTip(str(trailer.get("name") or "Play the trailer"))
+            if trailers.autoplay_allowed(self.settings):
+                self._start_trailer(autoplay=True, muted=True)
+
+        run_async(work, done, lambda _exc: None)
+
+    def _open_trailer(self, _checked: bool = False) -> None:
+        """The button: play the trailer the page already found."""
+        self._start_trailer(autoplay=True, muted=False)
+
+    def _start_trailer(self, *, autoplay: bool, muted: bool) -> None:
+        trailer = getattr(self, "_detail_trailer", None)
+        if trailer is None:
+            return
+        url = trailer_data.embed_url(trailer.get("key"), autoplay=autoplay, muted=muted)
+        if not url:
+            return
+        card = getattr(self, "_detail_card", None)
+        TrailerDialog(url, getattr(card, "title", "") or "", self).exec()
+
     def _play_current(self) -> None:
         """Play button on the home hero: the hero's own title."""
         self._play_card(getattr(self, "_hero_card", None))
@@ -1255,6 +1349,28 @@ class MediaPage(QWidget):
             self._play_anime(card)
         else:
             self._play_tmdb(card)
+
+    # embedded player -------------------------------------------------------
+    def play_embedded(self, url: str, title: str = "") -> EmbeddedPlayer:
+        """Play inside the Media page: same window, no dialog, no flicker."""
+        current = self.stack.currentWidget()
+        if current is not None and current is not self.player:
+            self._player_return = current
+        self.player.play(url, title)
+        self.stack.setCurrentWidget(self.player)
+        self.player.setFocus()
+        return self.player
+
+    def _leave_player(self) -> None:
+        """Back stops the video and returns to the page that was open."""
+        self.player.stop_playback()
+        page = (
+            self._player_return
+            or self._pages.get(self._section)
+            or self._pages["home"]
+        )
+        self._player_return = None
+        self.stack.setCurrentWidget(page)
 
     # provider picker -------------------------------------------------------
     def _fill_provider_combo(self, section: str) -> None:
@@ -1328,7 +1444,7 @@ class MediaPage(QWidget):
             self._note_error(str(exc))
             return
         self._record_history(card)
-        PlayerDialog(url, card.title, self).exec()
+        self.play_embedded(url, card.title)
 
     def _play_anilist_match(self) -> None:
         """Play the AniList match the search already resolved.
@@ -1353,7 +1469,7 @@ class MediaPage(QWidget):
         except (streaming.EmbedUrlError, ValueError) as exc:
             self._note_error(str(exc))
             return
-        PlayerDialog(url, title, self).exec()
+        self.play_embedded(url, title)
 
     def _play_anime(self, card: Card) -> None:
         provider = self._anime_provider()
@@ -1376,7 +1492,7 @@ class MediaPage(QWidget):
             self._note_error(str(exc))
             return
         self._record_history(card)
-        PlayerDialog(url, card.title, self).exec()
+        self.play_embedded(url, card.title)
 
     def _record_history(self, card: Card) -> None:
         if self.settings is None or card.key.startswith("anime:"):
@@ -1425,8 +1541,8 @@ __all__ = [
     "Carousel",
     "Card",
     "HeroPanel",
+    "EmbeddedPlayer",
     "MediaPage",
-    "PlayerDialog",
     "PosterCard",
     "PosterGrid",
     "card_from_anime",

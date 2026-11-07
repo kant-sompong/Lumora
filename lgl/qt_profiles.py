@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any, Callable
+
 from PySide6.QtWidgets import (
     QDialog,
     QHBoxLayout,
@@ -15,17 +17,19 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .profiles import Profiles
+from .profiles import DEFAULT_ID, Profiles
 
 
 class ProfilesDialog(QDialog):
     """The profile list with the active one marked."""
 
-    def __init__(self, profiles: Profiles, parent: QWidget | None = None) -> None:
+    def __init__(self, profiles: Profiles, parent: QWidget | None = None,
+                 *, on_switch: Callable[[Any], None] | None = None) -> None:
         super().__init__(parent)
         self.setWindowTitle("Profiles")
         self.resize(420, 360)
         self.profiles = profiles
+        self.on_switch = on_switch
 
         layout = QVBoxLayout(self)
         heading = QLabel("PROFILES", self)
@@ -52,8 +56,9 @@ class ProfilesDialog(QDialog):
         layout.addLayout(buttons)
 
         self.note = QLabel(
-            "Each profile keeps its own library and settings. A switch takes effect the next "
-            "time Lumora starts; the last profile is never deleted.",
+            "Each profile keeps its own settings, library, favourites and history. "
+            "A switch is read at the next start; the last profile is never deleted, "
+            "and no profile ever deletes game files.",
             self,
         )
         self.note.setObjectName("detailNote")
@@ -99,8 +104,14 @@ class ProfilesDialog(QDialog):
         if changed:
             active = self.profiles.active()
             self.note.setText(
-                f"{active.name} will be used the next time Lumora starts."
+                f"Restart Lumora to switch to {active.name}. "
+                "Its settings, library, favourites and history are used from then on."
             )
+            if callable(self.on_switch):
+                try:
+                    self.on_switch(active)
+                except Exception:  # noqa: BLE001 - a UI callback must not break a switch
+                    pass
         return changed
 
     def create(self, name: str) -> bool:
@@ -116,7 +127,9 @@ class ProfilesDialog(QDialog):
 
     def delete(self) -> bool:
         profile_id = self.current_id()
-        removed = bool(profile_id) and self.profiles.remove(profile_id)
+        if not profile_id or profile_id == DEFAULT_ID:
+            return False
+        removed = self.profiles.remove(profile_id)
         self.refresh()
         return removed
 
@@ -137,8 +150,19 @@ class ProfilesDialog(QDialog):
         profile = self.profiles.get(self.current_id())
         if profile is None:
             return
+        if profile.id == DEFAULT_ID:
+            QMessageBox.information(
+                self,
+                "Delete profile",
+                "The Default profile cannot be deleted: its folder holds this "
+                "install's existing library and settings.",
+            )
+            return
         answer = QMessageBox.question(
-            self, "Delete profile", f"Delete {profile.name!r}? Its files are kept."
+            self,
+            "Delete profile",
+            f"Delete {profile.name!r}?\n\nIts folder is kept on disk, and game "
+            "files are never deleted.",
         )
         if answer == QMessageBox.StandardButton.Yes:
             self.delete()

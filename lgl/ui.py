@@ -46,6 +46,7 @@ from gi.repository import (  # noqa: E402
 )
 
 from . import browse_filters
+from . import profiles
 from . import recently_viewed
 from . import APP_ID, APP_NAME, __version__, platform_support  # noqa: E402
 from . import external_dm  # noqa: E402
@@ -2088,6 +2089,9 @@ class LibraryDetail(Gtk.Box):
     def __init__(self, view: "LibraryView") -> None:
         super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         self._view = view
+        from .movies_ui import ArtworkBackdrop
+
+        self._artwork = ArtworkBackdrop(self, view._settings)
         self._entry: LibraryEntry | None = None
         self._compat_token = 0
         self._updating = False
@@ -2409,6 +2413,7 @@ class LibraryDetail(Gtk.Box):
         self._favorite.set_active(bool(entry.favorite))
         self._updating = False
         self._sync_favorite()
+        self._artwork.show_file(entry.cover_path)
 
         self._verify_btn.set_sensitive(True)
         self._progress_box.hide()
@@ -6378,6 +6383,10 @@ class MainWindow(Gtk.ApplicationWindow):
         self._download_dir = download_dir
         self._startup_warning = startup_warning
         self.library_store = library_store
+        try:
+            self._session_profile = profiles.active_profile().name
+        except Exception:  # noqa: BLE001 - a header label must never break
+            self._session_profile = ""
         self.catalog_store = catalog_store if catalog_store is not None else CatalogStore()
         self.library_lock = threading.Lock()
 
@@ -6514,7 +6523,30 @@ class MainWindow(Gtk.ApplicationWindow):
         refresh_btn.set_valign(Gtk.Align.CENTER)
         header.pack_end(refresh_btn)
         header.pack_end(self._build_menu_button())
+
+        # Which profile's files are open, so it is never a guess.
+        self._profile_label = Gtk.Label()
+        self._profile_label.get_style_context().add_class("dim")
+        self._profile_label.set_valign(Gtk.Align.CENTER)
+        self._profile_label.set_tooltip_text(
+            "Active profile — Tools → Profiles… to switch"
+        )
+        self._set_profile_name()
+        header.pack_end(self._profile_label)
         return header
+
+    def _set_profile_name(self, name: str | None = None,
+                          was: str | None = None) -> None:
+        """Put the active profile's name in the header."""
+        if name is None:
+            try:
+                name = profiles.load().active().name
+            except Exception:  # noqa: BLE001 - a header label must never break
+                name = ""
+        if was and was != name:
+            self._profile_label.set_text(f"Profile · {was} → {name}")
+        else:
+            self._profile_label.set_text(f"Profile · {name}" if name else "")
 
     def _combined_refresh(self) -> None:
         """Rescan library + reload collection in one action."""
@@ -6574,6 +6606,7 @@ class MainWindow(Gtk.ApplicationWindow):
         menu.append(Gtk.SeparatorMenuItem())
         add_item("Command palette…", self.show_palette)
         add_item("Release calendar…", self.show_calendar)
+        add_item("Compare seasons…", self.show_season_compare)
         add_item("Discover…", lambda: __import__("lgl.gtk_discover", fromlist=["show_discover"]).show_discover(self, self.settings))
         add_item("Tags…", lambda: __import__("lgl.gtk_library_tools", fromlist=["show_tags"]).show_tags(self, self.settings))
         add_item("Find duplicates…", lambda: __import__("lgl.gtk_library_tools", fromlist=["show_duplicates"]).show_duplicates(self))
@@ -7429,6 +7462,7 @@ class MainWindow(Gtk.ApplicationWindow):
 
     def _rebuild_shelves(self) -> None:
         """Custom shelves above the cover grid, drawn from the loaded catalogue."""
+        from . import home_layout
         from . import shelves as shelves_lib
 
         box = getattr(self, "_shelves_box", None)
@@ -7446,8 +7480,17 @@ class MainWindow(Gtk.ApplicationWindow):
             }
             for game in self._games
         ]
+        layout = home_layout.HomeLayout(getattr(self, "settings", None))
+        order = layout.order()
         rendered = shelves_lib.render(getattr(self, "settings", None), rows)
-        for name, items in rendered:
+        for index, (name, items) in enumerate(rendered):
+            # A built-in heading takes its own size; a user shelf follows the
+            # section in the same position, so the panel still resizes it.
+            shelf = home_layout.shelf_for_label(name)
+            if not shelf and index < len(order):
+                shelf = order[index]
+            size = layout.size(shelf) if shelf else home_layout.SIZE_DEFAULT
+            height = home_layout.size_height(size)
             heading = Gtk.Label(label=name.upper(), xalign=0)
             heading.get_style_context().add_class("shelf-title")
             heading.set_margin_top(6)
@@ -7459,9 +7502,10 @@ class MainWindow(Gtk.ApplicationWindow):
             flow.set_max_children_per_line(12)
             flow.set_column_spacing(6)
             flow.set_row_spacing(4)
-            for item in items:
+            for item in items[: home_layout.shelf_titles(size)]:
                 key = str(item.get("key") or "")
                 button = Gtk.Button(label=str(item.get("title") or key))
+                button.set_size_request(-1, height)
                 button.get_style_context().add_class("chip")
                 button.set_relief(Gtk.ReliefStyle.NONE)
                 button.set_tooltip_text(str(item.get("title") or key))
@@ -7471,6 +7515,10 @@ class MainWindow(Gtk.ApplicationWindow):
         box.set_visible(bool(rendered))
         if rendered:
             box.show_all()
+
+    def refresh_home_layout(self) -> None:
+        """Rebuild the shelves so a size change shows without a restart."""
+        self._rebuild_shelves()
 
     def _on_shelf_item(self, _button: Gtk.Button, key: str) -> None:
         game = next((item for item in self._games if item.identifier == key), None)
@@ -9484,6 +9532,12 @@ class MainWindow(Gtk.ApplicationWindow):
 
         self._calendar_window = gtk_calendar.show_calendar(self, self.settings)
 
+    def show_season_compare(self) -> None:
+        """Compare two anime seasons: what is new, what carried over."""
+        from . import gtk_season
+
+        self._season_window = gtk_season.show_season_compare(self)
+
     def show_recent(self) -> None:
         """Open the shared Recently viewed list."""
         from . import gtk_recent
@@ -9508,7 +9562,16 @@ class MainWindow(Gtk.ApplicationWindow):
         """Open the profiles window: choose, create, rename or delete one."""
         from . import gtk_profiles
 
-        self._profiles_window = gtk_profiles.show_profiles(self)
+        self._profiles_window = gtk_profiles.show_profiles(
+            self, on_switch=self._profile_switched
+        )
+
+    def _profile_switched(self, profile: Any) -> None:
+        """The choice is read at the next start, so say that instead of pretending."""
+        self._set_profile_name(
+            profile.name, was=getattr(self, "_session_profile", None)
+        )
+        self.toast(f"Restart Lumora to switch to {profile.name}.")
 
     def show_about(self) -> None:
         dialog = Gtk.AboutDialog(transient_for=self, modal=True)
@@ -10168,6 +10231,15 @@ class SettingsDialog(Gtk.Dialog):
             self._media_autoplay,
         ), False, False, 0)
 
+        self._trailer_autoplay = Gtk.Switch()
+        self._trailer_autoplay.set_active(bool(self._settings.get("trailer_autoplay", False)))
+        self._trailer_autoplay.connect("notify::active", self._on_trailer_autoplay_changed)
+        box.pack_start(self._switch_row(
+            "Autoplay trailers",
+            "Start a title's trailer muted as soon as its detail page opens.",
+            self._trailer_autoplay,
+        ), False, False, 0)
+
         return self._scrolled(box)
 
     def _build_shortcuts(self) -> Gtk.Widget:
@@ -10405,6 +10477,9 @@ class SettingsDialog(Gtk.Dialog):
 
     def _on_media_autoplay_changed(self, switch, _param) -> None:
         self._settings.set("media_autoplay", bool(switch.get_active()))
+
+    def _on_trailer_autoplay_changed(self, switch, _param) -> None:
+        self._settings.set("trailer_autoplay", bool(switch.get_active()))
 
 
 # -- application -------------------------------------------------------------
@@ -12215,11 +12290,19 @@ class Application(Gtk.Application):
         # Copy pre-0.6.0 folders across before anything reads or writes
         # the config, so a first-launch save cannot overwrite it.
         platform_support.ensure_app_dirs()
-        self.settings = Settings()
+        # Pin the profile folder for the whole run: a switch only takes effect
+        # at the next start, so no store may open the other profile's files now.
+        profiles.start_session()
+        # The profile in use owns the settings and the library index.  The
+        # Default profile keeps the folder this install already uses, so an
+        # existing library is never moved or copied.
+        self.profiles = profiles.load()
+        self.profile_data_dir = profiles.active_data_dir()
+        self.settings = Settings(profiles.active_settings_path())
         self.client = ArchiveClient()
         self.download_dir = self._initial_download_dir()
         self.library_store = LibraryStore(
-            path=platform_support.data_dir() / "library.json",
+            path=self.profile_data_dir / "library.json",
             download_root=self.download_dir,
         )
         self.manager = DownloadManager(

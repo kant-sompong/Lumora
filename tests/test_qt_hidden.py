@@ -1,0 +1,122 @@
+"""The Qt hidden gems page, offscreen: thresholds, list, failure line and note."""
+
+from __future__ import annotations
+
+import os
+
+import pytest
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+pytest.importorskip("PySide6.QtWidgets")
+
+from PySide6.QtWidgets import QApplication  # noqa: E402
+
+from lgl import qt_hidden  # noqa: E402
+
+CATALOGUE = [
+    {"id": 1, "title": {"english": "Mega Hit"}, "averageScore": 90, "popularity": 100000,
+     "episodes": 12, "format": "TV", "status": "FINISHED"},
+    {"id": 2, "title": {"english": "Quiet Gem"}, "averageScore": 88, "popularity": 100,
+     "episodes": 12, "format": "TV", "status": "FINISHED"},
+    {"id": 3, "title": {"english": "Second Gem"}, "averageScore": 82, "popularity": 300,
+     "episodes": 24, "format": "TV", "status": "FINISHED"},
+    {"id": 4, "title": {"english": "Edge Gem"}, "averageScore": 78, "popularity": 200,
+     "episodes": 12, "format": "TV", "status": "FINISHED"},
+    {"id": 5, "title": {"english": "Below Score"}, "averageScore": 77, "popularity": 500,
+     "episodes": 12, "format": "TV", "status": "FINISHED"},
+    {"id": 6, "title": {"english": "Edge Popularity"}, "averageScore": 95, "popularity": 400,
+     "episodes": 12, "format": "TV", "status": "FINISHED"},
+]
+
+
+def post(_body):
+    return {"data": {"Page": {"pageInfo": {"hasNextPage": False}, "media": CATALOGUE}}}
+
+
+@pytest.fixture(scope="module")
+def app():
+    return QApplication.instance() or QApplication([])
+
+
+def panel(tmp_path, *, sender=post, excluded=()):
+    return qt_hidden.HiddenGemsPanel(
+        None, post=sender, cache_path=tmp_path / "hidden-gems.json",
+        threaded=False, excluded=excluded,
+    )
+
+
+def lines(widget):
+    return [widget.item(row).text() for row in range(widget.count())]
+
+
+def test_refresh_lists_gems_with_score_and_popularity_rank(app, tmp_path):
+    page = panel(tmp_path)
+    page.refresh()
+
+    assert lines(page.list) == [
+        "Quiet Gem — score 88 · popularity rank 2 of 6",
+        "Second Gem — score 82 · popularity rank 3 of 6",
+        "Edge Gem — score 78 · popularity rank 4 of 6",
+    ]
+    assert page.status.text() == "3 of 6 titles score 78+ with popularity under 350."
+    assert page.error.isHidden() is True
+    assert page.popularity.value() == 350
+    assert "median of the fetched titles" in page.cutoff_note.text()
+
+
+def test_selecting_a_gem_shows_its_numbers(app, tmp_path):
+    page = panel(tmp_path)
+    page.refresh()
+
+    page.list.setCurrentRow(0)
+
+    assert "Score 88/100" in page.detail.text()
+    assert "popularity 100 (rank 2 of 6)" in page.detail.text()
+
+
+def test_library_titles_are_left_out(app, tmp_path):
+    page = panel(tmp_path, excluded=["Quiet Gem", "anilist:3"])
+    page.refresh()
+
+    assert [line.split(" — ")[0] for line in lines(page.list)] == ["Edge Gem"]
+
+
+def test_raising_the_score_empties_the_list_with_a_suggestion(app, tmp_path):
+    page = panel(tmp_path)
+    page.refresh()
+    page.score.setValue(100)
+    page.refresh()
+
+    assert lines(page.list) == []
+    assert "Try lowering the score." in page.status.text()
+    assert page.error.isHidden() is True
+
+
+def test_a_network_failure_is_a_line_not_a_blank_page(app, tmp_path):
+    def offline(_body):
+        raise TimeoutError("timed out")
+
+    page = panel(tmp_path, sender=offline)
+    page.refresh()
+
+    assert page.error.isHidden() is False
+    assert page.error.text() == "Could not load: AniList: the request timed out"
+    assert lines(page.list) == []
+    # The controls and the explanation remain; the page is never empty.
+    assert page.score.value() == 78
+    assert page.list.count() == 0
+
+
+def test_a_second_refresh_is_answered_by_the_cache(app, tmp_path):
+    page = panel(tmp_path)
+    page.refresh()
+
+    def explode(_body):
+        raise AssertionError("the cache should have answered this")
+
+    cached = panel(tmp_path, sender=explode)
+    cached.refresh()
+
+    assert len(lines(cached.list)) == 3
+    assert "Showing saved titles." in cached.status.text()
+    assert cached.error.isHidden() is True

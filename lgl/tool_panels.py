@@ -169,7 +169,11 @@ def _notifications(settings: Any) -> Section:
 
 def _home(settings: Any) -> Section:
     layout = home_layout.HomeLayout(settings)
-    section = Section("home", "Home screen", "Reorder or hide shelves, and choose how large cards are.")
+    section = Section(
+        "home",
+        "Home screen",
+        "Reorder or hide shelves, and choose how large each section is.",
+    )
     section.rows.append(
         Row(
             label="Card layout",
@@ -189,6 +193,17 @@ def _home(settings: Any) -> Section:
                 action=f"home.shelf.{shelf[0]}",
             )
         )
+        section.rows.append(
+            Row(
+                label=f"{shelf[1]} size",
+                kind=CHOICE,
+                value=layout.size(shelf[0]),
+                options=home_layout.SIZE_CHOICES,
+                description="Compact shows smaller cards and fewer titles."
+                if shelf[0] == home_layout.SHELVES[0][0] else "",
+                action=f"home.size.{shelf[0]}",
+            )
+        )
     section.rows.append(
         Row(
             label="Shelves…",
@@ -197,7 +212,14 @@ def _home(settings: Any) -> Section:
             description="Create a shelf from a saved genre, or remove one.",
         )
     )
-    section.rows.append(Row(label="Restore defaults", kind=BUTTON, action="home.reset"))
+    section.rows.append(
+        Row(
+            label="Reset layout",
+            kind=BUTTON,
+            action="home.reset",
+            description="Order, visibility and sizes go back to the defaults.",
+        )
+    )
     return section
 
 
@@ -442,6 +464,12 @@ def apply(
         if action == "home.layout":
             chosen = home_layout.HomeLayout(settings).set_layout(str(value))
             return f"Home cards are now {chosen}."
+        if action.startswith("home.size."):
+            shelf = action.rsplit(".", 1)[1]
+            chosen = home_layout.HomeLayout(settings).set_size(shelf, value)
+            if not chosen:
+                return "Unknown shelf."
+            return f"{home_layout.label(shelf)} cards are now {chosen}."
         if action.startswith("home.shelf."):
             shelf = action.rsplit(".", 1)[1]
             layout = home_layout.HomeLayout(settings)

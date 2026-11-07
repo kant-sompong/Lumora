@@ -220,6 +220,21 @@ class ToolsWindow(Gtk.Window):
         if action == "diagnostics.create":
             self._run_in_thread(self._report, lambda path: self._say(f"Support report saved to {path}."))
             return
+        if action == "home.reset":
+            dialog = Gtk.MessageDialog(
+                transient_for=self.get_toplevel(),
+                flags=Gtk.DialogFlags.MODAL,
+                message_type=Gtk.MessageType.QUESTION,
+                buttons=Gtk.ButtonsType.OK_CANCEL,
+                text="Reset layout",
+            )
+            dialog.format_secondary_text(
+                "Restore the shelf order, visibility and sizes to the defaults?"
+            )
+            response = dialog.run()
+            dialog.destroy()
+            if response != Gtk.ResponseType.OK:
+                return
         if action == "home.shelves":
             from .gtk_shelves import ShelvesDialog
 
@@ -241,6 +256,10 @@ class ToolsWindow(Gtk.Window):
         )
         self._say(message)
         self.reload()
+        if action.startswith("home."):
+            rebuild = getattr(self._parent, "refresh_home_layout", None)
+            if callable(rebuild):
+                rebuild()
         # Interface rows take effect immediately in the window behind this one.
         refresh = getattr(self._parent, "apply_interface_prefs", None)
         if callable(refresh):

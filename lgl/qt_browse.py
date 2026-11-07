@@ -1344,9 +1344,15 @@ class BrowsePage(QWidget):
         except Exception:  # noqa: BLE001 - a broken settings file must not break Browse
             return CARD_MIN
 
+    def refresh_home_layout(self) -> None:
+        """Redraw after a Home layout change, so sizes apply immediately."""
+        self._render_shelves()
+        if self._cards:
+            self._render()
+
     def _render_shelves(self) -> None:
         """Custom shelves above the grid, one row of titles each."""
-        from . import shelves as shelves_lib
+        from . import home_layout, shelves as shelves_lib
 
         if self.shelves_column.count():
             clear_layout(self.shelves_column)
@@ -1363,17 +1369,26 @@ class BrowsePage(QWidget):
             }
             for game in self._games
         ]
+        layout = home_layout.HomeLayout(self.settings)
+        order = layout.order()
         rendered = shelves_lib.render(self.settings, rows)
-        for name, items in rendered:
+        for index, (name, items) in enumerate(rendered):
+            # A built-in heading takes its own size; a user shelf follows the
+            # section in the same position, so the panel still resizes it.
+            shelf = home_layout.shelf_for_label(name)
+            if not shelf and index < len(order):
+                shelf = order[index]
+            size = layout.size(shelf) if shelf else home_layout.SIZE_DEFAULT
             self.shelves_column.addWidget(label(name.upper(), "detailEyebrow"))
             line = QWidget()
             flow = QHBoxLayout(line)
             flow.setContentsMargins(0, 0, 0, 0)
             flow.setSpacing(8)
-            for item in items:
+            for item in items[: home_layout.shelf_titles(size)]:
                 key = str(item.get("key") or "")
                 pill = QPushButton(str(item.get("title") or key))
                 pill.setObjectName("shelfPill")
+                pill.setFixedHeight(home_layout.size_height(size))
                 pill.setCursor(Qt.PointingHandCursor)
                 pill.clicked.connect(lambda _=False, k=key: self._open_shelf_item(k))
                 flow.addWidget(pill)

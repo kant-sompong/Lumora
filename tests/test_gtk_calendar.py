@@ -1,3 +1,5 @@
+import time
+
 import pytest
 
 gi = pytest.importorskip("gi")
@@ -24,11 +26,43 @@ class Memory:
         self.data[key] = value
 
 
-def pump():
+def spin_until(condition, timeout=5.0):
+    """Spin the main loop until ``condition()`` is true, or ``timeout`` passes.
+
+    The window fills itself from a worker thread through ``GLib.idle_add``, so a
+    fixed number of iterations can finish before that idle callback arrives.
+    """
     context = GLib.MainContext.default()
-    for _ in range(50):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
         while context.iteration(False):
             pass
+        if condition():
+            return True
+        time.sleep(0.01)
+    return condition()
+
+
+def labels_in(widget):
+    """Every label text in ``widget``'s tree."""
+    labels = []
+
+    def walk(node):
+        if isinstance(node, Gtk.Label):
+            labels.append(node.get_text())
+        if isinstance(node, Gtk.Container):
+            for child in node.get_children():
+                walk(child)
+
+    walk(widget)
+    return labels
+
+
+def wait_for_text(window, text, timeout=5.0):
+    """Wait for the background load to put a label containing ``text`` on screen."""
+    return spin_until(
+        lambda: any(text in label for label in labels_in(window)), timeout
+    )
 
 
 def test_calendar_imports_next_to_gtk3():
@@ -50,18 +84,9 @@ def test_calendar_shows_days_and_follows(monkeypatch):
     monkeypatch.setattr(feed, "tmdb_getter", lambda settings=None: None)
     settings = Memory()
     window = gtk_calendar.CalendarWindow(settings)
-    pump()
-    labels = []
-
-    def walk(widget):
-        if isinstance(widget, Gtk.Label):
-            labels.append(widget.get_text())
-        if isinstance(widget, Gtk.Container):
-            for child in widget.get_children():
-                walk(child)
-
-    walk(window)
-    assert any("Alpha — 3" in text for text in labels) and any("Film" in text for text in labels)
+    assert wait_for_text(window, "Alpha — 3"), "the feed never reached the window"
+    labels = labels_in(window)
+    assert any("Film" in text for text in labels)
     toggles = []
 
     def find(widget):

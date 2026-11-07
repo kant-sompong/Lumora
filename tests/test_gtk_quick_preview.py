@@ -263,10 +263,42 @@ def library(*, delay: int = 0, **flags):
     return window, flow, preview, tiles, view
 
 
+def search_box(view):
+    """A search field inside the window, so the keyboard focus is not the grid."""
+    box = Gtk.Entry()
+    box.set_placeholder_text("Search")
+    view.pack_start(box, False, False, 0)
+    box.show()
+    return box
+
+
 def key(keyval):
     event = Gdk.Event.new(Gdk.EventType.KEY_PRESS)
     event.keyval = keyval
     return event
+
+
+def press(window, keyval):
+    """Deliver a key press to the window the way the server would.
+
+    ``Gtk.test_widget_send_key`` needs XTest, which this X server does not
+    have; ``Gtk.main_do_event`` runs the same path GTK takes for a real key:
+    the toplevel's handlers first, then the focused widget.
+    """
+    event = Gdk.Event.new(Gdk.EventType.KEY_PRESS)
+    event.window = window.get_window()
+    event.send_event = True
+    event.time = Gtk.get_current_event_time()
+    event.state = 0
+    event.keyval = keyval
+    event.hardware_keycode = 9
+    display = Gdk.Display.get_default()
+    seat = display.get_default_seat() if hasattr(display, "get_default_seat") else None
+    keyboard = seat.get_keyboard() if seat is not None else None
+    if keyboard is not None:
+        event.device = keyboard
+    Gtk.main_do_event(event)
+    pump(2)
 
 
 def overlap(first, second):
@@ -507,6 +539,52 @@ def test_space_opens_the_selection_and_escape_closes_it(warping):
     preview.dismiss()
     window.destroy()
     assert closed, "Escape did not close the preview"
+
+
+def test_escape_in_the_search_box_closes_a_hovered_preview(warping):
+    """The review's case: hover opened it, the entry still has the focus."""
+    window, _flow, preview, tiles, view = library(delay=0)
+    box = search_box(view)
+    box.set_text("hollow")
+    seen = []
+    box.connect("key-press-event", lambda _w, event: seen.append(event.keyval) and False)
+
+    hover(warping, tiles["game-0"], window)
+    assert wait_for(preview.get_visible)
+    box.grab_focus()
+    pump(2)
+    assert box.has_focus() is True, "the focus stayed in the grid"
+
+    press(window, Gdk.KEY_Escape)
+
+    assert preview.get_visible() is False, "Escape did not close the preview"
+    assert box.get_text() == "hollow", "the search box also acted on it"
+    assert seen == [], "the search box also received the key"
+
+    # And the tile stays remembered: moving within it must not reopen.
+    x, y = tile_centre(tiles["game-0"], window)
+    warp_to(warping, x + 4, y + 4)
+    pump(6)
+    assert preview.get_visible() is False
+    window.destroy()
+
+
+def test_escape_reaches_the_search_box_when_no_preview_is_open(warping):
+    """With nothing to close, Escape must still be the search box's key."""
+    window, _flow, preview, _tiles, view = library(delay=0)
+    box = search_box(view)
+    seen = []
+    box.connect("key-press-event", lambda _w, event: seen.append(event.keyval) and False)
+
+    assert preview.get_visible() is False
+    box.grab_focus()
+    pump(2)
+    assert box.has_focus() is True
+
+    press(window, Gdk.KEY_Escape)
+
+    assert seen == [Gdk.KEY_Escape]
+    window.destroy()
 
 
 def test_space_and_escape_through_the_key_handler(warping):
