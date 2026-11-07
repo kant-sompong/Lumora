@@ -33,6 +33,7 @@ from PySide6.QtWidgets import (
 from . import mal, media_history, platform_support, streaming, tmdb, view_prefs
 from . import recently_viewed
 from .qt_icons import icon, paint_icon
+from .qt_library import ArtworkBackdrop
 from .qt_widgets import (
     CoverArt,
     ElideLabel,
@@ -502,6 +503,7 @@ class MediaPage(QWidget):
         self._anime_items: list[Card] = []
         self._detail_card: Card | None = None
         self._loaded = False
+        self._artwork = ArtworkBackdrop(self, settings)
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -800,6 +802,7 @@ class MediaPage(QWidget):
     # navigation ------------------------------------------------------------
     def show_section(self, key: str) -> None:
         self._section = key
+        self._artwork.clear()
         if hasattr(self, "provider_combo"):
             self._fill_provider_combo(key)
         for name, button in self._nav.items():
@@ -1146,8 +1149,22 @@ class MediaPage(QWidget):
         )
         self.stack.setCurrentWidget(self._detail_page)
         self._load_image(card.backdrop_url or card.poster_url, f"backdrop-{card.key}",
-                         self.detail_hero.set_pixmap)
+                         self._detail_backdrop)
         self._load_episodes(card)
+
+    def _detail_backdrop(self, pix: QPixmap | None) -> None:
+        """Show the backdrop on the hero and blur a copy behind the page."""
+        self.detail_hero.set_pixmap(pix)
+        card = getattr(self, "_detail_card", None)
+        if pix is None or card is None:
+            self._artwork.clear()
+            return
+        self._artwork.show_image(card.backdrop_url or card.poster_url, pix.toImage())
+
+    def paintEvent(self, event) -> None:  # noqa: N802
+        """Paint the blurred artwork behind the page, then its content."""
+        super().paintEvent(event)
+        self._artwork.paint()
 
     def _sync_spoiler_note(self) -> None:
         """Say the mode is on, and where to turn it off, beside the episodes."""
