@@ -68,7 +68,7 @@ def test_compare_fills_the_three_lists_and_the_summary(app, tmp_path):
     assert titles["only_second"] == ["Kaiju No. 8 — score 78 · TV"]
     assert titles["shared"] == ["Solo Leveling — score 82 · TV"]
     assert window.summary.text() == (
-        "2024 winter: 2 titles, 2024 spring: 2 titles, 1 in both"
+        "Winter 2024: 2 titles, Spring 2024: 2 titles, 1 in both"
     )
     assert window.error.isHidden() is True
     assert window.detail.text() == qt_season.HINT

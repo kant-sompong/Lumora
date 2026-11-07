@@ -66,7 +66,7 @@ def test_compare_fills_the_three_lists_and_the_summary(tmp_path):
         assert rows(win.lists["only_second"]) == ["Kaiju No. 8 — score 78 · TV"]
         assert rows(win.lists["shared"]) == ["Solo Leveling — score 82 · TV"]
         assert win.summary.get_text() == (
-            "2024 winter: 2 titles, 2024 spring: 2 titles, 1 in both"
+            "Winter 2024: 2 titles, Spring 2024: 2 titles, 1 in both"
         )
         assert win.error.get_visible() is False
         assert win.detail.get_text() == gtk_season.HINT

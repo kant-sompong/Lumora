@@ -86,4 +86,4 @@ def test_season_comparison_splits_shared_and_unique_titles(app):
     assert dialog.only_first.count() == 1
     assert dialog.only_second.count() == 2
     assert dialog.shared.count() == 0
-    assert "2024 spring" in dialog.summary.text()
+    assert "Spring 2024" in dialog.summary.text()

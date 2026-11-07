@@ -63,10 +63,21 @@ def compare(
     }
 
 
+def season_title(key: Any) -> str:
+    """``2024 winter`` as ``Winter 2024``, the wording of the pickers.
+
+    Anything that is not a ``year season`` key is returned as it came in.
+    """
+    parts = str(key or "").split()
+    if len(parts) == 2 and parts[0].isdigit() and parts[1].casefold() in SEASON_ORDER:
+        return f"{parts[1].capitalize()} {parts[0]}"
+    return str(key or "").strip()
+
+
 def summary(result: Mapping[str, Any]) -> str:
     counts = result.get("counts") or {}
-    first = result.get("first", "")
-    second = result.get("second", "")
+    first = season_title(result.get("first", ""))
+    second = season_title(result.get("second", ""))
     if not counts:
         return "Nothing to compare"
     return (
@@ -79,4 +90,12 @@ def seasons(items: Iterable[Mapping[str, Any]]) -> list[str]:
     return list(group(items))
 
 
-__all__ = ["SEASON_ORDER", "compare", "group", "season_key", "seasons", "summary"]
+__all__ = [
+    "SEASON_ORDER",
+    "compare",
+    "group",
+    "season_key",
+    "season_title",
+    "seasons",
+    "summary",
+]
