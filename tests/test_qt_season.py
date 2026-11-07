@@ -44,6 +44,10 @@ def post(body):
     return {"data": {"Page": {"pageInfo": {"hasNextPage": False}, "media": rows}}}
 
 
+def offline(_body):
+    raise TimeoutError("timed out")
+
+
 def dialog(tmp_path, app, *, sender=post):
     window = qt_season.SeasonCompareDialog(
         None, post=sender, cache_path=tmp_path / "season-compare.json", threaded=False
@@ -106,6 +110,19 @@ def test_a_network_failure_is_a_line_and_not_an_empty_window(app, tmp_path):
     assert [widget.count() for widget in window.lists.values()] == [0, 0, 0]
     assert all(w.isHidden() for w in window.lists.values())
     assert all(h.isHidden() for h in window.section_heads.values())
+
+
+def test_a_failed_comparison_keeps_the_error_line_beside_the_controls(app, tmp_path):
+    window = dialog(tmp_path, app, sender=offline)
+    window.resize(760, 900)
+    window.show()
+    app.processEvents()
+    window.compare()
+    app.processEvents()
+
+    gap = window.error.geometry().top() - window.compare_btn.geometry().bottom()
+    assert gap < 150, f"the error line is {gap} px below the controls"
+    assert all(widget.isHidden() for widget in window.lists.values())
 
 
 def test_the_saved_titles_note_appears_when_the_cache_answered(app, tmp_path):

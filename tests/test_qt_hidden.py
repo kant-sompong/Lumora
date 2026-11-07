@@ -153,6 +153,35 @@ def test_thresholds_are_saved_and_the_median_stays_out_of_the_control(app, tmp_p
     assert again.popularity.value() == 0
 
 
+def test_a_failed_load_keeps_the_error_line_beside_the_controls(app, tmp_path):
+    def offline(_body):
+        raise TimeoutError("timed out")
+
+    page = panel(tmp_path, sender=offline)
+    page.resize(1000, 900)
+    page.show()
+    app.processEvents()
+    page.refresh()
+    app.processEvents()
+
+    gap = page.error.geometry().top() - page.score.geometry().bottom()
+    assert gap < 150, f"the error line is {gap} px below the controls"
+    assert page.list.isHidden() is True
+
+
+def test_a_successful_load_still_fills_the_page_with_the_list(app, tmp_path):
+    page = panel(tmp_path)
+    page.resize(1000, 900)
+    page.show()
+    app.processEvents()
+    page.refresh()
+    app.processEvents()
+
+    assert page.list.isHidden() is False
+    assert page.list.height() > 300
+    assert page.detail.isHidden() is False
+
+
 def test_a_second_refresh_is_answered_by_the_cache(app, tmp_path):
     page = panel(tmp_path)
     page.refresh()

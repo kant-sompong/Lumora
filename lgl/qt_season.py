@@ -18,6 +18,8 @@ from PySide6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QPushButton,
+    QSizePolicy,
+    QSpacerItem,
     QVBoxLayout,
     QWidget,
 )
@@ -116,6 +118,16 @@ class SeasonCompareDialog(QDialog):
         self.detail.setWordWrap(True)
         layout.addWidget(self.detail)
 
+        # Text lines keep their own height, and the stretch below only exists
+        # while the three lists are gone, so a failure stays compact instead of
+        # spreading the remaining lines down the dialog.
+        for text_label in (heading, note, self.status, self.summary, self.error,
+                           self.detail, *self.section_heads.values()):
+            text_label.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
+        self._layout = layout
+        self._tail = QSpacerItem(0, 0, QSizePolicy.Minimum, QSizePolicy.Expanding)
+        self._tail_installed = False
+
         close = QPushButton("Close", self)
         close.clicked.connect(self.accept)
         foot = QHBoxLayout()
@@ -145,6 +157,15 @@ class SeasonCompareDialog(QDialog):
         row.addStretch(1)
         layout.addLayout(row)
         return seasons, years
+
+    def _compact(self, compact: bool) -> None:
+        """Keep the lines at the top when the lists are not shown."""
+        if compact and not self._tail_installed:
+            self._layout.addItem(self._tail)
+            self._tail_installed = True
+        elif not compact and self._tail_installed:
+            self._layout.removeItem(self._tail)
+            self._tail_installed = False
 
     # -- data --------------------------------------------------------------
     def values(self) -> tuple[Any, Any, Any, Any]:
@@ -193,6 +214,7 @@ class SeasonCompareDialog(QDialog):
         error = result.error_text
         self.error.setText(error)
         self.error.setVisible(bool(error))
+        self._compact(bool(error))
 
         for key, _title in SECTIONS:
             widget = self.lists[key]
