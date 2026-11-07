@@ -228,3 +228,4 @@ Branched from `origin/feature/qt-home-shelves` because PR #23 was still open.
 - Test totals on `main` after #43: GTK 612 passed / 2 skipped, Qt 644 passed.
 
 - 2026-11-08: polish pass merged as PR #45 (seven small fixes, see TODO.md 3.1). Tests on `main`: GTK 614 passed / 2 skipped, Qt 648 passed.
+- 2026-11-08: TODO.md cleaned up. The old Linux bugs G1 (Library tiles stretching), G2 (stray header capsule) and G3 (empty "Availability" heading) were fixed on `fix/gtk-tools-window-gtk3` (`a36468f`, `b37b3d6`) and checked in the running app under Xvfb; the Tools window pages open on GTK 3 and `backup.create`, `diagnostics.create` and `updates.check` were triggered. Still not done by anyone: About page and a real download on GTK, Tools profile/plugin actions, and a human look at the Settings switches. Those moved into TODO.md section 2.
