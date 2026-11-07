@@ -67,6 +67,7 @@ WATCHLIST_KEY = "movie_watchlist"
 NAV_ITEMS = (
     ("home", "Home"), ("movies", "Movies"), ("tv", "TV Shows"),
     ("anime", "Anime"), ("list", "My List"), ("history", "History"),
+    ("calendar", "Calendar"), ("compare", "Compare seasons"),
 )
 
 
@@ -499,6 +500,7 @@ class MediaPage(QWidget):
     """Movies & TV: Home, Movies, TV Shows, Anime, Search, My List, History."""
 
     configure_requested = Signal()
+    surprise_requested = Signal()
 
     def __init__(self, settings: Settings | None = None,
                  cache_root: Path | None = None,
@@ -546,6 +548,13 @@ class MediaPage(QWidget):
             bar.addWidget(btn)
         bar.addStretch(1)
 
+        self.surprise_btn = QPushButton("Surprise me")
+        self.surprise_btn.setObjectName("mediaNav")
+        self.surprise_btn.setCursor(Qt.PointingHandCursor)
+        self.surprise_btn.setToolTip("Open one random game or title")
+        self.surprise_btn.clicked.connect(self.surprise_requested.emit)
+        bar.addWidget(self.surprise_btn)
+
         self.provider_label = label("Provider", "mediaNote")
         bar.addWidget(self.provider_label)
         self.provider_combo = QComboBox()
@@ -576,7 +585,8 @@ class MediaPage(QWidget):
         self._pages: dict[str, QWidget] = {}
         for key, title in (("home", "Home"), ("movies", "Movies"), ("tv", "TV Shows"),
                            ("anime", "Anime"), ("search", "Search"),
-                           ("list", "My List"), ("history", "History")):
+                           ("list", "My List"), ("history", "History"),
+                           ("calendar", "Calendar"), ("compare", "Compare seasons")):
             page, column = self._page()
             self._pages[key] = page
             self.stack.addWidget(page)
@@ -590,6 +600,10 @@ class MediaPage(QWidget):
                 self._build_search(column)
             elif key == "list":
                 self._build_list(column)
+            elif key == "calendar":
+                self._build_calendar(column)
+            elif key == "compare":
+                self._build_compare(column)
             else:
                 self._build_history(column)
         self._detail_page, detail_column = self._page()
@@ -832,6 +846,25 @@ class MediaPage(QWidget):
         self.episode_column.setSpacing(6)
         column.addWidget(self.episode_host)
         column.addStretch(1)
+
+    def _build_calendar(self, column: QVBoxLayout) -> None:
+        """The release calendar as a page; Refresh loads the dates."""
+        from .qt_calendar import CalendarDialog
+
+        self.calendar_panel = CalendarDialog(
+            self.settings, self, autoload=False, embedded=True
+        )
+        self.calendar_panel._status.setText(
+            "Press Refresh to load release dates from AniList and TMDB."
+        )
+        column.addWidget(self.calendar_panel, 1)
+
+    def _build_compare(self, column: QVBoxLayout) -> None:
+        """Two anime seasons side by side; it fetches only when Compare runs."""
+        from .qt_season import SeasonCompareDialog
+
+        self.compare_panel = SeasonCompareDialog(self, threaded=False)
+        column.addWidget(self.compare_panel, 1)
 
     # navigation ------------------------------------------------------------
     def show_section(self, key: str) -> None:

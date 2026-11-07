@@ -7,6 +7,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -36,8 +37,13 @@ class CollectionsDialog(QDialog):
         store: CollectionStore,
         entries: Sequence[Any],
         parent: QWidget | None = None,
+        *,
+        embedded: bool = False,
     ) -> None:
         super().__init__(parent)
+        self.embedded = embedded
+        if embedded:
+            self.setWindowFlags(Qt.Widget)
         self.setWindowTitle("Collections")
         self.resize(620, 460)
         self.store = store
@@ -93,12 +99,13 @@ class CollectionsDialog(QDialog):
         self.note.setWordWrap(True)
         layout.addWidget(self.note)
 
-        footer = QHBoxLayout()
-        footer.addStretch(1)
-        close = QPushButton("Close", self)
-        close.clicked.connect(self.accept)
-        footer.addWidget(close)
-        layout.addLayout(footer)
+        if not self.embedded:
+            footer = QHBoxLayout()
+            footer.addStretch(1)
+            close = QPushButton("Close", self)
+            close.clicked.connect(self.accept)
+            footer.addWidget(close)
+            layout.addLayout(footer)
 
         self.refresh()
 

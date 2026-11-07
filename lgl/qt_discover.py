@@ -9,6 +9,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -61,8 +62,13 @@ class DiscoverDialog(QDialog):
         owned: Sequence[str] = (),
         parent: QWidget | None = None,
         settings: Any = None,
+        *,
+        embedded: bool = False,
     ) -> None:
         super().__init__(parent)
+        self.embedded = embedded
+        if embedded:
+            self.setWindowFlags(Qt.Widget)
         self.setWindowTitle("Discover")
         self.resize(640, 520)
         self.items = [dict(item) for item in items]
@@ -72,6 +78,8 @@ class DiscoverDialog(QDialog):
         layout = QVBoxLayout(self)
         heading = QLabel("DISCOVER", self)
         heading.setObjectName("detailEyebrow")
+        # The page that embeds this dialog draws its own heading and button.
+        heading.setVisible(not embedded)
         layout.addWidget(heading)
 
         self.tabs = QTabWidget(self)
@@ -126,12 +134,13 @@ class DiscoverDialog(QDialog):
         self.tabs.addTab(self.anime_gems, "Anime gems")
         self.tabs.currentChanged.connect(self._on_tab_changed)
 
-        buttons = QHBoxLayout()
-        buttons.addStretch(1)
-        close = QPushButton("Close", self)
-        close.clicked.connect(self.accept)
-        buttons.addWidget(close)
-        layout.addLayout(buttons)
+        if not self.embedded:
+            buttons = QHBoxLayout()
+            buttons.addStretch(1)
+            close = QPushButton("Close", self)
+            close.clicked.connect(self.accept)
+            buttons.addWidget(close)
+            layout.addLayout(buttons)
 
     def _page(self, widget: QListWidget, note: str) -> QWidget:
         page = QWidget(self)
@@ -157,8 +166,13 @@ class FavouritesDialog(QDialog):
         self,
         entries: Sequence[Mapping[str, Any]],
         parent: QWidget | None = None,
+        *,
+        embedded: bool = False,
     ) -> None:
         super().__init__(parent)
+        self.embedded = embedded
+        if embedded:
+            self.setWindowFlags(Qt.Widget)
         self.setWindowTitle("Favourites")
         self.resize(620, 460)
         buckets = stats.split(entries)
@@ -180,12 +194,13 @@ class FavouritesDialog(QDialog):
         columns.addLayout(self._column("Movies, series and anime", self.media), 1)
         layout.addLayout(columns, 1)
 
-        buttons = QHBoxLayout()
-        buttons.addStretch(1)
-        close = QPushButton("Close", self)
-        close.clicked.connect(self.accept)
-        buttons.addWidget(close)
-        layout.addLayout(buttons)
+        if not self.embedded:
+            buttons = QHBoxLayout()
+            buttons.addStretch(1)
+            close = QPushButton("Close", self)
+            close.clicked.connect(self.accept)
+            buttons.addWidget(close)
+            layout.addLayout(buttons)
 
     def _column(self, name: str, rows: Sequence[Mapping[str, Any]]) -> QVBoxLayout:
         layout = QVBoxLayout()
@@ -208,8 +223,13 @@ class ActivityTimelineDialog(QDialog):
         self,
         events: Sequence[Mapping[str, Any]],
         parent: QWidget | None = None,
+        *,
+        embedded: bool = False,
     ) -> None:
         super().__init__(parent)
+        self.embedded = embedded
+        if embedded:
+            self.setWindowFlags(Qt.Widget)
         self.setWindowTitle("Activity")
         self.resize(520, 460)
         self.rows = stats.timeline(events, limit=60)
@@ -229,12 +249,13 @@ class ActivityTimelineDialog(QDialog):
         self.empty.setVisible(not self.rows)
         layout.addWidget(self.empty)
 
-        buttons = QHBoxLayout()
-        buttons.addStretch(1)
-        close = QPushButton("Close", self)
-        close.clicked.connect(self.accept)
-        buttons.addWidget(close)
-        layout.addLayout(buttons)
+        if not self.embedded:
+            buttons = QHBoxLayout()
+            buttons.addStretch(1)
+            close = QPushButton("Close", self)
+            close.clicked.connect(self.accept)
+            buttons.addWidget(close)
+            layout.addLayout(buttons)
 
 
 class SeasonCompareDialog(QDialog):
@@ -244,8 +265,13 @@ class SeasonCompareDialog(QDialog):
         self,
         items: Sequence[Mapping[str, Any]],
         parent: QWidget | None = None,
+        *,
+        embedded: bool = False,
     ) -> None:
         super().__init__(parent)
+        self.embedded = embedded
+        if embedded:
+            self.setWindowFlags(Qt.Widget)
         self.setWindowTitle("Compare seasons")
         self.resize(560, 480)
         self.items = [dict(item) for item in items]
@@ -285,12 +311,13 @@ class SeasonCompareDialog(QDialog):
         self.summary.setWordWrap(True)
         layout.addWidget(self.summary)
 
-        buttons = QHBoxLayout()
-        buttons.addStretch(1)
-        close = QPushButton("Close", self)
-        close.clicked.connect(self.accept)
-        buttons.addWidget(close)
-        layout.addLayout(buttons)
+        if not self.embedded:
+            buttons = QHBoxLayout()
+            buttons.addStretch(1)
+            close = QPushButton("Close", self)
+            close.clicked.connect(self.accept)
+            buttons.addWidget(close)
+            layout.addLayout(buttons)
 
         self.refresh()
 
@@ -307,9 +334,80 @@ class SeasonCompareDialog(QDialog):
         self.summary.setText(season_compare.summary(result))
 
 
+class DiscoverPage(QWidget):
+    """The Discover page: a Surprise me button above the five discovery tabs."""
+
+    surprise_requested = Signal()
+
+    def __init__(
+        self,
+        items: Sequence[Mapping[str, Any]],
+        liked: Sequence[str] = (),
+        owned: Sequence[str] = (),
+        settings: Any = None,
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(parent)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        header = QHBoxLayout()
+        header.setContentsMargins(24, 16, 24, 8)
+        heading = QLabel("DISCOVER", self)
+        heading.setObjectName("detailEyebrow")
+        header.addWidget(heading)
+        header.addStretch(1)
+        self.surprise_btn = QPushButton("Surprise me", self)
+        self.surprise_btn.setCursor(Qt.PointingHandCursor)
+        self.surprise_btn.setToolTip("Open one random game or title")
+        self.surprise_btn.clicked.connect(self.surprise_requested.emit)
+        header.addWidget(self.surprise_btn)
+        layout.addLayout(header)
+
+        self.panel = DiscoverDialog(
+            items, liked, owned, self, settings=settings, embedded=True
+        )
+        layout.addWidget(self.panel, 1)
+        self.tabs = self.panel.tabs
+
+    def show_tab(self, tab: str) -> None:
+        """Bring one of the five tabs to the front."""
+        from . import nav_layout
+
+        keys = nav_layout.tab_keys("discover")
+        if tab in keys:
+            self.tabs.setCurrentIndex(keys.index(tab))
+
+    def set_items(
+        self,
+        items: Sequence[Mapping[str, Any]],
+        liked: Sequence[str] = (),
+        owned: Sequence[str] = (),
+    ) -> None:
+        """Re-run every ranking over a new library."""
+        panel = self.panel
+        panel.items = [dict(item) for item in items]
+        panel.liked = [str(key) for key in liked]
+        panel.owned = [str(key) for key in owned]
+        _fill(panel.recommendations, discovery.recommend(panel.items, panel.liked))
+        _fill(panel.gems, discovery.hidden_gems(panel.items))
+        _fill(panel.suggestions, discovery.suggestions(panel.items, panel.owned))
+        seed = panel.seed
+        seed.blockSignals(True)
+        seed.clear()
+        for item in panel.items:
+            seed.addItem(
+                str(item.get("title") or item.get("key") or "Untitled"), item.get("key")
+            )
+        seed.blockSignals(False)
+        panel.refresh_similar()
+
+
 __all__ = [
     "ActivityTimelineDialog",
     "DiscoverDialog",
+    "DiscoverPage",
     "FavouritesDialog",
     "SeasonCompareDialog",
 ]

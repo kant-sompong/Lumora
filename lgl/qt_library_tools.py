@@ -10,6 +10,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -56,8 +57,13 @@ class TagsDialog(QDialog):
         entries: Sequence[Any],
         settings: Any,
         parent: QWidget | None = None,
+        *,
+        embedded: bool = False,
     ) -> None:
         super().__init__(parent)
+        self.embedded = embedded
+        if embedded:
+            self.setWindowFlags(Qt.Widget)
         self.setWindowTitle("Tags")
         self.resize(480, 420)
         self.settings = settings
@@ -92,6 +98,7 @@ class TagsDialog(QDialog):
         buttons.addStretch(1)
         self.close_btn = QPushButton("Close", self)
         self.close_btn.clicked.connect(self.accept)
+        self.close_btn.setVisible(not embedded)
         buttons.addWidget(self.close_btn)
         layout.addLayout(buttons)
 

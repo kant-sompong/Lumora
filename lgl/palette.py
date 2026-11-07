@@ -17,8 +17,23 @@ MAX_RESULTS = 12
 PAGES: tuple[tuple[str, str], ...] = (
     ("archive", "Browse"),
     ("library", "Library"),
+    ("discover", "Discover"),
     ("downloads", "Downloads"),
     ("media", "Movies & TV"),
+)
+
+#: Tabs that used to be a separate menu entry: key, title, group, page, tab.
+TAB_TARGETS: tuple[tuple[str, str, str, str, str], ...] = (
+    ("tab.discover.for-you", "Recommendations", "Discover", "discover", "for-you"),
+    ("tab.discover.hidden-gems", "Hidden gems", "Discover", "discover", "hidden-gems"),
+    ("tab.library.favourites", "Favourites", "Library", "library", "favourites"),
+    ("tab.library.collections", "Collections", "Library", "library", "collections"),
+    ("tab.library.tags", "Tags", "Library", "library", "tags"),
+    ("tab.library.activity", "Activity", "Library", "library", "activity"),
+    ("tab.library.statistics", "Statistics", "Library", "library", "statistics"),
+    ("tab.library.recent", "Recently viewed", "Library", "library", "recent"),
+    ("tab.media.calendar", "Release calendar", "Movies & TV", "media", "calendar"),
+    ("tab.media.compare", "Compare seasons", "Movies & TV", "media", "compare"),
 )
 
 #: Settings pages and the actions that open them.
@@ -50,6 +65,10 @@ def commands(*, with_settings: bool = True) -> list[Command]:
     items = [
         Command(f"page.{name}", f"Go to {label}", "Page", hint=f"{label} page")
         for name, label in PAGES
+    ]
+    items += [
+        Command(key, title, group, hint=f"{group} · {title} tab")
+        for key, title, group, _page, _tab in TAB_TARGETS
     ]
     if with_settings:
         items += [
@@ -127,11 +146,28 @@ def page_for(key: str) -> str:
 
 def action_for(command: Command) -> str | None:
     """What the frontend should do: a page name, a settings page, or an action."""
+    if command.key.startswith("tab."):
+        _prefix, page, tab = command.key.split(".", 2)
+        return f"tab:{page}/{tab}"
     if command.key.startswith("page."):
         return command.key.split(".", 1)[1]
     if command.key.startswith("settings."):
         return command.key
     return command.action or command.key
+
+
+def destination(command: Command) -> tuple[str, str, str]:
+    """Where a command lands: ``("page", page, tab)``, ``("settings", page, "")``
+    or ``("action", name, "")``."""
+    key = command.key
+    if key.startswith("tab."):
+        _prefix, page, tab = key.split(".", 2)
+        return ("page", page, tab)
+    if key.startswith("page."):
+        return ("page", page_for(key), "")
+    if key.startswith("settings."):
+        return ("settings", key.split(".", 1)[1], "")
+    return ("action", str(action_for(command) or ""), "")
 
 
 def flatten(items: Iterable[Command]) -> list[str]:
@@ -142,9 +178,11 @@ __all__ = [
     "MAX_RESULTS",
     "PAGES",
     "SETTINGS_PAGES",
+    "TAB_TARGETS",
     "Command",
     "action_for",
     "commands",
+    "destination",
     "flatten",
     "page_for",
     "score",

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from typing import Any, Iterable, Sequence
 
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import QDialog, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
@@ -70,8 +71,13 @@ class StatisticsDialog(QDialog):
         entries: Sequence[Any],
         viewed: Sequence[dict[str, Any]],
         parent: QWidget | None = None,
+        *,
+        embedded: bool = False,
     ) -> None:
         super().__init__(parent)
+        self.embedded = embedded
+        if embedded:
+            self.setWindowFlags(Qt.Widget)
         self.setWindowTitle("Statistics")
         self.resize(520, 420)
         events = build_events(entries, viewed)
@@ -138,12 +144,13 @@ class StatisticsDialog(QDialog):
         self.coverage.setObjectName("detailNote")
         layout.addWidget(self.coverage)
 
-        buttons = QHBoxLayout()
-        buttons.addStretch(1)
-        close = QPushButton("Close", self)
-        close.clicked.connect(self.reject)
-        buttons.addWidget(close)
-        layout.addLayout(buttons)
+        if not self.embedded:
+            buttons = QHBoxLayout()
+            buttons.addStretch(1)
+            close = QPushButton("Close", self)
+            close.clicked.connect(self.reject)
+            buttons.addWidget(close)
+            layout.addLayout(buttons)
 
 
 __all__ = ["Heatmap", "StatisticsDialog", "build_events"]

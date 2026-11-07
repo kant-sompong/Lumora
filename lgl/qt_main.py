@@ -37,6 +37,7 @@ from PySide6.QtWidgets import (
 )
 
 from . import discovery
+from . import nav_layout
 from . import profiles
 from . import recently_viewed
 from . import suggestions
@@ -46,7 +47,12 @@ from .archive import ArchiveClient, build_download_url
 from .catalog_store import CatalogStore
 from .downloader import DownloadManager, TaskSnapshot
 from .library_store import LibraryStore
-from .qt_discover import ActivityTimelineDialog, DiscoverDialog, FavouritesDialog
+from .qt_discover import (
+    ActivityTimelineDialog,
+    DiscoverDialog,
+    DiscoverPage,
+    FavouritesDialog,
+)
 from .qt_library_tools import (
     BulkEditDialog,
     DuplicatesDialog,
@@ -171,7 +177,15 @@ class Window(QMainWindow):
 
         self.media = MediaPage(self._settings, platform_support.cache_dir())
         self.media.configure_requested.connect(lambda: self.show_settings("providers"))
+        self.media.surprise_requested.connect(self.pick_random)
         self.stack.addWidget(self.media)
+
+        self.discover = DiscoverPage(
+            self._discover_rows(), self._liked_keys(), self._owned_keys(),
+            self._settings, self,
+        )
+        self.discover.surprise_requested.connect(self.pick_random)
+        self.stack.addWidget(self.discover)
 
         self.toast = Toast(root)
         # The interface preferences are applied before the first page is shown,
@@ -217,8 +231,9 @@ class Window(QMainWindow):
         for key, icon_name, text, tip in (
             ("browse", "grid", "Browse", "Browse the collection (Ctrl+1)"),
             ("library", "library", "Library", "Your downloaded games (Ctrl+2)"),
-            ("downloads", "downloads", "Downloads", "The download queue (Ctrl+3)"),
+            ("discover", "star", "Discover", "Recommendations, hidden gems and more"),
             ("media", "media", "Media", "Movies & TV (Ctrl+4)"),
+            ("downloads", "downloads", "Downloads", "The download queue (Ctrl+3)"),
         ):
             button = RailButton(key, icon_name, text, tip)
             button.clicked.connect(lambda k=key: self.show_view(k))
@@ -335,6 +350,7 @@ class Window(QMainWindow):
     # navigation -----------------------------------------------------------
     VIEW_TITLES = {
         "browse": "Browse", "library": "Library",
+        "discover": "Discover",
         "downloads": "Downloads", "media": "Movies & TV",
     }
 
@@ -342,6 +358,7 @@ class Window(QMainWindow):
         aliases = {
             "Archive": "browse", "Browse": "browse", "browse": "browse",
             "Library": "library", "library": "library",
+            "Discover": "discover", "discover": "discover",
             "Downloads": "downloads", "downloads": "downloads",
             "Media": "media", "media": "media",
         }
@@ -352,9 +369,12 @@ class Window(QMainWindow):
         page = {
             "browse": self.browse,
             "library": self.library,
+            "discover": self.discover,
             "downloads": self.downloads,
             "media": self.media,
         }[key]
+        if key == "discover":
+            self._refresh_discover()
         self._transition_to(page)  # type: ignore[arg-type]
         self.browse.detail.hide() if key != "browse" else None
         self._remember(key)
@@ -392,6 +412,7 @@ class Window(QMainWindow):
     def _apply_history(self, key: str) -> None:
         page = {
             "browse": self.browse, "library": self.library,
+            "discover": self.discover,
             "downloads": self.downloads, "media": self.media,
         }.get(key)
         if page is None:
@@ -430,6 +451,9 @@ class Window(QMainWindow):
             self.search_field.setEnabled(True)
         elif key == "media":
             self.search_field.setPlaceholderText("Search movies, TV, anime…")
+            self.search_field.setEnabled(True)
+        elif key == "discover":
+            self.search_field.setPlaceholderText("Search games")
             self.search_field.setEnabled(True)
         else:
             self.search_field.setPlaceholderText("Search")
@@ -534,83 +558,48 @@ class Window(QMainWindow):
         """The header menu, built but not shown, so tests can inspect it."""
         menu = QMenu(self)
         menu.setWindowFlags(menu.windowFlags() | Qt.FramelessWindowHint | Qt.NoDropShadowWindowHint)
-        palette = QAction("Command palette…", self)
-        palette.setShortcut(QKeySequence("Ctrl+K"))
-        palette.triggered.connect(self.show_palette)
-        menu.addAction(palette)
-        menu.addSeparator()
-        sources = QAction("Website Sources…", self)
-        sources.triggered.connect(self.show_sources)
-        menu.addAction(sources)
-        catalog = QAction("Kryoto Catalog…", self)
-        catalog.triggered.connect(self.show_kryoto_catalog)
-        menu.addAction(catalog)
-        queue = QAction("Show Download Queue", self)
-        queue.triggered.connect(lambda: self.show_view("downloads"))
-        menu.addAction(queue)
-        maintenance = menu.addMenu("Maintenance")
-        rescan = maintenance.addAction("Rescan library")
-        rescan.triggered.connect(self.library.rescan)
-        reload_action = maintenance.addAction("Reload collection")
-        reload_action.triggered.connect(lambda: self.browse.load(force=True))
-        catalog_downloads = maintenance.addAction("Download from catalogue…")
-        catalog_downloads.triggered.connect(self.show_catalog_downloads)
-        artwork_action = maintenance.addAction("Sync catalogue artwork")
-        artwork_action.triggered.connect(lambda: self.sync_artwork(False))
-        recheck_action = maintenance.addAction("Re-check games with no artwork match")
-        recheck_action.triggered.connect(lambda: self.sync_artwork(True))
-        cache_action = maintenance.addAction("Clear image cache")
-        cache_action.triggered.connect(self.clear_image_cache)
-        open_data = maintenance.addAction("Open data folder")
-        open_data.triggered.connect(
-            lambda: platform_support.open_folder(platform_support.data_dir())
+        maintenance_menu: QMenu | None = None
+        maintenance = (
+            ("Rescan library", self.library.rescan),
+            ("Reload collection", lambda: self.browse.load(force=True)),
+            ("Download from catalogue…", self.show_catalog_downloads),
+            ("Sync catalogue artwork", lambda: self.sync_artwork(False)),
+            ("Re-check games with no artwork match", lambda: self.sync_artwork(True)),
+            ("Clear image cache", self.clear_image_cache),
+            ("Open data folder",
+             lambda: platform_support.open_folder(platform_support.data_dir())),
+            ("Open download folder",
+             lambda: platform_support.open_folder(self.download_dir)),
         )
-        folder = QAction("Open download folder", self)
-        folder.triggered.connect(lambda: platform_support.open_folder(self.download_dir))
-        menu.addAction(folder)
-        menu.addSeparator()
-        updates = QAction("Check for updates…", self)
-        updates.triggered.connect(self.check_updates)
-        menu.addAction(updates)
-        calendar = QAction("Release calendar…", self)
-        calendar.triggered.connect(self.show_calendar)
-        menu.addAction(calendar)
-        seasons = QAction("Compare seasons…", self)
-        seasons.triggered.connect(self.show_season_compare)
-        menu.addAction(seasons)
-        viewed = QAction("Recently viewed…", self)
-        viewed.triggered.connect(self.show_recent)
-        menu.addAction(viewed)
-        surprise = QAction("Surprise me…", self)
-        surprise.triggered.connect(self.pick_random)
-        menu.addAction(surprise)
-        statistics = QAction("Statistics…", self)
-        statistics.triggered.connect(self.show_statistics)
-        menu.addAction(statistics)
-        library_menu = menu.addMenu("Library tools")
-        for label, slot in (
-            ("Tags…", self.show_tags),
-            ("Edit details…", self.show_metadata_editor),
-            ("Bulk edit…", self.show_bulk_edit),
-            ("Find duplicates…", self.show_duplicates),
-            ("Discover…", self.show_discover),
-            ("Favourites…", self.show_favourites),
-            ("Activity…", self.show_activity),
-            ("Collections…", self.show_collections),
-            ("Keyboard shortcuts…", self.show_shortcuts),
-            ("Profiles…", self.show_profiles),
-        ):
-            action = library_menu.addAction(label)
-            action.triggered.connect(slot)
-        tools = QAction("Tools…", self)
-        tools.triggered.connect(self.show_tools)
-        menu.addAction(tools)
-        settings = QAction("Settings…", self)
-        settings.triggered.connect(self.show_settings)
-        menu.addAction(settings)
-        about = QAction(f"About {APP_TITLE}", self)
-        about.triggered.connect(self.show_about)
-        menu.addAction(about)
+        # The menu holds exactly what nav_layout lists: everything else moved
+        # into the pages it belongs to, where people look for it.
+        callbacks = {
+            "palette": self.show_palette,
+            "profiles": self.show_profiles,
+            "shortcuts": self.show_shortcuts,
+            "tools": self.show_tools,
+            "sources": self.show_sources,
+            "kryoto": self.show_kryoto_catalog,
+            "queue": lambda: self.show_view("downloads"),
+            "settings": self.show_settings,
+            "about": self.show_about,
+        }
+        for key, text in nav_layout.MENU:
+            if key == "maintenance":
+                maintenance_menu = menu.addMenu(text)
+                for label, slot in maintenance:
+                    action = maintenance_menu.addAction(label)
+                    action.triggered.connect(slot)
+                continue
+            action = menu.addAction(text)
+            action.triggered.connect(callbacks[key])
+            if key == "palette":
+                action.setShortcut(QKeySequence("Ctrl+K"))
+                menu.addSeparator()
+            elif key == "tools":
+                menu.addSeparator()
+            elif key == "queue":
+                menu.addSeparator()
         return menu
 
     def _show_menu(self) -> None:
@@ -656,6 +645,47 @@ class Window(QMainWindow):
         from .qt_season import show_season_compare
 
         show_season_compare(self)
+
+    # places -----------------------------------------------------------------
+    def show_place(self, page: str, tab: str = "") -> None:
+        """Go to a page and, when given, bring one of its tabs to the front."""
+        key = "browse" if page == "archive" else str(page or "browse")
+        if key == "library":
+            self.show_view("library")
+            if tab:
+                self.library.show_tab(tab)
+            return
+        if key == "discover":
+            self.show_view("discover")
+            if tab:
+                self.discover.show_tab(tab)
+            return
+        if key == "media":
+            self.show_view("media")
+            if tab:
+                self.media.show_section(tab)
+            return
+        self.show_view(key)
+
+    def _discover_rows(self) -> list[dict]:
+        """Everything Discover may recommend: the library and the media cards."""
+        return self._library_rows() + self._media_rows()
+
+    def _liked_keys(self) -> list[str]:
+        return [row["key"] for row in self._library_rows() if row.get("favorite")]
+
+    def _owned_keys(self) -> list[str]:
+        return [row["key"] for row in self._discover_rows()]
+
+    def _refresh_discover(self) -> None:
+        """Re-run the recommendations over what is loaded right now."""
+        page = getattr(self, "discover", None)
+        if page is None:
+            return
+        try:
+            page.set_items(self._discover_rows(), self._liked_keys(), self._owned_keys())
+        except Exception:  # noqa: BLE001 - a broken row must not stop navigation
+            pass
 
     def show_tools(self) -> None:
         """Open the tools window: providers, downloads, backup, profiles and more."""
