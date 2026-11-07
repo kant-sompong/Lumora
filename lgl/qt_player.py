@@ -81,6 +81,7 @@ class EmbeddedPlayer(QWidget):
         self._view_factory = view_factory or webengine_view
         self._url = ""
         self._fullscreen = False
+        self._page_exit_requested = False
         self._hidden: list[tuple[QWidget, bool]] = []
         self._window_state: Qt.WindowState | None = None
         self._view_window: QWidget | None = None
@@ -245,14 +246,20 @@ class EmbeddedPlayer(QWidget):
                 active = bool(toggler())
             except Exception:  # noqa: BLE001
                 active = True
+        # The page already knows it left fullscreen; telling it again would
+        # toggle its own fullscreen button state back.
+        self._page_exit_requested = not active
         self.set_fullscreen(active)
 
     def set_fullscreen(self, active: bool) -> None:
         """Give the video the whole screen, hiding the app around it."""
         active = bool(active)
         if active == self._fullscreen:
+            self._page_exit_requested = False
             return
         self._fullscreen = active
+        page_started = (not active) and self._page_exit_requested
+        self._page_exit_requested = False
         window = self.window()
         if active:
             self._hide_around_video(window)
@@ -262,6 +269,10 @@ class EmbeddedPlayer(QWidget):
             self.chrome.show()
             self._restore_around_video()
             self._exit_window_fullscreen(window)
+            if not page_started:
+                # The app hid its own fullscreen while the page still believes
+                # it is fullscreen, which breaks the provider's own button.
+                self._tell_page_fullscreen_ended()
         self.fullscreen_changed.emit(active)
 
     def _hide_around_video(self, window: QWidget | None) -> None:
@@ -320,6 +331,31 @@ class EmbeddedPlayer(QWidget):
             window.showMaximized()
         else:
             window.showNormal()
+
+    def _tell_page_fullscreen_ended(self) -> None:
+        """Ask the page to leave fullscreen when the app started the exit.
+
+        The import is local on purpose: a build with PySide6-Essentials has no
+        QtWebEngineCore at all, and this has to be a silent no-op there.
+        """
+        getter = getattr(self.view, "page", None)
+        if not callable(getter):
+            return
+        try:
+            page = getter()
+        except Exception:  # noqa: BLE001 - a view that has no page yet
+            return
+        trigger = getattr(page, "triggerAction", None)
+        if not callable(trigger):
+            return
+        try:
+            from PySide6.QtWebEngineCore import QWebEnginePage  # type: ignore
+        except Exception:  # noqa: BLE001 - WebEngine is optional in this build
+            return
+        try:
+            trigger(QWebEnginePage.WebAction.ExitFullScreen)
+        except Exception:  # noqa: BLE001 - the page is gone or still loading
+            pass
 
 
 def make_player(parent: QWidget | None = None, *,
