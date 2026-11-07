@@ -352,6 +352,7 @@ class HeroPanel(HeroBanner):
         column.addSpacing(6)
         actions = QHBoxLayout()
         actions.setSpacing(8)
+        self.actions = actions
         self.play = QPushButton("▶  Watch Now")
         self.play.setObjectName("heroPlay")
         self.play.setCursor(Qt.PointingHandCursor)
@@ -784,17 +785,19 @@ class MediaPage(QWidget):
         self.detail_back.setCursor(Qt.PointingHandCursor)
         self.detail_back.clicked.connect(lambda: self.show_section(self._section))
         top.addWidget(self.detail_back)
-        # Hidden until TMDB says this title has a trailer we can embed.
+        top.addStretch(1)
+        column.addLayout(top)
+        self.detail_hero = HeroPanel()
+        column.addWidget(self.detail_hero)
+        # Hidden until TMDB says this title has a trailer we can embed. It
+        # sits in the hero action row with Watch Now and My List, not beside
+        # Back, where a viewing action does not belong.
         self.trailer_btn = QPushButton("▶  Trailer")
         self.trailer_btn.setObjectName("heroAction")
         self.trailer_btn.setCursor(Qt.PointingHandCursor)
         self.trailer_btn.setVisible(False)
         self.trailer_btn.clicked.connect(self._open_trailer)
-        top.addWidget(self.trailer_btn)
-        top.addStretch(1)
-        column.addLayout(top)
-        self.detail_hero = HeroPanel()
-        column.addWidget(self.detail_hero)
+        self.detail_hero.actions.insertWidget(1, self.trailer_btn)
         self.detail_hero.play_clicked.connect(self._play_detail)
         self.detail_hero.list_clicked.connect(self._toggle_detail_list)
         self.detail_hero.details.clicked.connect(self._open_tmdb_page)

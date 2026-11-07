@@ -108,6 +108,16 @@ def test_no_trailer_hides_the_button(app, monkeypatch, calls, card):
     assert calls == []
 
 
+def test_the_trailer_button_sits_with_watch_now_not_beside_back(app, card):
+    page = qt_media.MediaPage(Settings())
+    row = page.detail_hero.actions
+
+    assert row.indexOf(page.trailer_btn) >= 0
+    assert row.indexOf(page.detail_hero.play) >= 0
+    assert row.indexOf(page.detail_hero.save) >= 0
+    assert page.trailer_btn.parentWidget() is page.detail_hero
+
+
 def test_the_fallback_dialog_never_opens_a_browser_by_itself(app, monkeypatch):
     opened: list[str] = []
     monkeypatch.setattr(platform_support, "open_url", lambda url: opened.append(url))
