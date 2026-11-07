@@ -170,6 +170,7 @@ class QuickPreview(Gtk.Popover):
         self._flow: Gtk.Widget | None = None
         self._watched: list[Gtk.Window] = []
         self._hovered: Gtk.Widget | None = None
+        self._tips: bool | None = None
         self.set_modal(False)
         self.set_position(Gtk.PositionType.RIGHT)
         self.get_style_context().add_class("quick-preview")
@@ -265,6 +266,21 @@ class QuickPreview(Gtk.Popover):
             return
         self._tiles[tile] = getattr(tile, "entry", None)
         tile.connect("key-press-event", self._on_key)
+        self._tooltips([tile])
+
+    def _tooltips(self, tiles: list[Gtk.Widget] | None = None) -> None:
+        """Hide the cards' own tooltips while the popover says the same thing.
+
+        The view still sets the tooltip text; only the showing of it is turned
+        off, so switching quick preview back off restores it untouched.  Every
+        tile is set when it is tracked, and the switch is re-checked on pointer
+        motion, which covers it being flipped while the grid stays as it is.
+        """
+        wanted = not self.enabled()
+        self._tips = wanted
+        for tile in list(self._tiles) if tiles is None else tiles:
+            if tile.get_has_tooltip() != wanted:
+                tile.set_has_tooltip(wanted)
 
     def _toplevel(self) -> Gtk.Window | None:
         widget = self._flow if self._flow is not None else self._view
@@ -293,6 +309,8 @@ class QuickPreview(Gtk.Popover):
 
     def _on_motion(self, _widget: Gtk.Widget, event: Gdk.EventMotion) -> bool:
         """Start the hover timer when the pointer moves onto a new tile."""
+        if self._tips != (not self.enabled()):
+            self._tooltips()
         if not self.enabled():
             return False
         tile = self._tile_at(event.x_root, event.y_root)
@@ -300,8 +318,11 @@ class QuickPreview(Gtk.Popover):
             return False
         self._hovered = tile
         if tile is None:
+            # Empty space inside the window is a leave: the tile under the
+            # pointer must not stay remembered, or coming back to it would
+            # never open the preview again.
             if self.get_visible():
-                self.dismiss()
+                self.dismiss(remember=False)
             return False
         self._hover(tile)
         return False
@@ -309,9 +330,10 @@ class QuickPreview(Gtk.Popover):
     def _on_window_leave(self, _widget: Gtk.Widget,
                          _event: Gdk.EventCrossing) -> bool:
         """The pointer left the window the tiles live in."""
-        self._hovered = None
         if self.get_visible():
-            self.dismiss()
+            self.dismiss(remember=False)
+        else:
+            self._hovered = None
         return False
 
     def _hover(self, tile: Gtk.Widget) -> None:
@@ -345,15 +367,17 @@ class QuickPreview(Gtk.Popover):
         """The grid threw its tiles away; the preview was anchored to one of them."""
         self.dismiss()
 
-    def dismiss(self) -> None:
+    def dismiss(self, *, remember: bool = True) -> None:
         """Close the popover and forget the tile it was pointing at.
 
-        The tile under the pointer stays remembered, so the next motion event
-        on that same tile does not open the preview again: it takes a move to a
-        different tile (or leaving and coming back) after Escape or a click.
+        The tile the popover belonged to stays remembered, so the next motion
+        event on that same tile does not open the preview again: after Escape
+        or a selection change it takes a move to a different tile (or leaving
+        and coming back).  ``remember=False`` is for the pointer simply moving
+        off the tile, where coming back must open it again.
         """
         self._cancel()
-        self._hovered = self._hovered or self._tile
+        self._hovered = (self._hovered or self._tile) if remember else None
         self._entry = None
         self._tile = None
         if self.get_visible():

@@ -170,6 +170,23 @@ def hover(device, tile, window):
     warp_to(device, x + 3, y)
 
 
+def empty_spot(window, tiles):
+    """A root position inside the window that no tile covers."""
+    _ok, window_x, window_y = window_origin(window.get_window())
+    width, height = window.get_size()
+    areas = []
+    for tile in tiles.values():
+        x, y = origin(tile, window)
+        areas.append(
+            (x, y, x + tile.get_allocated_width(), y + tile.get_allocated_height())
+        )
+    for y in range(6, height - 6, 8):
+        for x in range(6, width - 6, 8):
+            if not any(x0 <= x < x1 and y0 <= y < y1 for x0, y0, x1, y1 in areas):
+                return window_x + x, window_y + y
+    return None
+
+
 def entry(identifier, title, **kwargs):
     return LibraryEntry(
         identifier=identifier, title=title, folder=f"/games/{identifier}", **kwargs
@@ -203,7 +220,9 @@ def library(*, delay: int = 0, **flags):
     items = entries()
     view = View(items, **flags)
     window = Gtk.Window()
-    window.set_default_size(900, 620)
+    # Taller than the two tile rows, so there is empty space under the grid,
+    # which is where a pointer can rest without being on a tile.
+    window.set_default_size(900, 760)
 
     flow = Gtk.FlowBox()
     flow.set_selection_mode(Gtk.SelectionMode.SINGLE)
@@ -304,6 +323,61 @@ def test_moving_the_pointer_off_the_tile_closes_it(warping):
 
     park(warping, window)
     assert wait_for(lambda: not preview.get_visible())
+    window.destroy()
+
+
+def test_empty_space_inside_the_window_is_a_leave(warping):
+    """Off the tile into empty space closes it; coming back opens it again."""
+    window, _flow, preview, tiles, _view = library(delay=0)
+    hover(warping, tiles["game-0"], window)
+    assert wait_for(preview.get_visible)
+
+    gap = empty_spot(window, tiles)
+    assert gap is not None, "the grid left no empty space inside the window"
+    warp_to(warping, *gap)
+    assert wait_for(lambda: not preview.get_visible())
+
+    x, y = tile_centre(tiles["game-0"], window)
+    warp_to(warping, x, y)
+    pump(2)
+    warp_to(warping, x + 3, y)
+    assert wait_for(preview.get_visible), "the same tile did not open again"
+    window.destroy()
+
+
+def test_escape_keeps_it_closed_while_the_pointer_stays(warping):
+    """The rule from the other side: a resting pointer must not reopen it."""
+    window, flow, preview, tiles, _view = library(delay=0)
+    hover(warping, tiles["game-0"], window)
+    assert wait_for(preview.get_visible)
+
+    flow.emit("key-press-event", key(Gdk.KEY_Escape))
+    pump(2)
+    assert preview.get_visible() is False
+
+    x, y = tile_centre(tiles["game-0"], window)
+    warp_to(warping, x + 5, y + 5)
+    pump(4)
+
+    assert preview.get_visible() is False
+    window.destroy()
+
+
+def test_the_switch_hides_the_card_tooltip(warping):
+    """The card tooltip would repeat the popover, so it is off while this is on."""
+    window, _flow, preview, tiles, _view = library(delay=0)
+    assert preview.enabled() is True
+    assert tiles["game-0"].get_has_tooltip() is False
+    window.destroy()
+
+    # A second populate (a refresh) builds new tiles; they are hidden too.
+    window, _flow, preview, tiles, _view = library(delay=0)
+    assert tiles["game-0"].get_has_tooltip() is False
+    window.destroy()
+
+    window, _flow, preview, tiles, _view = library(delay=0, quick_preview=False)
+    assert preview.enabled() is False
+    assert tiles["game-0"].get_has_tooltip() is True
     window.destroy()
 
 
