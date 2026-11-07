@@ -18,6 +18,7 @@ gi.require_version("Gtk", "3.0")
 from gi.repository import Gtk
 
 from . import discovery
+from .gtk_hidden import HiddenGemsPage
 
 
 def game_rows(games: Sequence[Any]) -> list[dict[str, Any]]:
@@ -131,6 +132,10 @@ class DiscoverWindow(Gtk.Window):
                 else "No gaps found in the loaded titles."
             ),
         )
+        # Anime only: scores and popularity come from AniList, not the catalogue.
+        self.gems_page = HiddenGemsPage(settings, excluded=self._excluded_titles())
+        self.notebook.append_page(self.gems_page, Gtk.Label(label="Anime gems"))
+        self.notebook.connect("switch-page", self._on_tab_switch)
 
         buttons = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         close = Gtk.Button(label="Close")
@@ -148,6 +153,33 @@ class DiscoverWindow(Gtk.Window):
             item.get("rating") is not None and item.get("popularity") is not None
             for item in self.items
         )
+
+    def _excluded_titles(self) -> list[str]:
+        """Keys and titles already in the library or followed in the calendar."""
+        found: list[str] = []
+        for item in self.items:
+            for field in ("key", "title"):
+                text = str(item.get(field) or "").strip()
+                if text:
+                    found.append(text)
+        view = getattr(self._parent, "library_view", None)
+        for entry in getattr(view, "_entries", None) or []:
+            for field in ("identifier", "title"):
+                text = str(getattr(entry, field, "") or "").strip()
+                if text:
+                    found.append(text)
+        try:
+            from . import anime_calendar
+
+            found.extend(anime_calendar.follows(self.settings))
+        except Exception:  # noqa: BLE001 - a missing settings key is not fatal
+            pass
+        return found
+
+    def _on_tab_switch(self, _notebook: Gtk.Notebook, page: Gtk.Widget, _number: int) -> None:
+        """The anime page fetches the first time it is opened, not before."""
+        if page is self.gems_page:
+            self.gems_page.ensure_loaded()
 
     def _list(self, name: str) -> Gtk.ListBox:
         widget = Gtk.ListBox()

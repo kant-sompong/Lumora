@@ -22,7 +22,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from . import discovery, season_compare, stats
+from . import anime_calendar, discovery, season_compare, stats
+from .qt_hidden import HiddenGemsPanel
 
 
 def _row(item: Mapping[str, Any]) -> str:
@@ -59,10 +60,11 @@ class DiscoverDialog(QDialog):
         liked: Sequence[str] = (),
         owned: Sequence[str] = (),
         parent: QWidget | None = None,
+        settings: Any = None,
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle("Discover")
-        self.resize(600, 480)
+        self.resize(640, 520)
         self.items = [dict(item) for item in items]
         self.liked = [str(key) for key in liked]
         self.owned = [str(key) for key in owned]
@@ -112,6 +114,18 @@ class DiscoverDialog(QDialog):
             "Complete the set",
         )
 
+        # -- Anime gems (AniList: scores and popularity) ---------------
+        excluded = [
+            text
+            for item in self.items
+            for text in (str(item.get("key") or ""), str(item.get("title") or ""))
+            if text.strip()
+        ]
+        excluded.extend(anime_calendar.follows(settings))
+        self.anime_gems = HiddenGemsPanel(settings, excluded=excluded, parent=self)
+        self.tabs.addTab(self.anime_gems, "Anime gems")
+        self.tabs.currentChanged.connect(self._on_tab_changed)
+
         buttons = QHBoxLayout()
         buttons.addStretch(1)
         close = QPushButton("Close", self)
@@ -125,6 +139,11 @@ class DiscoverDialog(QDialog):
         layout.addWidget(widget, 1)
         layout.addWidget(_empty_note(note, page))
         return page
+
+    def _on_tab_changed(self, index: int) -> None:
+        """The anime page fetches the first time it is opened, not before."""
+        if self.tabs.widget(index) is self.anime_gems:
+            self.anime_gems.ensure_loaded()
 
     def refresh_similar(self) -> None:
         key = str(self.seed.currentData() or "")

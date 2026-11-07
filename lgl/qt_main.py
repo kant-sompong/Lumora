@@ -781,7 +781,7 @@ class Window(QMainWindow):
         rows = self._library_rows() + self._media_rows()
         liked = [row["key"] for row in self._library_rows() if row.get("favorite")]
         owned = [row["key"] for row in rows]
-        DiscoverDialog(rows, liked, owned, self).exec()
+        DiscoverDialog(rows, liked, owned, self, settings=self._settings).exec()
 
     def show_favourites(self) -> None:
         rows = [row | {"kind": "game"} for row in self._library_rows() if row.get("favorite")]
