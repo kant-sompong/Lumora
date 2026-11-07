@@ -1,6 +1,6 @@
 # Lumora — what is finished
 
-Last updated: 2026-11-05 (Lumora 0.6.6). What is still open is in [TODO.md](TODO.md).
+Last updated: 2026-11-08 (`main` after PR #43). What is still open is in [TODO.md](TODO.md).
 
 ## Background
 - The Linux GTK app is the main one. The owner wanted the Windows app to look and feel the same.
@@ -219,3 +219,10 @@ Branched from `origin/feature/qt-home-shelves` because PR #23 was still open.
 - Verified: `compileall` clean; `pytest tests` 492 passed, 4 skipped.
 - NOT verified: never run on a display. This sandbox has no Gtk-3.0 typelib, no Xvfb, no fonts and
   sudo is blocked by the container, so the requested xvfb-run and screenshot could not be done.
+
+
+## 2026-11-06 to 2026-11-08: the 30 requested features (PRs #13 to #43)
+- Built by Codebuff / DeepSeek / opencode, each branch checked by Claude: the pushed commit, the diff scope, GTK 3 rules, the tests, and (for GTK) the real window opened on a display with canned data. Status per item is in TODO.md section 3.
+- Merged to `main`: release calendar with real AniList/TMDB data, shared UI foundation, home shelves, Discover, library tools, favourites, activity, collections, statistics, Surprise me, search suggestions, browse filters, spoiler-free mode, keyboard shortcuts, profiles, quick preview, bulk actions (both apps), command palette / compact / accent / transitions for Windows, the embedded Windows player, season comparison, hidden gems, profile switching, trailer preview, artwork backgrounds, home section sizes, a flaky calendar test fix. The last ten branches went in together as PR #43 (`integration/all-pending`), where Claude resolved three import/dialog conflicts.
+- Claude fixes along the way: `display_subtitle()` was called as a method (PR #29), the Tools window needed GTK 4, a branch pushed to the wrong repo, Discover tabs empty because of a wrong "owned" list, merge conflict in PR #42.
+- Test totals on `main` after #43: GTK 612 passed / 2 skipped, Qt 644 passed.

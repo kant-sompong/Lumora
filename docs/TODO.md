@@ -1,6 +1,6 @@
 # Lumora — what to do next
 
-Last updated: 2026-11-05 (Lumora 0.6.6). What is finished is in [DONE.md](DONE.md).
+Last updated: 2026-11-08 (`main` after PR #43). What is finished is in [DONE.md](DONE.md).
 Feature checklist: [thing.md](thing.md). Linux = GTK 3 (`lgl/ui.py`), Windows = Qt/PySide6 (`lgl/qt_*.py`), shared logic in `lgl/*.py`.
 
 This file is a hand-over note for a new session (human or AI). Read it, then DONE.md, then start at section 1.
@@ -30,187 +30,55 @@ This file is a hand-over note for a new session (human or AI). Read it, then DON
 - [ ] Check on a real desktop: Settings → General toggles (not drawn in the headless render; the Tools switches do draw, so probably a sandbox quirk), and the Media home on first run with no TMDB key.
   - Headless 2026-11-05: the notifications switch responds (44×22, mapped), writes `notifications: true` to `config.json`, and survives closing and reopening the dialog; the Media home shows the "TMDB is not connected" card with Configure providers. Their **look** could not be judged: the sandbox has no Adwaita theme and degraded fontconfig, so the switch crop came out unstyled white/black. Needs a real desktop.
 
-## 3. Features the owner asked for (new work)
+## 3. The 30 requested features: status on `main` (2026-11-08)
 
-Requested 2026-11-05. Ask for each: shared logic in `lgl/` with tests, then both frontends (GTK 3 and Qt), one branch per feature, run once on a display before calling it done.
+All 30 items have a first version in both apps, merged to `main` through PRs up to #43. Tests on `main`: GTK 612 passed / 2 skipped, Qt 644 passed (14 `test_launch` tests excluded; two of them fail only when run as root). GTK was opened on a display in the review sandbox (Xvfb + xcompmgr); **Qt was only rendered offscreen, never on real Windows, and nobody has clicked through either app as a human.** "Done" below means built, tested and looked at in that way, not accepted by the owner.
 
-### 3.0 Release calendar with real dates (asked first)
-The owner's words: "tell what anime/tv/movie episode come out what day".
-- [x] Show which anime episode, TV episode or movie comes out on which day. — shipped in 0.6.7
-- Status: **merged in 0.6.7** (branch `feature/release-calendar`). The AniList source was run live from the build machine on 2026-11-05 and returned 117 episodes over 7 days; TMDB could not be exercised because no key was available:
-  - `lgl/release_feed.py` fetches anime air times (AniList), TV next episodes and upcoming movies (TMDB, needs the user's key), with a 3-hour cache and per-source error messages.
-  - `lgl/gtk_calendar.py` and `lgl/qt_calendar.py` add a "Release calendar…" window (day headings, Everything/Following/Anime/TV/Movies filter, Follow button, Refresh) opened from the app menu.
-  - Extended `lgl/anime_calendar.py` (date-only entries, local timezone) and added `TmdbClient.get`.
-  - Shipped since that note: release-day notifications for followed titles (one shared rule in `release_feed.due_for_notification`, switched off until the owner enables episode notifications) and 448 passing tests.
-  - Still to do: try it with a real TMDB key, open the Qt window on a desktop, and add a Follow button on title pages (following is done from the calendar or Tools today).
-- Why: `lgl/anime_calendar.py` already existed (0.6.6) but nothing fed it data, so the Tools → Release calendar page was always empty.
+| # | Feature | Linux (GTK) | Windows (Qt) | Known gaps |
+|---|---------|-------------|--------------|------------|
+| 1 | Command palette | yes | yes | |
+| 2 | Dashboard layout | order, hide, size per section, reset | same | free placement of shelves |
+| 3 | Artwork backgrounds | yes | yes | checked only with generated images |
+| 4 | Quick preview | yes (hover popover, Esc closes) | n/a | no Qt version |
+| 5 | Compact mode | yes | yes | |
+| 6 | Accent colours | yes | yes | |
+| 7 | Page transitions | yes | yes | |
+| 8 | Custom home shelves | yes | yes | |
+| 9 | Recently viewed | yes | yes | |
+| 10 | Search suggestions | yes | yes | |
+| 11 | Random discovery | yes | yes | |
+| 12 | Recommendations | yes | yes | |
+| 13 | Trailer preview | yes | yes | no trailer ever played (no WebKit/WebEngine/network in the sandbox); autoplay needs a real test |
+| 14 | Content filtering | Browse filters | Browse filters | Windows filter column never looked at on a display |
+| 15 | Collections | yes | yes | membership is manual |
+| 16 | Season comparison | yes | yes | a sequel with a new AniList id counts as new |
+| 17 | Watch heatmap | yes | yes | |
+| 18 | Similarity explorer | yes | yes | |
+| 19 | Hidden gems | games (Discover) and AniList anime | same | anime thresholds not saved (see 3.1) |
+| 20 | Spoiler-free mode | episode titles hidden | same | descriptions and stills are not shown anywhere, so nothing else to hide |
+| 21 | Favourites dashboard | yes | yes | media favourites are not stored anywhere yet |
+| 22 | Statistics | yes | yes | no play time is recorded |
+| 23 | Profile switching | separate settings, library, tags, collections, history | same | takes effect on the next start, not live |
+| 24 | Duplicate detection | yes | yes | |
+| 25 | Metadata editor | yes | yes | |
+| 26 | Library tags | yes | yes | |
+| 27 | Bulk actions | yes | yes | one level of undo |
+| 28 | Collection suggestions | yes | yes | |
+| 29 | Activity timeline | yes | yes | |
+| 30 | Keyboard shortcuts | yes | yes | applied on next start |
 
-### 3.1 UI and quality of life
-1. [x] Command Palette — quickly access pages, settings and actions with a keyboard shortcut.
-   GTK 3: `lgl/gtk_palette.py`, `Ctrl+Shift+P` and the application menu. Run on a display
-   2026-11-05: typing `libr` showed `Go to Library`, Enter switched the view and closed the
-   palette (`shots-gtk/10-palette.png`). **Qt: not run**, there is no PySide6 here.
-2. [ ] Custom Dashboard Layout — rearrange, resize or hide homepage sections.
-   Qt (2026-11-06): reorder, hide/show and reset already existed; `HomeLayout` now also carries a
-   third card size (`LARGE`, 1.3x) beside poster and compact, and the Browse grid scales its card
-   width from it. Arbitrary free resizing and per-shelf placement are still missing, and nothing
-   was run on a desktop.
-   GTK (2026-11-06): `ui.card_cover_size()` scales the cover from the chosen layout
-   (compact 118 px, poster 150 px, large 195 px) and `apply_interface_prefs` rebuilds the grid.
-   Also not run here.
-3. [ ] Dynamic Artwork Backgrounds — use blurred poster artwork as page backgrounds.
-4. [ ] Quick Preview — preview title information without opening its detail page.
-5. [x] Compact Mode — fit more content on screen.
-   GTK 3: the Interface switch adds `window.compact` (tighter paddings, denser rows) and
-   shrinks covers from 180 to 140 px in the Library and 150 to 118 px in Browse. Run on a
-   display 2026-11-05: covers went from 192 to 157 px wide on screen
-   (`shots-gtk/09-interface-default.png` against `shots-gtk/11-interface-compact-violet.png`).
-   **Qt: not run.**
-6. [x] Custom Accent Colors — personalize the interface's color scheme.
-   GTK 3: `theme.with_accent` retints the accent family, keeping white labels at AA on the
-   filled shade and moving the text shade away from the page background. Run on a display
-   2026-11-05: picking Violet turned the search ring and the active rail entry violet.
-   **Qt: not run.**
-7. [x] Smooth Page Transitions — add subtle animations between pages.
-   GTK 3: the Interface choice sets the main stack to `crossfade`/140 ms (subtle),
-   `slide-left-right`/260 ms (full) or none, and still respects the desktop's reduced-motion
-   preference. Run on a display 2026-11-05: the stack reported `crossfade 140` and then
-   `none 0` after choosing Off. **Qt: not run.**
-8. [ ] Custom Home Sections — create homepage shelves using saved filters.
-   Qt (2026-11-06, `feature/qt-home-shelves`): `BrowsePage` draws `shelves.render` rows above the
-   grid from the loaded catalogue, each title a pill that opens its detail panel; the Shelves…
-   editor in Tools → Home screen creates and removes them. Four tests and an offscreen render
-   (`shots-qt/home-shelves.png`). **Not run on a desktop**, so the item stays unticked.
-   GTK (2026-11-06, `feature/gtk-home-shelves`): the same rows are drawn above the cover grid by
-   `MainWindow._rebuild_shelves`, and Tools → Home screen → Shelves… opens a GTK 3 editor
-   (`lgl/gtk_shelves.py`). **Not run**: this sandbox has no Gtk-3.0 typelib, no Xvfb and sudo is
-   blocked, so `tests/test_gtk_home.py` skips here; CI's Linux job should run it under xvfb.
-9. [ ] Recently Viewed History — quickly revisit previously opened titles.
-   Shared: `lgl/recently_viewed.py` (atomic JSON beside the library index, capped at 100,
-   de-duplicated per kind and key, junk-tolerant) with 9 tests in `tests/test_recently_viewed.py`.
-   Qt: `Recently viewed…` in the app menu; rows open the game or media page; recorded from the
-   library detail panel and the Movies & TV detail page. Two window tests pass; the window was
-   rendered offscreen on 2026-11-05 (`shots-qt/recently-viewed.png`) — this VM has no fonts, so
-   the labels draw as boxes, but the rows and buttons are there.
-   GTK: `lgl/gtk_recent.py` (same list, Clear button) and recording from the game detail panel;
-   the window does not jump to a title yet and has **not** been run (no PyGObject here).
-   Still open: GTK navigation and a display run on either desktop.
-10. [ ] Smart Search Suggestions — show suggestions, filters and matching titles while typing.
-   Qt: the header search field now builds a completer from library and media titles and refreshes
-   it with `suggestions.suggest` on every keystroke (top 8, prefix/word/substring/subsequence).
-   GTK: not wired. A display run is still needed before this can be ticked.
+Windows media player: playback now happens inside the main window (`lgl/qt_player.py`), with real fullscreen and an "exit fullscreen" call to the page. Never run with real QtWebEngine.
 
-### 3.2 Movies, TV and anime
-11. [ ] Random Discovery — pick a random movie, anime or series.
-   Qt: **Surprise me…** in the app menu picks one game or media title from what is loaded using
-   `discovery.random_pick` and opens it. GTK: not wired. Needs a display run before ticking.
-12. [ ] Smart Recommendations — recommend titles based on viewing preferences.
-13. [ ] Trailer Autoplay Preview — preview trailers when selecting a title.
-14. [ ] Advanced Content Filtering — filter by runtime, language, rating, year and genre.
-15. [ ] Custom Collections — organize titles into personally created collections.
-16. [ ] Anime Season Comparison — compare anime across different seasons.
-17. [ ] Watch Progress Heatmap — visualize viewing activity over time.
-18. [ ] Content Similarity Explorer — discover titles with similar themes and genres.
-19. [ ] Hidden Gems Discovery — find lesser-known titles matching your interests.
-20. [ ] Spoiler-Free Mode — hide episode descriptions and potentially revealing artwork.
-
-### 3.3 Library and productivity
-21. [ ] Unified Favorites Dashboard — browse favorite games, movies and anime together.
-22. [ ] Personal Statistics Dashboard — view viewing time, completed series and favorite genres.
-   Qt: **Statistics…** opens a window with title/event/active-day/streak totals, the busiest day,
-   favourite genres, metadata coverage and a 12-week heatmap drawn from library adds, last plays
-   and viewed titles (`lgl/qt_stats.py`, 3 tests, rendered offscreen to `shots-qt/statistics.png`).
-   GTK: not wired. Viewing time is not shown: nothing records how long a game or episode ran.
-23. [ ] Profile Switching — maintain separate preferences and histories for different users.
-24. [ ] Smart Duplicate Detection — find duplicate titles and conflicting metadata.
-25. [ ] Metadata Editor — manually correct posters, descriptions, titles and release dates.
-26. [ ] Library Tags — add custom labels to organize content.
-27. [ ] Bulk Library Actions — edit, organize or remove multiple entries together.
-28. [ ] Smart Content Suggestions — suggest titles based on incomplete collections.
-29. [ ] Activity Timeline — see recently watched, added, updated and launched content.
-30. [ ] Customizable Keyboard Controls — configure shortcuts for navigation and playback.
-
-Note for whoever picks these up: since 0.6.6 several of them already exist as shared code in `lgl/` but only as settings in the Tools window, not as real screens (profiles, shortcuts, custom collections, home layout, release calendar, metadata cache, search filters). Check `lgl/tool_panels.py` and `docs/thing.md` before writing them again; what is missing for those is usually the visible UI. Not yet checked which of the 30 are fully done.
-
-Delivery chosen by the owner: one branch per feature.
-
-### 3.4 What the shared layer provides (added 2026-11-05, branch `feature/shared-ui-foundation`)
-
-Ten new modules in `lgl/` now hold the logic behind the 30 items above, with 18 tests in
-`tests/test_shared_features.py`, on top of the hand-off notes in 3.0 to 3.3. Items 1, 5, 6 and 7
-above are ticked for the GTK frontend only, with the display run recorded next to each; the
-remainder still need their visible screen, and the Qt frontend cannot be run in this sandbox
-(no PySide6).
-What exists today, item by item:
-
-| # | Item | What is in `lgl/` now | Still missing |
-|---|------|----------------------|---------------|
-| 3.1.1 | Command Palette | `palette.py` plus `gtk_palette.py`: ranked command list, `Ctrl+Shift+P`, menu entry | the Qt palette window |
-| 3.1.2 | Dashboard layout | existing `home_layout.py` (unchanged) | resize support; only order/show-hide today |
-| 3.1.3 | Artwork backgrounds | `view_prefs.artwork_backgrounds` + Tools switch | drawing the blurred artwork |
-| 3.1.4 | Quick preview | `view_prefs.quick_preview` + Tools switch | the popover itself |
-| 3.1.5 | Compact mode | `view_prefs.compact`, Tools switch, `window.compact` CSS and smaller cover grids | the Qt side |
-| 3.1.6 | Accent colours | validated accent, contrast-safe fill and text shades, live retint of every window | the Qt side |
-| 3.1.7 | Page transitions | `off`/`subtle`/`full` mapped to the main stack, reduced-motion aware | the Qt side |
-| 3.1.8 | Custom home sections | `shelves.py`: saved filter + limit, stored, filled and rendered as rows | drawing them on Home |
-| 3.1.9 | Recently viewed | existing `media_history.py` covers media only | one history for games and media, plus the screen |
-| 3.1.10 | Smart search suggestions | `suggestions.py`: prefix/word/substring/subsequence ranking, de-duplicated, completion | wiring it to the search entry |
-| 3.2.11 | Random discovery | `discovery.random_pick` (seeded, empty-safe) | menu entry / button |
-| 3.2.12 | Smart recommendations | `discovery.recommend` from liked titles, never recommends owned | the row on Home |
-| 3.2.13 | Trailer autoplay | `trailers.py`: link detection (rejects non-http), YouTube vs local, autoplay off unless enabled | any player surface |
-| 3.2.14 | Advanced filtering | `content_filters.py`: runtime, language, rating, year, include/exclude genres, junk-tolerant parsing, `describe` | Browse filter UI rebuilt on it |
-| 3.2.15 | Custom collections | existing `collections.py` (unchanged) | the editor screen |
-| 3.2.16 | Season comparison | `season_compare.py`: grouping, shared/only-first/only-second, summary | the compare window |
-| 3.2.17 | Watch progress heatmap | `stats.heatmap` (7×N grid), `busiest_day` | drawing the grid |
-| 3.2.18 | Similarity explorer | `discovery.similar` (Jaccard over genres/tags) | the explorer screen |
-| 3.2.19 | Hidden gems | `discovery.hidden_gems` (popularity ceiling + rating floor) | the shelf |
-| 3.2.20 | Spoiler-free mode | `view_prefs.spoiler_free` + Tools switch | hiding descriptions/artwork |
-| 3.3.21 | Unified favourites | `stats.split` (games vs media buckets) | the dashboard |
-| 3.3.22 | Statistics | `stats.totals` (events, days, streak), `favourite_genres`, `coverage` | the dashboard |
-| 3.3.23 | Profile switching | existing `profiles.py` (unchanged) | visible switcher |
-| 3.3.24 | Duplicate detection | `library_tools.duplicates` (normalised title + size) | conflicts view |
-| 3.3.25 | Metadata editor | `library_tools.apply_edit` for title/description/year/poster, year validated | the dialog |
-| 3.3.26 | Library tags | `library_tools.add_tag`/`remove_tag`/`tag_counts`, normalised and persisted | tag UI and filtering |
-| 3.3.27 | Bulk actions | `library_tools.bulk_update` over chosen keys | multi-select UI |
-| 3.3.28 | Collection suggestions | `discovery.suggestions` from uncovered genres | the shelf |
-| 3.3.29 | Activity timeline | `stats.timeline` (newest first, junk timestamps dropped) | the screen |
-| 3.3.30 | Keyboard controls | existing `shortcuts.py` (unchanged) | remapping dialog |
-
-One visible change did land: `lgl/tool_panels.py` gained an **Interface** section (compact
-layout, accent, transitions, artwork backgrounds, spoiler-free, quick preview), and because both
-frontends render that panel, GTK and Qt both get the page without extra code. The GTK page was
-opened and screenshotted under a display; the Qt page was not run.
-
-
-### Qt library and discovery screens (2026-11-06, branch `feature/qt-library-and-discovery`)
-
-Ten items in 3.2 and 3.3 now have a Qt screen behind a new **Library tools** menu entry.
-`tests/test_qt_library_tools.py` and `tests/test_qt_discover.py` add 13 tests; the full suite is
-479 passed, 3 skipped. No window here has been opened on a desktop and GTK has none of them, so
-every item stays unticked.
-
-| Item | Screen | Still missing |
-|------|--------|---------------|
-| 3.2.12 Smart recommendations | Discover, "For you" | GTK; display run |
-| 3.2.18 Similarity explorer | Discover, "More like this" | GTK; display run |
-| 3.2.19 Hidden gems | Discover, "Hidden gems" | GTK; display run |
-| 3.3.28 Collection suggestions | Discover, "Complete the set" | GTK; display run |
-| 3.3.21 Unified favourites | Favourites window, games beside media | media favourites are not stored anywhere yet |
-| 3.3.24 Duplicate detection | Find duplicates window | GTK |
-| 3.3.25 Metadata editor | Edit details window, saved through `LibraryStore` | GTK |
-| 3.3.26 Library tags | Tags window, add/remove plus library-wide counts | tag filtering in Browse |
-| 3.3.27 Bulk actions | Bulk edit window (one selected title today; the dialog takes many) | multi-select in the library grid |
-| 3.3.29 Activity timeline | Activity window | GTK |
-| 3.2.15 Custom collections | Collections window: create, rename, add/remove titles | smart collections, GTK; membership is manual only |
-| 3.3.30 Customisable keyboard controls | Keyboard shortcuts window (overrides saved, applied on next start) | GTK; no live re-binding in the open window |
-| 3.3.23 Profile switching | Profiles window: switch, create, rename, delete | a switch applies on the next start; GTK has none |
-
-`lgl/qt_discover.SeasonCompareDialog` is written and tested but not in the menu: no loaded source
-carries a season, so it would open with empty pickers.
+### 3.1 Next small jobs (polish pass, prompt already written)
+- Save the hidden-gems thresholds; retry a failed first load when the tab is reopened.
+- Hide the empty lists when season comparison / hidden gems fail to load.
+- Season summary wording ("2024 winter" vs "Winter 2024").
+- Qt Trailer button belongs next to Watch Now; show "Trailer not available" when the lookup failed.
+- Remove the dead `profiles.migrate()`.
 
 ## 4. Roadmap items still open (from the 0.6.6 notes in thing.md)
 - [ ] Continue Watching shelf widget on the Movies & TV page (the data and rules exist in `media_lists.shelf`).
-- [ ] Resume-from-position (cannot seek because the player is the system player).
+- [ ] Resume-from-position (the player is a web page; resuming needs the provider's own support).
 - [ ] Screen-by-screen visual audit and pixel parity (needs a display or GPU).
 - [ ] Test provider changes, window resizing and open/close cycles with a real player.
 - [ ] Nobody has clicked through either desktop as a human.
@@ -223,7 +91,7 @@ carries a season, so it would open with empty pickers.
 - [ ] Keep this file and DONE.md current: tick things only when they were run.
 
 ## 6. Not checked at all
-Windows build on real hardware, HiDPI, Wayland, video playback in the embedded player, the real archive.org catalogue and covers (the cloud sandbox had no network).
+A human click-through of both apps. The Windows player, trailer and artwork backgrounds with real WebEngine. The video freezing after pause or skip-10s (reported on Linux; suspected WebKitGTK GPU rendering, try `WEBKIT_DISABLE_DMABUF_RENDERER=1`; no fix made). Windows build on real hardware, HiDPI, Wayland, video playback in the embedded player, the real archive.org catalogue and covers (the cloud sandbox had no network).
 
 ## How to run the GTK app headless (cloud sandbox)
 - Packages (Ubuntu 24.04): `gir1.2-gtk-3.0 gir1.2-webkit2-4.1 python3-gi python3-gi-cairo adwaita-icon-theme xvfb xcompmgr imagemagick`.
