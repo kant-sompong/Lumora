@@ -15,6 +15,7 @@ from __future__ import annotations
 from typing import Any, Callable
 
 from PySide6.QtCore import QEvent, QUrl, Qt, Signal
+from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -98,6 +99,11 @@ class EmbeddedPlayer(QWidget):
         self.back.setCursor(Qt.PointingHandCursor)
         self.back.setToolTip("Stop playback and go back")
         self.back.clicked.connect(self.leave_page)
+        # Escape inside the web view never reaches this page's keyPressEvent, so
+        # a widget-scoped shortcut catches it wherever the focus is.
+        self._escape = QShortcut(QKeySequence(Qt.Key_Escape), self)
+        self._escape.setContext(Qt.WidgetWithChildrenShortcut)
+        self._escape.activated.connect(self.handle_escape)
         bar.addWidget(self.back)
         self.title_label = label("", "playerTitle")
         bar.addWidget(self.title_label, 1)

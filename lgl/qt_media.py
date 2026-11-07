@@ -746,6 +746,14 @@ class MediaPage(QWidget):
 
     # navigation ------------------------------------------------------------
     def show_section(self, key: str) -> None:
+        # Choosing a section from the media bar while the video plays stops it,
+        # so a hidden page never keeps playing sound.
+        if (
+            getattr(self, "player", None) is not None
+            and self.stack.currentWidget() is self.player
+        ):
+            self.player.stop_playback()
+            self._player_return = None
         self._section = key
         if hasattr(self, "provider_combo"):
             self._fill_provider_combo(key)

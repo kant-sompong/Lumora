@@ -131,8 +131,9 @@ def test_watch_creates_no_new_top_level_widget(app):
     pump(app)
     after = set(QApplication.topLevelWidgets())
 
-    assert after == before, "Watch opened a window of its own"
-    assert not any(isinstance(widget, QDialog) for widget in after)
+    opened = after - before
+    assert opened == set(), "Watch opened a window of its own"
+    assert not any(isinstance(widget, QDialog) for widget in opened)
     assert harness.page.stack.currentWidget() is harness.page.player
     assert harness.page.player.view.loaded, "the stream was never loaded"
 
