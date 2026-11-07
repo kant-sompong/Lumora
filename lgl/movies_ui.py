@@ -3478,6 +3478,14 @@ class MoviesWindow(Gtk.Box):
         )
         actions.pack_start(share, False, False, 0)
         content.pack_start(actions, False, False, 0)
+
+        # Only a lookup that failed says so here; a title that simply has
+        # no trailer keeps the page quiet.
+        self._trailer_note = Gtk.Label(label="")
+        self._trailer_note.set_xalign(0)
+        self._trailer_note.get_style_context().add_class("movie-meta")
+        self._trailer_note.set_no_show_all(True)
+        content.pack_start(self._trailer_note, False, False, 0)
         overlay.add_overlay(content)
 
         page.pack_start(overlay, False, False, 0)
@@ -3513,6 +3521,7 @@ class MoviesWindow(Gtk.Box):
         self._detail_feedback.hide()
         page.show_all()
         self._detail_feedback.hide()
+        self._trailer_note.hide()
         return page
 
     def _load_detail_image(self, url: str, backdrop: Backdrop, token: int | None = None) -> None:
@@ -3558,6 +3567,10 @@ class MoviesWindow(Gtk.Box):
         if token != self._detail_token:
             return False
         self._detail_trailer = result.trailer
+        note = getattr(self, "_trailer_note", None)
+        if note is not None:
+            note.set_text("Trailer not available" if result.error else "")
+            note.set_visible(bool(result.error))
         button = (self._detail_state or {}).get("trailer_button")
         if button is None:
             return False

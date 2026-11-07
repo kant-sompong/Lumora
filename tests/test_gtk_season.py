@@ -66,10 +66,11 @@ def test_compare_fills_the_three_lists_and_the_summary(tmp_path):
         assert rows(win.lists["only_second"]) == ["Kaiju No. 8 — score 78 · TV"]
         assert rows(win.lists["shared"]) == ["Solo Leveling — score 82 · TV"]
         assert win.summary.get_text() == (
-            "2024 winter: 2 titles, 2024 spring: 2 titles, 1 in both"
+            "Winter 2024: 2 titles, Spring 2024: 2 titles, 1 in both"
         )
         assert win.error.get_visible() is False
         assert win.detail.get_text() == gtk_season.HINT
+        assert all(s.get_visible() for s in win.scrollers.values())
     finally:
         win.destroy()
 
@@ -110,5 +111,9 @@ def test_a_network_failure_is_a_line_not_an_empty_window(tmp_path):
         assert win.summary.get_text() == "Nothing to compare"
         assert win.season_a.get_active_id() == "WINTER"
         assert all(not listing.get_children() for listing in win.lists.values())
+        # The three empty boxes and their headings are hidden, leaving the
+        # error line and the controls.
+        assert all(not s.get_visible() for s in win.scrollers.values())
+        assert all(not h.get_visible() for h in win.section_heads.values())
     finally:
         win.destroy()

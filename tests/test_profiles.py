@@ -81,17 +81,6 @@ def test_export_import_roundtrip(store, tmp_path):
     assert {p.name for p in fresh.list()} == {"Default", "Alex"}
 
 
-def test_migration_moves_legacy_files_once(tmp_path):
-    (tmp_path / "library.json").write_text("{}", "utf-8")
-    (tmp_path / "collections.json").write_text("{}", "utf-8")
-    moved = profiles.migrate(tmp_path)
-    assert len(moved) == 2
-    assert not (tmp_path / "library.json").exists()
-    assert (tmp_path / profiles.PROFILE_ROOT / profiles.DEFAULT_ID / "library.json").is_file()
-    # Running again is a no-op.
-    assert profiles.migrate(tmp_path) == []
-
-
 def test_security_note_is_explicit():
     assert "not accounts" in profiles.SECURITY_NOTE
     assert "not a security boundary" in profiles.SECURITY_NOTE

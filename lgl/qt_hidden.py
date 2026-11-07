@@ -28,6 +28,10 @@ from PySide6.QtWidgets import (
 from . import hidden_gems, season_data
 from .qt_widgets import run_async
 
+#: Where the two thresholds live in the app settings.
+MIN_SCORE_KEY = "hidden_gems_min_score"
+MAX_POPULARITY_KEY = "hidden_gems_max_popularity"
+
 HINT = "Select a title to see its score and popularity."
 BLURB = (
     "AniList anime only: games and TMDB titles have no score and popularity "
@@ -76,7 +80,7 @@ class HiddenGemsPanel(QWidget):
         self.score = QSpinBox(self)
         self.score.setRange(0, 100)
         self.score.setMinimumWidth(90)
-        self.score.setValue(hidden_gems.clean_score(min_score))
+        self.score.setValue(self._saved_score(min_score))
         controls.addWidget(self.score)
         controls.addSpacing(16)
         controls.addWidget(QLabel("Popularity below", self))
@@ -84,7 +88,7 @@ class HiddenGemsPanel(QWidget):
         self.popularity.setRange(0, hidden_gems.MAX_POPULARITY)
         self.popularity.setSingleStep(100)
         self.popularity.setMinimumWidth(130)
-        self.popularity.setValue(hidden_gems.clean_popularity(max_popularity))
+        self.popularity.setValue(self._saved_popularity(max_popularity))
         self.popularity.setToolTip("0 uses the median popularity of the fetched titles.")
         controls.addWidget(self.popularity)
         controls.addSpacing(16)
@@ -124,6 +128,23 @@ class HiddenGemsPanel(QWidget):
         self.detail.setWordWrap(True)
         layout.addWidget(self.detail)
 
+    # -- saved thresholds ------------------------------------------------
+    def _saved_score(self, fallback: int) -> int:
+        saved = self.settings.get(MIN_SCORE_KEY) if self.settings is not None else None
+        return hidden_gems.clean_score(fallback if saved is None else saved)
+
+    def _saved_popularity(self, fallback: int) -> int:
+        saved = (
+            self.settings.get(MAX_POPULARITY_KEY) if self.settings is not None else None
+        )
+        return hidden_gems.clean_popularity(fallback if saved is None else saved)
+
+    def _remember(self, score: int, popularity: int) -> None:
+        """Save both controls as they are; 0 stays 0 rather than the median."""
+        if self.settings is None:
+            return
+        self.settings.update(**{MIN_SCORE_KEY: score, MAX_POPULARITY_KEY: popularity})
+
     # -- thresholds -----------------------------------------------------
     def thresholds(self) -> tuple[int, int]:
         """The two numbers in the controls, cleaned to what the module expects."""
@@ -143,12 +164,12 @@ class HiddenGemsPanel(QWidget):
         if self._busy:
             return
         self._busy = True
-        self.loaded = True
         self.refresh_btn.setEnabled(False)
         self.status.setText("Loading anime from AniList…")
         self.error.setText("")
         self.error.setVisible(False)
         score, popularity = self.thresholds()
+        self._remember(score, popularity)
         excluded = list(self.excluded)
 
         def load() -> hidden_gems.GemsResult:
@@ -169,12 +190,16 @@ class HiddenGemsPanel(QWidget):
         """Draw ``result`` without loading anything (tests and screenshots)."""
         self._busy = False
         self.result = result
+        # Only a load that worked counts as loaded.
+        self.loaded = not result.error_text
         self.refresh_btn.setEnabled(True)
         self.status.setText(result.note())
         self.error.setText(result.error_text)
-        self.error.setVisible(bool(result.error_text))
-        if result.cutoff and not self.popularity.value():
-            self.popularity.setValue(result.cutoff)
+        failed = bool(result.error_text)
+        self.error.setVisible(failed)
+        # A failure leaves one readable line, not empty boxes.
+        self.list.setVisible(not failed)
+        self.detail.setVisible(not failed)
         if result.cutoff:
             source = (
                 "from the control" if result.max_popularity
@@ -193,10 +218,13 @@ class HiddenGemsPanel(QWidget):
     def show_failure(self, exc: object) -> None:
         """The worker itself failed; describe it in one line."""
         self._busy = False
+        self.loaded = False
         self.refresh_btn.setEnabled(True)
         self.status.setText("")
         self.error.setText(f"Could not load: {season_data.reason_of(exc)}")
         self.error.setVisible(True)
+        self.list.setVisible(False)
+        self.detail.setVisible(False)
 
     # -- behaviour ------------------------------------------------------
     def _on_selected(self, current: QListWidgetItem | None, _previous: Any = None) -> None:

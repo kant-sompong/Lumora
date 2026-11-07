@@ -12,6 +12,7 @@ pytest.importorskip("PySide6.QtWidgets")
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
 from lgl import qt_hidden  # noqa: E402
+from lgl.settings import Settings  # noqa: E402
 
 CATALOGUE = [
     {"id": 1, "title": {"english": "Mega Hit"}, "averageScore": 90, "popularity": 100000,
@@ -60,8 +61,9 @@ def test_refresh_lists_gems_with_score_and_popularity_rank(app, tmp_path):
     ]
     assert page.status.text() == "3 of 6 titles score 78+ with popularity under 350."
     assert page.error.isHidden() is True
-    assert page.popularity.value() == 350
+    assert page.popularity.value() == 0
     assert "median of the fetched titles" in page.cutoff_note.text()
+    assert page.list.isHidden() is False
 
 
 def test_selecting_a_gem_shows_its_numbers(app, tmp_path):
@@ -102,9 +104,53 @@ def test_a_network_failure_is_a_line_not_a_blank_page(app, tmp_path):
     assert page.error.isHidden() is False
     assert page.error.text() == "Could not load: AniList: the request timed out"
     assert lines(page.list) == []
-    # The controls and the explanation remain; the page is never empty.
+    # The controls and the explanation remain; the empty list does not.
     assert page.score.value() == 78
     assert page.list.count() == 0
+    assert page.list.isHidden() is True
+    assert page.detail.isHidden() is True
+
+
+def test_a_failed_load_is_retried_when_the_tab_is_opened_again(app, tmp_path):
+    class Flaky:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def __call__(self, body):
+            self.calls += 1
+            if self.calls == 1:
+                raise TimeoutError("timed out")
+            return post(body)
+
+    page = panel(tmp_path, sender=Flaky())
+    page.ensure_loaded()
+    assert page.loaded is False
+    assert page.error.isHidden() is False
+
+    page.ensure_loaded()
+    assert page.loaded is True
+    assert lines(page.list)
+    assert page.list.isHidden() is False
+
+
+def test_thresholds_are_saved_and_the_median_stays_out_of_the_control(app, tmp_path):
+    settings = Settings(tmp_path / "config.json")
+    page = qt_hidden.HiddenGemsPanel(
+        settings, post=post, cache_path=tmp_path / "hidden-gems.json", threaded=False
+    )
+    page.score.setValue(85)
+    page.refresh()
+
+    assert settings.get("hidden_gems_min_score") == 85
+    assert settings.get("hidden_gems_max_popularity") == 0
+    # The median that was used (350) is described in the note only.
+    assert page.popularity.value() == 0
+
+    again = qt_hidden.HiddenGemsPanel(
+        settings, post=post, cache_path=tmp_path / "hidden-gems.json", threaded=False
+    )
+    assert again.score.value() == 85
+    assert again.popularity.value() == 0
 
 
 def test_a_second_refresh_is_answered_by_the_cache(app, tmp_path):

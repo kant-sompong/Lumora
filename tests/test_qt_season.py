@@ -68,10 +68,12 @@ def test_compare_fills_the_three_lists_and_the_summary(app, tmp_path):
     assert titles["only_second"] == ["Kaiju No. 8 — score 78 · TV"]
     assert titles["shared"] == ["Solo Leveling — score 82 · TV"]
     assert window.summary.text() == (
-        "2024 winter: 2 titles, 2024 spring: 2 titles, 1 in both"
+        "Winter 2024: 2 titles, Spring 2024: 2 titles, 1 in both"
     )
     assert window.error.isHidden() is True
     assert window.detail.text() == qt_season.HINT
+    # A successful comparison puts the three lists back.
+    assert not any(w.isHidden() for w in window.lists.values())
 
 
 def test_selecting_a_title_shows_its_score_and_episodes(app, tmp_path):
@@ -99,9 +101,11 @@ def test_a_network_failure_is_a_line_and_not_an_empty_window(app, tmp_path):
     )
     assert window.summary.text() == "Nothing to compare"
     assert window.status.text() == "Nothing to compare yet."
-    # The pickers and the three headings are still there; the window is not blank.
+    # The pickers and the error line survive; the empty lists do not.
     assert window.season_a.count() == 4
     assert [widget.count() for widget in window.lists.values()] == [0, 0, 0]
+    assert all(w.isHidden() for w in window.lists.values())
+    assert all(h.isHidden() for h in window.section_heads.values())
 
 
 def test_the_saved_titles_note_appears_when_the_cache_answered(app, tmp_path):

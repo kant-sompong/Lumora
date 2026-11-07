@@ -352,6 +352,7 @@ class HeroPanel(HeroBanner):
         column.addSpacing(6)
         actions = QHBoxLayout()
         actions.setSpacing(8)
+        self.actions = actions
         self.play = QPushButton("▶  Watch Now")
         self.play.setObjectName("heroPlay")
         self.play.setCursor(Qt.PointingHandCursor)
@@ -784,17 +785,24 @@ class MediaPage(QWidget):
         self.detail_back.setCursor(Qt.PointingHandCursor)
         self.detail_back.clicked.connect(lambda: self.show_section(self._section))
         top.addWidget(self.detail_back)
-        # Hidden until TMDB says this title has a trailer we can embed.
+        top.addStretch(1)
+        column.addLayout(top)
+        self.detail_hero = HeroPanel()
+        column.addWidget(self.detail_hero)
+        # Hidden until TMDB says this title has a trailer we can embed. It
+        # sits in the hero action row with Watch Now and My List, not beside
+        # Back, where a viewing action does not belong.
         self.trailer_btn = QPushButton("▶  Trailer")
         self.trailer_btn.setObjectName("heroAction")
         self.trailer_btn.setCursor(Qt.PointingHandCursor)
         self.trailer_btn.setVisible(False)
         self.trailer_btn.clicked.connect(self._open_trailer)
-        top.addWidget(self.trailer_btn)
-        top.addStretch(1)
-        column.addLayout(top)
-        self.detail_hero = HeroPanel()
-        column.addWidget(self.detail_hero)
+        self.detail_hero.actions.insertWidget(1, self.trailer_btn)
+        # Only a lookup that failed says so; a title with no trailer stays
+        # quiet, because "no trailer" is not an error.
+        self.trailer_note = label("Trailer not available", "detailNote")
+        self.trailer_note.setVisible(False)
+        column.addWidget(self.trailer_note)
         self.detail_hero.play_clicked.connect(self._play_detail)
         self.detail_hero.list_clicked.connect(self._toggle_detail_list)
         self.detail_hero.details.clicked.connect(self._open_tmdb_page)
@@ -1186,6 +1194,7 @@ class MediaPage(QWidget):
                          self._detail_backdrop)
         self._detail_trailer = None
         self.trailer_btn.setVisible(False)
+        self.trailer_note.setVisible(False)
         self._load_episodes(card)
         self._load_trailer(card)
 
@@ -1312,13 +1321,14 @@ class MediaPage(QWidget):
             trailer = getattr(result, "trailer", None)
             self._detail_trailer = trailer
             self.trailer_btn.setVisible(trailer is not None)
+            self.trailer_note.setVisible(bool(getattr(result, "error", "")))
             if trailer is None:
                 return
             self.trailer_btn.setToolTip(str(trailer.get("name") or "Play the trailer"))
             if trailers.autoplay_allowed(self.settings):
                 self._start_trailer(autoplay=True, muted=True)
 
-        run_async(work, done, lambda _exc: None)
+        run_async(work, done, lambda _exc: self.trailer_note.setVisible(True))
 
     def _open_trailer(self, _checked: bool = False) -> None:
         """The button: play the trailer the page already found."""

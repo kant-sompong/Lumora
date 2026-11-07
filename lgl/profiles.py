@@ -12,11 +12,10 @@ from __future__ import annotations
 
 import json
 import re
-import shutil
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 PROFILES_FILE = "profiles.json"
 PROFILE_ROOT = "profiles"
@@ -324,31 +323,6 @@ def active_settings_path(base: Path | str | None = None) -> Path:
     return store.data_dir(root, profile_id) / CONFIG_FILENAME
 
 
-def migrate(base: Path | str, legacy_names: Iterable[str] = ("library.json", "collections.json")) -> list[Path]:
-    """Move single-profile files into the default profile folder.
-
-    Runs once: files that are already inside a profile folder are left alone, and
-    an existing destination is never overwritten.
-    """
-    root = Path(base)
-    target = root / PROFILE_ROOT / DEFAULT_ID
-    moved: list[Path] = []
-    for name in legacy_names:
-        source = root / name
-        if not source.is_file():
-            continue
-        destination = target / name
-        if destination.exists():
-            continue
-        target.mkdir(parents=True, exist_ok=True)
-        try:
-            shutil.move(str(source), str(destination))
-        except OSError:
-            continue
-        moved.append(destination)
-    return moved
-
-
 __all__ = [
     "CONFIG_FILENAME",
     "DEFAULT_ID",
@@ -366,7 +340,6 @@ __all__ = [
     "active_settings_path",
     "base_dir",
     "load",
-    "migrate",
     "profiles_path",
     "reset_session",
     "start_session",

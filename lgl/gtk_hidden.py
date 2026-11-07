@@ -24,6 +24,10 @@ from gi.repository import GLib, Gtk  # noqa: E402
 
 from . import hidden_gems  # noqa: E402
 
+#: Where the two thresholds live in the app settings.
+MIN_SCORE_KEY = "hidden_gems_min_score"
+MAX_POPULARITY_KEY = "hidden_gems_max_popularity"
+
 HINT = "Select a title to see its score and popularity."
 BLURB = (
     "AniList anime only: games and TMDB titles have no score and popularity "
@@ -73,13 +77,13 @@ class HiddenGemsPage(Gtk.Box):
         self.score = Gtk.SpinButton.new_with_range(0, 100, 1)
         self.score.set_digits(0)
         self.score.set_width_chars(4)
-        self.score.set_value(hidden_gems.clean_score(min_score))
+        self.score.set_value(self._saved_score(min_score))
         controls.pack_start(self.score, False, False, 0)
         controls.pack_start(Gtk.Label(label="Popularity below"), False, False, 0)
         self.popularity = Gtk.SpinButton.new_with_range(0, hidden_gems.MAX_POPULARITY, 100)
         self.popularity.set_digits(0)
         self.popularity.set_width_chars(8)
-        self.popularity.set_value(hidden_gems.clean_popularity(max_popularity))
+        self.popularity.set_value(self._saved_popularity(max_popularity))
         self.popularity.set_tooltip_text(
             "0 uses the median popularity of the fetched titles."
         )
@@ -111,15 +115,32 @@ class HiddenGemsPage(Gtk.Box):
         self.list = Gtk.ListBox()
         self.list.set_selection_mode(Gtk.SelectionMode.SINGLE)
         self.list.connect("row-selected", self._on_selected)
-        scroller = Gtk.ScrolledWindow()
-        scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-        scroller.add(self.list)
-        self.pack_start(scroller, True, True, 0)
+        self.scroller = Gtk.ScrolledWindow()
+        self.scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        self.scroller.add(self.list)
+        self.pack_start(self.scroller, True, True, 0)
 
         self.detail = Gtk.Label(label=HINT, xalign=0)
         self.detail.set_line_wrap(True)
         self.detail.get_style_context().add_class("dim-label")
         self.pack_start(self.detail, False, False, 0)
+
+    # -- saved thresholds ------------------------------------------------
+    def _saved_score(self, fallback: int) -> int:
+        saved = self.settings.get(MIN_SCORE_KEY) if self.settings is not None else None
+        return hidden_gems.clean_score(fallback if saved is None else saved)
+
+    def _saved_popularity(self, fallback: int) -> int:
+        saved = (
+            self.settings.get(MAX_POPULARITY_KEY) if self.settings is not None else None
+        )
+        return hidden_gems.clean_popularity(fallback if saved is None else saved)
+
+    def _remember(self, score: int, popularity: int) -> None:
+        """Save both controls as they are; 0 stays 0 rather than the median."""
+        if self.settings is None:
+            return
+        self.settings.update(**{MIN_SCORE_KEY: score, MAX_POPULARITY_KEY: popularity})
 
     # -- thresholds -----------------------------------------------------
     def thresholds(self) -> tuple[int, int]:
@@ -140,12 +161,12 @@ class HiddenGemsPage(Gtk.Box):
         if self._busy:
             return
         self._busy = True
-        self.loaded = True
         self.refresh_btn.set_sensitive(False)
         self.status.set_text("Loading anime from AniList…")
         self.error.set_text("")
         self.error.hide()
         score, popularity = self.thresholds()
+        self._remember(score, popularity)
         excluded = list(self.excluded)
 
         def load() -> None:
@@ -170,15 +191,19 @@ class HiddenGemsPage(Gtk.Box):
         """Draw ``result`` without loading anything (tests and screenshots)."""
         self._busy = False
         self.result = result
+        # Only a load that worked counts as loaded.
+        self.loaded = not result.error_text
         self.refresh_btn.set_sensitive(True)
         self.status.set_text(result.note())
         self.error.set_text(result.error_text)
-        if result.error_text:
+        failed = bool(result.error_text)
+        # A failure leaves one readable line, not empty boxes.
+        self.scroller.set_visible(not failed)
+        self.detail.set_visible(not failed)
+        if failed:
             self.error.show()
         else:
             self.error.hide()
-        if result.cutoff and not int(self.popularity.get_value()):
-            self.popularity.set_value(result.cutoff)
         if result.cutoff:
             self.cutoff_note.set_text(
                 f"Popularity below {result.cutoff:,} "

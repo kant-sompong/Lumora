@@ -178,7 +178,7 @@ def test_compare_splits_only_and_shared_titles(tmp_path):
     assert [entry["title"] for entry in result.only_first] == ["Frieren"]
     assert [entry["title"] for entry in result.only_second] == ["Kaiju No. 8"]
     assert [entry["title"] for entry in result.shared] == ["Solo Leveling"]
-    assert result.summary == "2024 winter: 2 titles, 2024 spring: 2 titles, 1 in both"
+    assert result.summary == "Winter 2024: 2 titles, Spring 2024: 2 titles, 1 in both"
     assert result.errors == []
     assert result.error_text == ""
 
