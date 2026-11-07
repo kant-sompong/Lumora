@@ -8,7 +8,9 @@ shaped like the app (rail, header, page stack).
 from __future__ import annotations
 
 import os
+import sys
 import time
+import types
 
 import pytest
 
@@ -49,9 +51,16 @@ def pump(app, seconds: float = 0.05) -> None:
 
 
 class StubPage(QObject):
-    """What the player uses from QWebEnginePage: its fullscreen request."""
+    """What the player uses from QWebEnginePage: requests and actions."""
 
     fullScreenRequested = Signal(object)
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.actions: list[object] = []
+
+    def triggerAction(self, action) -> None:  # noqa: N802 - Qt's name
+        self.actions.append(action)
 
 
 class StubView(QWidget):
@@ -264,3 +273,79 @@ def test_without_webengine_the_browser_is_not_opened_automatically(app, monkeypa
 
     harness.page.player.open_browser.click()
     assert len(opened) == 1 and "603" in opened[0]
+
+
+class _WebAction:
+    ExitFullScreen = "ExitFullScreen"
+
+
+class _FakeQWebEnginePage:
+    WebAction = _WebAction
+
+
+def _fake_webengine(monkeypatch) -> None:
+    """Stand in for QtWebEngineCore, which this build does not ship."""
+    module = types.ModuleType("PySide6.QtWebEngineCore")
+    module.QWebEnginePage = _FakeQWebEnginePage
+    monkeypatch.setitem(sys.modules, "PySide6.QtWebEngineCore", module)
+
+
+def test_escape_from_fullscreen_asks_the_page_to_exit(app, monkeypatch):
+    _fake_webengine(monkeypatch)
+    harness = Harness(app)
+    harness.page._play_tmdb(CARD)
+    pump(app)
+    page = harness.page.player.view.page()
+    harness.page.player.set_fullscreen(True)
+    pump(app)
+    assert page.actions == []
+
+    QTest.keyClick(harness.page.player, Qt.Key_Escape)
+    pump(app)
+
+    assert not harness.window.isFullScreen()
+    assert page.actions == [_WebAction.ExitFullScreen]
+
+
+def test_a_page_initiated_exit_does_not_ask_the_page_again(app, monkeypatch):
+    _fake_webengine(monkeypatch)
+    harness = Harness(app)
+    harness.page._play_tmdb(CARD)
+    pump(app)
+    page = harness.page.player.view.page()
+    harness.page.player.set_fullscreen(True)
+
+    leaving = Request(False)
+    page.fullScreenRequested.emit(leaving)
+    pump(app)
+
+    assert leaving.accepted is True
+    assert not harness.window.isFullScreen()
+    assert page.actions == [], "a page-started exit was answered twice"
+
+
+def test_leaving_fullscreen_without_a_page_or_webengine_does_not_raise(app, monkeypatch):
+    # A view whose page() does not exist: there is nothing to tell.
+    window = QMainWindow()
+    bare = qt_player.EmbeddedPlayer(window, view_factory=lambda parent: QWidget(parent))
+    window.setCentralWidget(bare)
+    window.show()
+    pump(app)
+    bare.set_fullscreen(True)
+    bare.set_fullscreen(False)
+    pump(app)
+    assert not window.isFullScreen()
+    window.close()
+
+    # A build without QtWebEngineCore: a page that has triggerAction must not
+    # be called, and leaving fullscreen must still work.
+    monkeypatch.setitem(sys.modules, "PySide6.QtWebEngineCore", None)
+    harness = Harness(app)
+    harness.page._play_tmdb(CARD)
+    pump(app)
+    page = harness.page.player.view.page()
+    harness.page.player.set_fullscreen(True)
+    harness.page.player.set_fullscreen(False)
+    pump(app)
+    assert page.actions == []
+    assert not harness.window.isFullScreen()
