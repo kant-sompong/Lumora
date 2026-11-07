@@ -22,7 +22,7 @@ import gi
 gi.require_version("Gtk", "3.0")
 from gi.repository import Gtk
 
-from . import library_tools, platform_support
+from . import library_tools, profiles
 from .collections import COLLECTIONS_FILENAME, CollectionStore
 
 
@@ -168,7 +168,7 @@ class BulkActions:
     def collection_store(self) -> CollectionStore:
         if self._collections is None:
             self._collections = CollectionStore(
-                platform_support.data_dir() / COLLECTIONS_FILENAME
+                profiles.active_file(COLLECTIONS_FILENAME)
             )
         return self._collections
 

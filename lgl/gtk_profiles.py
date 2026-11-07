@@ -12,7 +12,7 @@ GTK 3 only, like the rest of the Linux frontend.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Callable
 
 import gi
 
@@ -20,15 +20,16 @@ gi.require_version("Gtk", "3.0")
 from gi.repository import Gtk, Pango
 
 from . import platform_support
-from .profiles import PROFILES_FILE, SECURITY_NOTE, Profile, Profiles
+from .profiles import DEFAULT_ID, PROFILES_FILE, SECURITY_NOTE, Profile, Profiles
 
-#: Shown under the list.  Profiles are folders, not accounts, and the app still
-#: reads one settings folder, so this does not claim more than it does.
+#: Shown under the list.  Profiles are folders, not accounts, so this says what
+#: they really separate and what a switch actually does.
 PROFILE_NOTE = (
     f"{SECURITY_NOTE}\n\n"
-    "Each profile keeps its own folder for games, favourites and history. "
-    "Switching records which profile is in use; Lumora still reads its settings "
-    "from the single folder it has always used."
+    "Each profile keeps its own settings, library, favourites and history in its "
+    "own folder. Switching records which profile is in use; restart Lumora and it "
+    "reads that profile. The Default profile keeps the folder this install has "
+    "always used, nothing is copied or moved, and no profile ever deletes game files."
 )
 
 
@@ -68,7 +69,8 @@ class ProfileRow(Gtk.ListBoxRow):
 class ProfilesWindow(Gtk.Window):
     """The profile list with create, rename, delete and switch."""
 
-    def __init__(self, profiles: Profiles, *, owner: Gtk.Window | None = None) -> None:
+    def __init__(self, profiles: Profiles, *, owner: Gtk.Window | None = None,
+                 on_switch: Callable[[Profile], None] | None = None) -> None:
         super().__init__(title="Profiles")
         self.set_default_size(580, 520)
         self.set_modal(True)
@@ -76,6 +78,7 @@ class ProfilesWindow(Gtk.Window):
             self.set_transient_for(owner)
             self.set_position(Gtk.WindowPosition.CENTER_ON_PARENT)
         self._profiles = profiles
+        self._on_switch = on_switch
         self._base = profiles.path.parent
         self._rows: dict[str, ProfileRow] = {}
 
@@ -191,7 +194,16 @@ class ProfilesWindow(Gtk.Window):
         changed = self._profiles.activate(profile_id)
         self.refresh()
         if changed:
-            self._set_status(f"{self._profiles.active().name} is now the profile in use.")
+            active = self._profiles.active()
+            self._set_status(
+                f"Restart Lumora to switch to {active.name}. "
+                "Its settings, library, favourites and history are used from then on."
+            )
+            if callable(self._on_switch):
+                try:
+                    self._on_switch(active)
+                except Exception:  # noqa: BLE001 - a UI callback must not break a switch
+                    pass
         return changed
 
     def create(self, name: str) -> bool:
@@ -214,7 +226,9 @@ class ProfilesWindow(Gtk.Window):
     def delete(self) -> bool:
         profile_id = self.current_id()
         profile = self._profiles.get(profile_id)
-        removed = bool(profile_id) and self._profiles.remove(profile_id)
+        if not profile_id or profile_id == DEFAULT_ID:
+            return False
+        removed = self._profiles.remove(profile_id)
         self.refresh()
         if removed and profile is not None:
             self._set_status(f"Deleted {profile.name}. Its folder is still on disk.")
@@ -287,6 +301,13 @@ class ProfilesWindow(Gtk.Window):
         profile = self._profiles.get(self.current_id())
         if profile is None:
             return
+        if profile.id == DEFAULT_ID:
+            self._warn(
+                "Delete profile",
+                "The Default profile cannot be deleted: its folder holds this "
+                "install's existing library and settings.",
+            )
+            return
         if len(self._profiles.list()) <= 1:
             self._warn("Delete profile", "The last profile cannot be deleted.")
             return
@@ -298,7 +319,8 @@ class ProfilesWindow(Gtk.Window):
             text=f"Delete “{profile.name}”?",
         )
         dialog.format_secondary_text(
-            "The profile's entry is removed; the files in its folder are kept."
+            "The profile's entry is removed; the files in its folder are kept, "
+            "and game files are never deleted."
         )
         response = dialog.run()
         dialog.destroy()
@@ -306,11 +328,13 @@ class ProfilesWindow(Gtk.Window):
             self.delete()
 
 
-def show_profiles(owner: Any = None, profiles: Profiles | None = None) -> ProfilesWindow:
+def show_profiles(owner: Any = None, profiles: Profiles | None = None,
+                  on_switch: Callable[[Profile], None] | None = None) -> ProfilesWindow:
     """Open the profiles window over ``owner`` and return it."""
     store = profiles or Profiles(platform_support.data_dir() / PROFILES_FILE)
     window = ProfilesWindow(
-        store, owner=owner if isinstance(owner, Gtk.Window) else None
+        store, owner=owner if isinstance(owner, Gtk.Window) else None,
+        on_switch=on_switch,
     )
     window.show_all()
     window.present()

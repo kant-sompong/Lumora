@@ -24,6 +24,9 @@ DEFAULT_ID = "default"
 DEFAULT_NAME = "Default"
 MAX_PROFILES = 12
 MAX_NAME = 40
+#: Settings file kept inside a non-default profile's folder.  The Default
+#: profile keeps using the config folder, so nothing moves for existing users.
+CONFIG_FILENAME = "config.json"
 
 SECURITY_NOTE = (
     "Profiles keep each person's library, favourites and history in separate folders. "
@@ -173,8 +176,18 @@ class Profiles:
 
     # -- storage --------------------------------------------------------
     def data_dir(self, base: Path | str, profile_id: str | None = None) -> Path:
+        """The folder holding this profile's files.
+
+        The Default profile keeps the folder Lumora has always used (``base``),
+        so an existing install keeps reading the files it already has and
+        nothing is moved or copied.  Every other profile gets
+        ``base/profiles/<id>``.
+        """
         target = self.get(profile_id or self.active_id) or self.active()
-        return Path(base) / PROFILE_ROOT / target.id
+        root = Path(base)
+        if target.id == DEFAULT_ID:
+            return root
+        return root / PROFILE_ROOT / target.id
 
     def export(self) -> dict[str, Any]:
         return {
@@ -206,6 +219,111 @@ class Profiles:
         return added
 
 
+#: The data folder this run started with.  Switching profiles only records the
+#: choice, so a store opened later in the same run (collections, bulk edits)
+#: keeps reading the profile the window was built from instead of mixing two.
+_SESSION_BASE: Path | None = None
+_SESSION_PROFILE: str | None = None
+
+
+def _installed_base() -> Path:
+    """The platform data folder, ignoring any pinned session."""
+    from . import platform_support
+
+    return platform_support.data_dir()
+
+
+def start_session(base: Path | str | None = None) -> Path:
+    """Pin the profile folder this run uses; both apps call this at startup."""
+    global _SESSION_BASE, _SESSION_PROFILE
+    root = Path(base) if base is not None else _installed_base()
+    _SESSION_BASE = root
+    _SESSION_PROFILE = load(root).active_id
+    return active_data_dir()
+
+
+def reset_session() -> None:
+    """Forget the pinned profile; tests use this, the apps never need it."""
+    global _SESSION_BASE, _SESSION_PROFILE
+    _SESSION_BASE = None
+    _SESSION_PROFILE = None
+
+
+def base_dir() -> Path:
+    """The folder holding this run's ``profiles.json`` and Default's files."""
+    return _SESSION_BASE if _SESSION_BASE is not None else _installed_base()
+
+
+def profiles_path(base: Path | str | None = None) -> Path:
+    root = Path(base) if base is not None else base_dir()
+    return root / PROFILES_FILE
+
+
+def load(base: Path | str | None = None) -> "Profiles":
+    """Read the profile list; a missing or broken file means Default only."""
+    return Profiles(profiles_path(base))
+
+
+def _resolved_profile(base: Path | str | None = None) -> tuple[Path, str]:
+    """The data root and profile id this call must use.
+
+    With no explicit ``base``, a pinned session wins: the profile recorded in
+    ``profiles.json`` may already have been switched, but an app that is running
+    keeps the profile it opened with until the next start.
+    """
+    if base is not None:
+        root = Path(base)
+        return root, load(root).active_id
+    root = base_dir()
+    if _SESSION_PROFILE is not None:
+        return root, _SESSION_PROFILE
+    return root, load(root).active_id
+
+
+def active_data_dir(base: Path | str | None = None) -> Path:
+    """The data folder of the profile in use.
+
+    Every store (library index, collections, tags, viewing history) opens its
+    files here, so two profiles never read or write the same files.  For the
+    Default profile this is the folder every existing install already uses.
+    """
+    root, profile_id = _resolved_profile(base)
+    store = load(root)
+    if store.get(profile_id) is None:
+        profile_id = DEFAULT_ID
+    return store.data_dir(root, profile_id)
+
+
+def active_file(name: str, base: Path | str | None = None) -> Path:
+    """A file inside the active profile's data folder."""
+    return active_data_dir(base) / name
+
+
+def active_profile(base: Path | str | None = None) -> "Profile":
+    """The profile this run is using (session-aware, unlike ``load()``)."""
+    root, profile_id = _resolved_profile(base)
+    store = load(root)
+    return store.get(profile_id) or store.active()
+
+
+def active_settings_path(base: Path | str | None = None) -> Path:
+    """The settings file of the profile in use.
+
+    The Default profile keeps the single ``config.json`` in the config folder
+    that every install has always used; the other profiles keep their own
+    settings next to their library, so preferences stay separate too.
+    """
+    root, profile_id = _resolved_profile(base)
+    if profile_id == DEFAULT_ID:
+        from .settings import config_path
+
+        return config_path()
+    store = load(root)
+    if store.get(profile_id) is None:
+        return load(root).data_dir(root, DEFAULT_ID) / CONFIG_FILENAME
+    return store.data_dir(root, profile_id) / CONFIG_FILENAME
+
+
 def migrate(base: Path | str, legacy_names: Iterable[str] = ("library.json", "collections.json")) -> list[Path]:
     """Move single-profile files into the default profile folder.
 
@@ -232,6 +350,7 @@ def migrate(base: Path | str, legacy_names: Iterable[str] = ("library.json", "co
 
 
 __all__ = [
+    "CONFIG_FILENAME",
     "DEFAULT_ID",
     "DEFAULT_NAME",
     "MAX_NAME",
@@ -241,5 +360,14 @@ __all__ = [
     "Profile",
     "Profiles",
     "SECURITY_NOTE",
+    "active_data_dir",
+    "active_file",
+    "active_profile",
+    "active_settings_path",
+    "base_dir",
+    "load",
     "migrate",
+    "profiles_path",
+    "reset_session",
+    "start_session",
 ]
