@@ -54,7 +54,7 @@ All 30 items have a first version in both apps, merged to `main` through PRs up 
 | 16 | Season comparison | yes | yes | a sequel with a new AniList id counts as new |
 | 17 | Watch heatmap | yes | yes | |
 | 18 | Similarity explorer | yes | yes | |
-| 19 | Hidden gems | games (Discover) and AniList anime | same | anime thresholds not saved (see 3.1) |
+| 19 | Hidden gems | games (Discover) and AniList anime | same |  |
 | 20 | Spoiler-free mode | episode titles hidden | same | descriptions and stills are not shown anywhere, so nothing else to hide |
 | 21 | Favourites dashboard | yes | yes | media favourites are not stored anywhere yet |
 | 22 | Statistics | yes | yes | no play time is recorded |
@@ -69,12 +69,8 @@ All 30 items have a first version in both apps, merged to `main` through PRs up 
 
 Windows media player: playback now happens inside the main window (`lgl/qt_player.py`), with real fullscreen and an "exit fullscreen" call to the page. Never run with real QtWebEngine.
 
-### 3.1 Next small jobs (polish pass, prompt already written)
-- Save the hidden-gems thresholds; retry a failed first load when the tab is reopened.
-- Hide the empty lists when season comparison / hidden gems fail to load.
-- Season summary wording ("2024 winter" vs "Winter 2024").
-- Qt Trailer button belongs next to Watch Now; show "Trailer not available" when the lookup failed.
-- Remove the dead `profiles.migrate()`.
+### 3.1 Polish pass (done 2026-11-08, PR #45)
+Hidden-gems thresholds are saved and a failed first load retries; failed loads hide the empty lists; season summary says "Winter 2024"; the Qt Trailer button is in the hero row; a failed trailer lookup shows "Trailer not available"; `profiles.migrate()` removed. Still loose: in the Qt failure states the remaining lines sit far apart (expanding labels), and settings are written twice per Refresh.
 
 ## 4. Roadmap items still open (from the 0.6.6 notes in thing.md)
 - [ ] Continue Watching shelf widget on the Movies & TV page (the data and rules exist in `media_lists.shelf`).
