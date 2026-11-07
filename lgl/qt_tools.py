@@ -219,6 +219,18 @@ class ToolsDialog(QDialog):
             self._say("Writing the support report…")
             run_async(self._report, self._report_done, self._failed)
             return
+        if action == "home.reset":
+            from PySide6.QtWidgets import QMessageBox
+
+            answer = QMessageBox.question(
+                self,
+                "Reset layout",
+                "Restore the shelf order, visibility and sizes to the defaults?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No,
+            )
+            if answer != QMessageBox.Yes:
+                return
         if action == "home.shelves":
             from .qt_shelves import ShelvesDialog
 
@@ -235,6 +247,15 @@ class ToolsDialog(QDialog):
         )
         self._say(message)
         self.reload()
+        if action.startswith("home."):
+            self._refresh_home()
+
+    def _refresh_home(self) -> None:
+        """Apply a Home layout change behind this window, without a restart."""
+        from .qt_browse import BrowsePage
+
+        for page in self.window().findChildren(BrowsePage):
+            page.refresh_home_layout()
 
     def _say(self, message: str) -> None:
         self._status.setText(str(message))

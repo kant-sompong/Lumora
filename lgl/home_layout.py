@@ -18,6 +18,19 @@ CHOICES = ((POSTER, "Poster"), (LARGE, "Large"), (COMPACT, "Compact"))
 SCALES = {POSTER: 1.0, LARGE: 1.3, COMPACT: 0.78}
 MAX_SHELVES = 12
 
+#: Per-shelf size, set on the Home layout panel.  Separate from the global
+#: card layout above: every section can be small, normal or large on its own.
+SIZE_COMPACT = COMPACT
+SIZE_NORMAL = "normal"
+SIZE_LARGE = LARGE
+SIZES = (SIZE_COMPACT, SIZE_NORMAL, SIZE_LARGE)
+SIZE_DEFAULT = SIZE_NORMAL
+SIZE_CHOICES = ((SIZE_COMPACT, "Compact"), (SIZE_NORMAL, "Normal"), (SIZE_LARGE, "Large"))
+SIZE_SCALES = {SIZE_COMPACT: 0.78, SIZE_NORMAL: 1.0, SIZE_LARGE: 1.3}
+#: Shelf chip height and how many titles fit in one section, per size.
+SIZE_HEIGHTS = {SIZE_COMPACT: 26, SIZE_NORMAL: 32, SIZE_LARGE: 40}
+SIZE_TITLES = {SIZE_COMPACT: 4, SIZE_NORMAL: 6, SIZE_LARGE: 8}
+
 #: Shelf id -> label shown in the customiser.
 SHELVES: tuple[tuple[str, str], ...] = (
     ("continue", "Continue watching"),
@@ -44,6 +57,34 @@ def scale(value: Any) -> float:
 def layout_of(value: Any) -> str:
     text = str(value or "").strip().lower()
     return text if text in LAYOUTS else POSTER
+
+
+def size_of(value: Any) -> str:
+    """A stored per-shelf size; anything unknown means Normal."""
+    text = str(value or "").strip().lower()
+    return text if text in SIZES else SIZE_DEFAULT
+
+
+def size_scale(value: Any) -> float:
+    return SIZE_SCALES[size_of(value)]
+
+
+def size_height(value: Any) -> int:
+    return SIZE_HEIGHTS[size_of(value)]
+
+
+def shelf_titles(value: Any) -> int:
+    """How many titles a section shows at this size."""
+    return SIZE_TITLES[size_of(value)]
+
+
+def shelf_for_label(name: Any) -> str:
+    """The shelf id behind a heading, or "" for a user-made shelf."""
+    text = str(name or "").strip()
+    for shelf, label_text in SHELVES:
+        if label_text == text:
+            return shelf
+    return ""
 
 
 class HomeLayout:
@@ -83,6 +124,28 @@ class HomeLayout:
 
     def layout(self) -> str:
         return layout_of(self._state().get("layout"))
+
+    def sizes(self) -> dict[str, str]:
+        """Every shelf's size; an older layout without sizes reads as Normal."""
+        raw = self._state().get("sizes")
+        stored = raw if isinstance(raw, dict) else {}
+        return {shelf: size_of(stored.get(shelf)) for shelf in _IDS}
+
+    def size(self, shelf: str) -> str:
+        return self.sizes().get(shelf, SIZE_DEFAULT)
+
+    def set_size(self, shelf: str, value: Any) -> str:
+        """Store one shelf's size; returns the stored name, or "" if unknown."""
+        if shelf not in _LABELS:
+            return ""
+        chosen = size_of(value)
+        state = self._state()
+        stored = state.get("sizes")
+        sizes = dict(stored) if isinstance(stored, dict) else {}
+        sizes[shelf] = chosen
+        state["sizes"] = sizes
+        self._write(state)
+        return chosen
 
     def set_layout(self, value: str) -> str:
         state = self._state()
@@ -151,8 +214,22 @@ __all__ = [
     "POSTER",
     "SETTINGS_KEY",
     "SHELVES",
+    "SIZES",
+    "SIZE_CHOICES",
+    "SIZE_COMPACT",
+    "SIZE_DEFAULT",
+    "SIZE_HEIGHTS",
+    "SIZE_LARGE",
+    "SIZE_NORMAL",
+    "SIZE_SCALES",
+    "SIZE_TITLES",
     "HomeLayout",
     "label",
     "layout_of",
     "scale",
+    "shelf_for_label",
+    "shelf_titles",
+    "size_height",
+    "size_of",
+    "size_scale",
 ]

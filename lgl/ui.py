@@ -7458,6 +7458,7 @@ class MainWindow(Gtk.ApplicationWindow):
 
     def _rebuild_shelves(self) -> None:
         """Custom shelves above the cover grid, drawn from the loaded catalogue."""
+        from . import home_layout
         from . import shelves as shelves_lib
 
         box = getattr(self, "_shelves_box", None)
@@ -7475,8 +7476,17 @@ class MainWindow(Gtk.ApplicationWindow):
             }
             for game in self._games
         ]
+        layout = home_layout.HomeLayout(getattr(self, "settings", None))
+        order = layout.order()
         rendered = shelves_lib.render(getattr(self, "settings", None), rows)
-        for name, items in rendered:
+        for index, (name, items) in enumerate(rendered):
+            # A built-in heading takes its own size; a user shelf follows the
+            # section in the same position, so the panel still resizes it.
+            shelf = home_layout.shelf_for_label(name)
+            if not shelf and index < len(order):
+                shelf = order[index]
+            size = layout.size(shelf) if shelf else home_layout.SIZE_DEFAULT
+            height = home_layout.size_height(size)
             heading = Gtk.Label(label=name.upper(), xalign=0)
             heading.get_style_context().add_class("shelf-title")
             heading.set_margin_top(6)
@@ -7488,9 +7498,10 @@ class MainWindow(Gtk.ApplicationWindow):
             flow.set_max_children_per_line(12)
             flow.set_column_spacing(6)
             flow.set_row_spacing(4)
-            for item in items:
+            for item in items[: home_layout.shelf_titles(size)]:
                 key = str(item.get("key") or "")
                 button = Gtk.Button(label=str(item.get("title") or key))
+                button.set_size_request(-1, height)
                 button.get_style_context().add_class("chip")
                 button.set_relief(Gtk.ReliefStyle.NONE)
                 button.set_tooltip_text(str(item.get("title") or key))
@@ -7500,6 +7511,10 @@ class MainWindow(Gtk.ApplicationWindow):
         box.set_visible(bool(rendered))
         if rendered:
             box.show_all()
+
+    def refresh_home_layout(self) -> None:
+        """Rebuild the shelves so a size change shows without a restart."""
+        self._rebuild_shelves()
 
     def _on_shelf_item(self, _button: Gtk.Button, key: str) -> None:
         game = next((item for item in self._games if item.identifier == key), None)
