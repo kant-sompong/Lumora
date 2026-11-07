@@ -141,6 +141,12 @@ class PaletteDialog(QDialog):
         action = palette_lib.action_for(command) or ""
         owner = self._owner
         self.accept()
+        if action.startswith("tab:"):
+            page, _slash, tab = action[len("tab:"):].partition("/")
+            show_place = getattr(owner, "show_place", None)
+            if callable(show_place):
+                show_place(page, tab)
+            return
         if action in _PAGE_KEYS:
             show_view = getattr(owner, "show_view", None)
             if callable(show_view):

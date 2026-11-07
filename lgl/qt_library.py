@@ -34,6 +34,7 @@ from PySide6.QtWidgets import (
     QRadioButton,
     QScrollArea,
     QSizePolicy,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -42,6 +43,7 @@ from . import (
     artwork_background,
     external_dm,
     integrity,
+    nav_layout,
     platform_support,
     recently_viewed,
     view_prefs,
@@ -900,6 +902,7 @@ class LibraryPage(QWidget):
     changed = Signal()
     magnet_requested = Signal(str)
     external_requested = Signal(str, str)  # manager key, identifier
+    recent_requested = Signal(str, str)  # kind, key
 
     def __init__(self, store: LibraryStore | None, settings=None,
                  client: ArchiveClient | None = None,
@@ -931,7 +934,24 @@ class LibraryPage(QWidget):
         layout = QVBoxLayout(left)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
-        root.addWidget(left, 1)
+
+        # One tab strip across the top. The grid is the first tab; the tools
+        # that used to be separate windows are the rest, filled on first show so
+        # the page still opens without reading the whole library.
+        self.tabs = QTabWidget()
+        self.tabs.setObjectName("libraryTabs")
+        self.tabs.setDocumentMode(True)
+        self.tabs.addTab(left, "Games")
+        self._tab_hosts: dict[str, QWidget] = {}
+        for tab_key, tab_name in nav_layout.tabs_for("library")[1:]:
+            host = QWidget()
+            host_columns = QVBoxLayout(host)
+            host_columns.setContentsMargins(24, 16, 24, 20)
+            host_columns.setSpacing(8)
+            self.tabs.addTab(host, tab_name)
+            self._tab_hosts[tab_key] = host
+        self.tabs.currentChanged.connect(self._tab_changed)
+        root.addWidget(self.tabs, 1)
 
         toolbar = QWidget()
         bar = QHBoxLayout(toolbar)
@@ -1032,6 +1052,10 @@ class LibraryPage(QWidget):
 
     def set_entries(self, entries: Sequence[LibraryEntry]) -> None:
         self._entries = list(entries)
+        # The tabs read the library when they are opened, so drop any panel built
+        # from the old list instead of leaving stale rows behind.
+        for host in getattr(self, "_tab_hosts", {}).values():
+            clear_layout(host.layout())
         self.refresh()
 
     def set_compact(self, compact: bool) -> None:
@@ -1370,7 +1394,7 @@ class LibraryPage(QWidget):
     def _more_menu(self) -> None:
         popover = Popover(self)
         actions = (
-            ("Show duplicate files…", self.show_duplicates),
+            ("Find duplicates…", self.show_duplicates),
             ("Export library…", self.export_library),
             ("Import library…", self.import_library),
             ("Forget missing entries", self.forget_missing),
@@ -1388,6 +1412,69 @@ class LibraryPage(QWidget):
             popover.add_widget(btn)
         popover.show_at(self.more)
         self._more_popover = popover
+
+    # tabs ------------------------------------------------------------------
+    def tab_key(self) -> str:
+        """The key of the library tab that is in front."""
+        keys = [key for key, _name in nav_layout.tabs_for("library")]
+        index = self.tabs.currentIndex()
+        return keys[index] if 0 <= index < len(keys) else "games"
+
+    def show_tab(self, key: str) -> None:
+        """Bring one of the library tabs to the front."""
+        keys = [name for name, _label in nav_layout.tabs_for("library")]
+        if key in keys:
+            self.tabs.setCurrentIndex(keys.index(key))
+
+    def _tab_changed(self, _index: int) -> None:
+        key = self.tab_key()
+        if key != "games":
+            self.detail.hide()
+            host = self._tab_hosts.get(key)
+            if host is not None and host.layout().count() == 0:
+                panel = self._build_tab(key)
+                if panel is not None:
+                    host.layout().addWidget(panel)
+        else:
+            self._render()
+
+    def _build_tab(self, key: str) -> QWidget | None:
+        """The panel for one library tab, built from the current entries."""
+        from . import profiles
+        from .collections import COLLECTIONS_FILENAME, CollectionStore
+        from .qt_collections import CollectionsDialog
+        from .qt_discover import ActivityTimelineDialog, FavouritesDialog
+        from .qt_library_tools import TagsDialog, as_entry
+        from .qt_recent import RecentlyViewedDialog
+        from .qt_stats import StatisticsDialog, build_events
+
+        entries = list(self._entries)
+        viewed = recently_viewed.recent(recently_viewed.default_path(), 200)
+        if key == "favourites":
+            rows = [
+                as_entry(entry) | {"kind": "game"}
+                for entry in entries
+                if entry.favorite
+            ]
+            return FavouritesDialog(rows, self, embedded=True)
+        if key == "collections":
+            store = CollectionStore(profiles.active_file(COLLECTIONS_FILENAME))
+            return CollectionsDialog(store, entries, self, embedded=True)
+        if key == "tags":
+            return TagsDialog(entries, self.settings, self, embedded=True)
+        if key == "activity":
+            return ActivityTimelineDialog(
+                build_events(entries, viewed), self, embedded=True
+            )
+        if key == "statistics":
+            return StatisticsDialog(entries, viewed, self, embedded=True)
+        if key == "recent":
+            panel = RecentlyViewedDialog(
+                recently_viewed.default_path(), self, embedded=True
+            )
+            panel.open_requested.connect(self.recent_requested.emit)
+            return panel
+        return None
 
     def show_duplicates(self) -> None:
         if self.store is None:

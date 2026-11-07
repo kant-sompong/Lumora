@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -28,8 +29,12 @@ TZ = "local"
 
 
 class CalendarDialog(QDialog):
-    def __init__(self, settings: Any, parent: QWidget | None = None, *, days: int = 14, autoload: bool = True):
+    def __init__(self, settings: Any, parent: QWidget | None = None, *, days: int = 14,
+                 autoload: bool = True, embedded: bool = False):
         super().__init__(parent)
+        self.embedded = embedded
+        if embedded:
+            self.setWindowFlags(Qt.Widget)
         self.setWindowTitle("Release calendar")
         self.resize(720, 640)
         self.settings = settings
@@ -63,12 +68,13 @@ class CalendarDialog(QDialog):
         scroller.setWidget(self._body)
         layout.addWidget(scroller, 1)
 
-        close = QPushButton("Close")
-        close.clicked.connect(self.accept)
-        foot = QHBoxLayout()
-        foot.addStretch(1)
-        foot.addWidget(close)
-        layout.addLayout(foot)
+        if not self.embedded:
+            close = QPushButton("Close")
+            close.clicked.connect(self.accept)
+            foot = QHBoxLayout()
+            foot.addStretch(1)
+            foot.addWidget(close)
+            layout.addLayout(foot)
         if autoload:
             self.reload()
 

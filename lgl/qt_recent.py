@@ -27,8 +27,17 @@ class RecentlyViewedDialog(QDialog):
 
     open_requested = Signal(str, str)  # kind, key
 
-    def __init__(self, path: Path, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        path: Path,
+        parent: QWidget | None = None,
+        *,
+        embedded: bool = False,
+    ) -> None:
         super().__init__(parent)
+        self.embedded = embedded
+        if embedded:
+            self.setWindowFlags(Qt.Widget)
         self.setWindowTitle("Recently viewed")
         self.resize(560, 480)
         self._path = Path(path)
@@ -61,6 +70,7 @@ class RecentlyViewedDialog(QDialog):
         buttons.addWidget(self.open_btn)
         self.close_btn = QPushButton("Close", self)
         self.close_btn.clicked.connect(self.reject)
+        self.close_btn.setVisible(not embedded)
         buttons.addWidget(self.close_btn)
         layout.addLayout(buttons)
 
@@ -88,7 +98,8 @@ class RecentlyViewedDialog(QDialog):
             return
         kind, key = data
         self.open_requested.emit(str(kind), str(key))
-        self.accept()
+        if not getattr(self, "embedded", False):
+            self.accept()
 
     def _clear(self) -> None:
         recently_viewed.clear(self._path)
