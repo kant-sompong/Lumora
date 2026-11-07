@@ -550,6 +550,9 @@ class Window(QMainWindow):
         calendar = QAction("Release calendar…", self)
         calendar.triggered.connect(self.show_calendar)
         menu.addAction(calendar)
+        seasons = QAction("Compare seasons…", self)
+        seasons.triggered.connect(self.show_season_compare)
+        menu.addAction(seasons)
         viewed = QAction("Recently viewed…", self)
         viewed.triggered.connect(self.show_recent)
         menu.addAction(viewed)
@@ -622,6 +625,12 @@ class Window(QMainWindow):
         from .qt_calendar import show_calendar
 
         show_calendar(self.settings, self)
+
+    def show_season_compare(self) -> None:
+        """Compare two anime seasons: what is new, what carried over."""
+        from .qt_season import show_season_compare
+
+        show_season_compare(self)
 
     def show_tools(self) -> None:
         """Open the tools window: providers, downloads, backup, profiles and more."""

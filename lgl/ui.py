@@ -6574,6 +6574,7 @@ class MainWindow(Gtk.ApplicationWindow):
         menu.append(Gtk.SeparatorMenuItem())
         add_item("Command palette…", self.show_palette)
         add_item("Release calendar…", self.show_calendar)
+        add_item("Compare seasons…", self.show_season_compare)
         add_item("Discover…", lambda: __import__("lgl.gtk_discover", fromlist=["show_discover"]).show_discover(self, self.settings))
         add_item("Tags…", lambda: __import__("lgl.gtk_library_tools", fromlist=["show_tags"]).show_tags(self, self.settings))
         add_item("Find duplicates…", lambda: __import__("lgl.gtk_library_tools", fromlist=["show_duplicates"]).show_duplicates(self))
@@ -9483,6 +9484,12 @@ class MainWindow(Gtk.ApplicationWindow):
         from . import gtk_calendar
 
         self._calendar_window = gtk_calendar.show_calendar(self, self.settings)
+
+    def show_season_compare(self) -> None:
+        """Compare two anime seasons: what is new, what carried over."""
+        from . import gtk_season
+
+        self._season_window = gtk_season.show_season_compare(self)
 
     def show_recent(self) -> None:
         """Open the shared Recently viewed list."""
