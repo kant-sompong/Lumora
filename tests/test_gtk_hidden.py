@@ -83,6 +83,27 @@ def test_a_network_failure_is_a_line_not_a_blank_page(tmp_path):
     assert view.detail.get_text() == gtk_hidden.HINT
 
 
+def test_a_failed_load_is_retried_when_the_tab_is_opened_again(tmp_path):
+    class Flaky:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def __call__(self, body):
+            self.calls += 1
+            if self.calls == 1:
+                raise TimeoutError("timed out")
+            return post(body)
+
+    view = page(tmp_path, sender=Flaky())
+    view.ensure_loaded()
+    assert view.loaded is False
+    assert view.error.get_visible() is True
+
+    view.ensure_loaded()
+    assert view.loaded is True
+    assert labels(view.list)
+
+
 def test_thresholds_are_saved_and_the_median_stays_out_of_the_control(tmp_path):
     settings = Settings(tmp_path / "config.json")
     view = gtk_hidden.HiddenGemsPage(

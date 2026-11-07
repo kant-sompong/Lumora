@@ -164,7 +164,6 @@ class HiddenGemsPanel(QWidget):
         if self._busy:
             return
         self._busy = True
-        self.loaded = True
         self.refresh_btn.setEnabled(False)
         self.status.setText("Loading anime from AniList…")
         self.error.setText("")
@@ -191,6 +190,8 @@ class HiddenGemsPanel(QWidget):
         """Draw ``result`` without loading anything (tests and screenshots)."""
         self._busy = False
         self.result = result
+        # Only a load that worked counts as loaded.
+        self.loaded = not result.error_text
         self.refresh_btn.setEnabled(True)
         self.status.setText(result.note())
         self.error.setText(result.error_text)
@@ -213,6 +214,7 @@ class HiddenGemsPanel(QWidget):
     def show_failure(self, exc: object) -> None:
         """The worker itself failed; describe it in one line."""
         self._busy = False
+        self.loaded = False
         self.refresh_btn.setEnabled(True)
         self.status.setText("")
         self.error.setText(f"Could not load: {season_data.reason_of(exc)}")

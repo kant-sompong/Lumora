@@ -161,7 +161,6 @@ class HiddenGemsPage(Gtk.Box):
         if self._busy:
             return
         self._busy = True
-        self.loaded = True
         self.refresh_btn.set_sensitive(False)
         self.status.set_text("Loading anime from AniList…")
         self.error.set_text("")
@@ -192,6 +191,8 @@ class HiddenGemsPage(Gtk.Box):
         """Draw ``result`` without loading anything (tests and screenshots)."""
         self._busy = False
         self.result = result
+        # Only a load that worked counts as loaded.
+        self.loaded = not result.error_text
         self.refresh_btn.set_sensitive(True)
         self.status.set_text(result.note())
         self.error.set_text(result.error_text)
