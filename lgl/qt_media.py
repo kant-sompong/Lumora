@@ -16,7 +16,6 @@ from PySide6.QtCore import QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QPainter, QPixmap
 from PySide6.QtWidgets import (
     QComboBox,
-    QDialog,
     QFrame,
     QGridLayout,
     QHBoxLayout,
@@ -33,6 +32,7 @@ from PySide6.QtWidgets import (
 from . import mal, media_history, platform_support, streaming, tmdb, view_prefs
 from . import recently_viewed
 from .qt_icons import icon, paint_icon
+from .qt_player import EmbeddedPlayer, make_player
 from .qt_widgets import (
     CoverArt,
     ElideLabel,
@@ -416,67 +416,6 @@ class EpisodeRow(QFrame):
         super().mouseReleaseEvent(event)
 
 
-class PlayerDialog(QDialog):
-    """Embedded player when Qt WebEngine is available, otherwise the browser."""
-
-    def __init__(self, url: str, title: str, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        self.setObjectName("sheet")
-        self.setWindowTitle(title or "Play")
-        self.resize(1120, 700)
-        column = QVBoxLayout(self)
-        column.setContentsMargins(0, 0, 0, 0)
-        column.setSpacing(0)
-        view = None
-        try:
-            from PySide6.QtWebEngineCore import QWebEngineSettings  # type: ignore
-            from PySide6.QtWebEngineWidgets import QWebEngineView  # type: ignore
-
-            view = QWebEngineView(self)
-            page = view.page()
-            # The provider pages use their own fullscreen button; let them ask
-            # Qt for it instead of silently staying windowed.
-            page.settings().setAttribute(
-                QWebEngineSettings.WebAttribute.FullScreenSupportEnabled, True
-            )
-            page.settings().setAttribute(
-                QWebEngineSettings.WebAttribute.PlaybackRequiresUserGesture, False
-            )
-            page.fullScreenRequested.connect(lambda request: request.accept())
-            page.setBackgroundColor(QColor("#000000"))
-            view.setUrl(url)
-        except Exception:  # noqa: BLE001 - WebEngine is optional in the build
-            view = None
-        if view is None:
-            panel = QWidget()
-            inner = QVBoxLayout(panel)
-            inner.setContentsMargins(28, 28, 28, 24)
-            inner.setSpacing(10)
-            inner.addStretch(1)
-            inner.addWidget(label("Playback opens in your browser", "pageTitle"))
-            inner.addWidget(label(
-                "This build has no embedded player, so the provider page opens in your "
-                "default browser instead. Nothing is downloaded.",
-                "detailNote", wrap=True,
-            ))
-            open_btn = QPushButton("Open in browser")
-            open_btn.setObjectName("suggested")
-            open_btn.clicked.connect(lambda: platform_support.open_url(url))
-            inner.addWidget(open_btn, 0, Qt.AlignLeft)
-            inner.addStretch(1)
-            column.addWidget(panel, 1)
-            platform_support.open_url(url)
-        else:
-            column.addWidget(view, 1)
-        close = QPushButton("Close")
-        close.clicked.connect(self.accept)
-        bottom = QHBoxLayout()
-        bottom.setContentsMargins(16, 8, 16, 12)
-        bottom.addStretch(1)
-        bottom.addWidget(close)
-        column.addLayout(bottom)
-
-
 # --------------------------------------------------------------------------
 # page
 # --------------------------------------------------------------------------
@@ -488,7 +427,8 @@ class MediaPage(QWidget):
     configure_requested = Signal()
 
     def __init__(self, settings: Settings | None = None,
-                 cache_root: Path | None = None) -> None:
+                 cache_root: Path | None = None,
+                 player_factory: Callable[[QWidget], EmbeddedPlayer] | None = None) -> None:
         super().__init__()
         self.settings = settings
         self._cache_root = cache_root or platform_support.cache_dir()
@@ -580,6 +520,13 @@ class MediaPage(QWidget):
         self._detail_page, detail_column = self._page()
         self.stack.addWidget(self._detail_page)
         self._build_detail(detail_column)
+        # The player is a page of this Media page, not a dialog: Watch swaps the
+        # stack, so the window never closes and nothing flickers.
+        self._player_factory = player_factory or make_player
+        self.player = self._player_factory(self)
+        self.player.back_requested.connect(self._leave_player)
+        self.stack.addWidget(self.player)
+        self._player_return: QWidget | None = None
         self.show_section("home")
 
     # scaffolding -----------------------------------------------------------
@@ -1256,6 +1203,28 @@ class MediaPage(QWidget):
         else:
             self._play_tmdb(card)
 
+    # embedded player -------------------------------------------------------
+    def play_embedded(self, url: str, title: str = "") -> EmbeddedPlayer:
+        """Play inside the Media page: same window, no dialog, no flicker."""
+        current = self.stack.currentWidget()
+        if current is not None and current is not self.player:
+            self._player_return = current
+        self.player.play(url, title)
+        self.stack.setCurrentWidget(self.player)
+        self.player.setFocus()
+        return self.player
+
+    def _leave_player(self) -> None:
+        """Back stops the video and returns to the page that was open."""
+        self.player.stop_playback()
+        page = (
+            self._player_return
+            or self._pages.get(self._section)
+            or self._pages["home"]
+        )
+        self._player_return = None
+        self.stack.setCurrentWidget(page)
+
     # provider picker -------------------------------------------------------
     def _fill_provider_combo(self, section: str) -> None:
         """Movies use the streaming providers; Anime uses the anime ones."""
@@ -1328,7 +1297,7 @@ class MediaPage(QWidget):
             self._note_error(str(exc))
             return
         self._record_history(card)
-        PlayerDialog(url, card.title, self).exec()
+        self.play_embedded(url, card.title)
 
     def _play_anilist_match(self) -> None:
         """Play the AniList match the search already resolved.
@@ -1353,7 +1322,7 @@ class MediaPage(QWidget):
         except (streaming.EmbedUrlError, ValueError) as exc:
             self._note_error(str(exc))
             return
-        PlayerDialog(url, title, self).exec()
+        self.play_embedded(url, title)
 
     def _play_anime(self, card: Card) -> None:
         provider = self._anime_provider()
@@ -1376,7 +1345,7 @@ class MediaPage(QWidget):
             self._note_error(str(exc))
             return
         self._record_history(card)
-        PlayerDialog(url, card.title, self).exec()
+        self.play_embedded(url, card.title)
 
     def _record_history(self, card: Card) -> None:
         if self.settings is None or card.key.startswith("anime:"):
@@ -1425,8 +1394,8 @@ __all__ = [
     "Carousel",
     "Card",
     "HeroPanel",
+    "EmbeddedPlayer",
     "MediaPage",
-    "PlayerDialog",
     "PosterCard",
     "PosterGrid",
     "card_from_anime",
