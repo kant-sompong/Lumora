@@ -104,6 +104,16 @@ def match_any(
     return True
 
 
+def selected_text(model: Gtk.TreeModel, tree_iter: Gtk.TreeIter) -> str:
+    """The text GTK's ``match-selected`` picked: column 0 of ``tree_iter``'s row.
+
+    The signal hands over ``(completion, model, tree_iter)``, not a path, so the
+    row is read from the model rather than looked up again.
+    """
+    value = model.get_value(tree_iter, 0)
+    return "" if value is None else str(value)
+
+
 def attach(entry: Gtk.Entry, window: Any) -> Gtk.EntryCompletion:
     """Give ``entry`` a suggestion popup filled from ``window``'s library."""
     store = Gtk.ListStore(str)
@@ -111,7 +121,7 @@ def attach(entry: Gtk.Entry, window: Any) -> Gtk.EntryCompletion:
     completion.set_model(store)
     completion.set_text_column(0)
     completion.set_popup_completion(True)
-    completion.set_popup_single_match(False)
+    completion.set_popup_single_match(True)
     completion.set_inline_completion(False)
     completion.set_minimum_key_length(0)
     completion.set_match_func(match_any, None)
@@ -120,11 +130,11 @@ def attach(entry: Gtk.Entry, window: Any) -> Gtk.EntryCompletion:
         update_model(store, entry.get_text(), corpus(window))
 
     def choose(
-        _completion: Gtk.EntryCompletion, _model: Gtk.TreeModel, path: Gtk.TreePath
+        _completion: Gtk.EntryCompletion,
+        model: Gtk.TreeModel,
+        tree_iter: Gtk.TreeIter,
     ) -> bool:
-        row = store.get_iter(path)
-        value = store.get_value(row, 0)
-        entry.set_text(str(value))
+        entry.set_text(selected_text(model, tree_iter))
         entry.set_position(-1)
         return True
 
@@ -144,5 +154,6 @@ __all__ = [
     "loaded_cards",
     "match_any",
     "model_rows",
+    "selected_text",
     "update_model",
 ]

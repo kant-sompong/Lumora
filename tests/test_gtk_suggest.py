@@ -62,6 +62,13 @@ def test_an_empty_query_clears_the_model():
     assert gtk_suggest.update_model(store, "   ", ["Portal"]) == []
 
 
+def test_selected_text_reads_the_row_gtk_hands_over():
+    store = Gtk.ListStore(str)
+    store.append(["Alpha"])
+    second = store.append(["Beta"])
+    assert gtk_suggest.selected_text(store, second) == "Beta"
+
+
 def test_the_match_function_accepts_every_row():
     assert gtk_suggest.match_any(None, "anything", None) is True
     assert gtk_suggest.match_any(None, "", None, None) is True
