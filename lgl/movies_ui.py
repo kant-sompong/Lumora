@@ -39,7 +39,17 @@ from gi.repository import (  # noqa: E402
 )
 
 from . import recently_viewed
-from . import anipm, framextv, mal, media_history, streaming, tmdb, view_prefs  # noqa: E402
+from . import (  # noqa: E402
+    anipm,
+    framextv,
+    mal,
+    media_history,
+    streaming,
+    tmdb,
+    trailer_data,
+    trailers,
+    view_prefs,
+)
 from .mal import (  # noqa: E402
     AnimeDetails,
     AnimeItem,
@@ -3220,7 +3230,9 @@ class MoviesWindow(Gtk.Box):
         self._set_active_nav(self._nav_key_for_page(self._back_target))
         self._update_back()
         self._details_scroll.get_vadjustment().set_value(0)
+        self._detail_trailer = None
         self._load_details(item, token)
+        self._load_trailer(item, token)
 
     def _build_details_page(self, item: MediaItem) -> Gtk.Widget:
         page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
@@ -3279,6 +3291,15 @@ class MoviesWindow(Gtk.Box):
             )
         actions.pack_start(play, False, False, 0)
 
+        # Hidden until TMDB says this title has a trailer we can embed.
+        trailer_button = Gtk.Button(label="Trailer")
+        trailer_button.set_relief(Gtk.ReliefStyle.NONE)
+        trailer_button.get_style_context().add_class("movie-btn-dark")
+        trailer_button.set_no_show_all(True)
+        trailer_button.set_tooltip_text("Play the trailer")
+        trailer_button.connect("clicked", lambda *_a: self._play_trailer())
+        actions.pack_start(trailer_button, False, False, 0)
+
         watch = Gtk.ToggleButton(label="My List")
         watch.set_relief(Gtk.ReliefStyle.NONE)
         watch.get_style_context().add_class("movie-btn-dark")
@@ -3325,6 +3346,7 @@ class MoviesWindow(Gtk.Box):
             "overview": overview,
             "seasons": seasons_box,
             "play": play,
+            "trailer_button": trailer_button,
         }
         url = item.backdrop_url or item.poster_url
         self._load_detail_image(url, backdrop)
@@ -3358,6 +3380,118 @@ class MoviesWindow(Gtk.Box):
             GLib.idle_add(self._apply_details, token, details)
 
         threading.Thread(target=work, daemon=True, name="lgl-tmdb-details").start()
+
+    def _load_trailer(self, item: MediaItem, token: int) -> None:
+        """Ask TMDB for this title's trailer without blocking the page."""
+
+        def work() -> None:
+            result = trailer_data.load_trailer(
+                item.kind, item.tmdb_id, settings=self._settings
+            )
+            GLib.idle_add(self._apply_trailer, token, result)
+
+        threading.Thread(target=work, daemon=True, name="lgl-trailer").start()
+
+    def _apply_trailer(self, token: int, result: trailer_data.TrailerResult) -> bool:
+        if token != self._detail_token:
+            return False
+        self._detail_trailer = result.trailer
+        button = (self._detail_state or {}).get("trailer_button")
+        if button is None:
+            return False
+        button.set_visible(result.has_trailer)
+        if result.has_trailer:
+            button.set_tooltip_text(str((result.trailer or {}).get("name") or "Play the trailer"))
+            if trailers.autoplay_allowed(self._settings):
+                self._play_trailer(autoplay=True, muted=True)
+            else:
+                button.grab_focus()
+        return False
+
+    def _play_trailer(self, *, autoplay: bool = False, muted: bool = False) -> None:
+        """Open the trailer on the player page; Back returns to the details."""
+        trailer = getattr(self, "_detail_trailer", None)
+        if not trailer:
+            return
+        url = trailer_data.embed_url(trailer.get("key"), autoplay=autoplay, muted=muted)
+        if not url:
+            return
+        current = self._stack.get_visible_child_name()
+        if current not in (None, "player"):
+            self._back_target = current
+        for child in self._player.get_children():
+            self._player.remove(child)
+        details = self._current_details or self._current_item
+        title = str(getattr(details, "title", "") or "")
+        heading = Gtk.Label(label=f"Trailer · {title}" if title else "Trailer", xalign=0)
+        heading.set_ellipsize(Pango.EllipsizeMode.END)
+        heading.get_style_context().add_class("movie-page-title")
+        self._player.pack_start(heading, False, False, 0)
+
+        frame = Gtk.AspectFrame(xalign=0.5, yalign=0.5, ratio=16 / 9, obey_child=False)
+        frame.set_shadow_type(Gtk.ShadowType.NONE)
+        frame.set_size_request(560, 315)
+        frame.get_style_context().add_class("movie-player-frame")
+        webkit = _webkit()
+        if webkit is not None:
+            view = webkit.WebView()
+            self._webview = view
+            self._apply_trailer_settings(view)
+            self._connect_player_fullscreen(view)
+            view.load_uri(url)
+            frame.add(view)
+            note = Gtk.Label(
+                label=(
+                    f"{trailer.get('type') or 'Trailer'} provided by YouTube; "
+                    "playback needs a network connection."
+                ),
+                xalign=0,
+            )
+            note.set_line_wrap(True)
+            note.get_style_context().add_class("movie-meta")
+            self._player.pack_start(note, False, False, 0)
+        else:
+            frame.add(self._trailer_error_box(url))
+        self._player.pack_start(frame, True, True, 0)
+        self._player.show_all()
+        self._stack.set_visible_child_name("player")
+        self._update_back()
+
+    def _apply_trailer_settings(self, view) -> None:
+        """Media permissions a YouTube embed needs; nothing broader."""
+        settings = view.get_settings()
+        for name, value in (
+            ("enable_media", True),
+            ("enable_media_stream", True),
+            ("enable_mediasource", True),
+            ("enable_webaudio", True),
+            ("enable_webgl", True),
+        ):
+            try:
+                settings.set_property(name, value)
+            except TypeError:
+                continue
+
+    def _trailer_error_box(self, url: str) -> Gtk.Widget:
+        """No WebKitGTK: offer the browser, but never open it unasked."""
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+        box.set_halign(Gtk.Align.CENTER)
+        box.set_valign(Gtk.Align.CENTER)
+        box.set_margin_start(24)
+        box.set_margin_end(24)
+        message = Gtk.Label(
+            label="This build has no WebKitGTK, so the trailer cannot be embedded."
+        )
+        message.set_line_wrap(True)
+        message.set_max_width_chars(70)
+        message.set_justify(Gtk.Justification.CENTER)
+        box.pack_start(message, False, False, 0)
+        open_button = Gtk.Button(label="Open trailer in your browser")
+        open_button.get_style_context().add_class("movie-btn-primary")
+        open_button.connect("clicked", lambda *_a: self._open_external(url))
+        box.pack_start(open_button, False, False, 0)
+        box.show_all()
+        return box
 
     def _details_error(self, token: int, error: TmdbError) -> bool:
         if token != self._detail_token:

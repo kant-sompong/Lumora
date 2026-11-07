@@ -30,7 +30,16 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from . import mal, media_history, platform_support, streaming, tmdb, view_prefs
+from . import (
+    mal,
+    media_history,
+    platform_support,
+    streaming,
+    tmdb,
+    trailer_data,
+    trailers,
+    view_prefs,
+)
 from . import recently_viewed
 from .qt_icons import icon, paint_icon
 from .qt_widgets import (
@@ -477,6 +486,68 @@ class PlayerDialog(QDialog):
         column.addLayout(bottom)
 
 
+class TrailerDialog(QDialog):
+    """A trailer in the embedded WebEngine view, or a browser button.
+
+    Unlike :class:`PlayerDialog`, nothing opens automatically when this build
+    has no WebEngine: the user presses the button themselves.
+    """
+
+    def __init__(self, url: str, title: str, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("sheet")
+        self.setWindowTitle(f"Trailer · {title}" if title else "Trailer")
+        self.resize(1120, 700)
+        column = QVBoxLayout(self)
+        column.setContentsMargins(0, 0, 0, 0)
+        column.setSpacing(0)
+        view = None
+        try:
+            from PySide6.QtWebEngineCore import QWebEngineSettings  # type: ignore
+            from PySide6.QtWebEngineWidgets import QWebEngineView  # type: ignore
+
+            view = QWebEngineView(self)
+            page = view.page()
+            page.settings().setAttribute(
+                QWebEngineSettings.WebAttribute.FullScreenSupportEnabled, True
+            )
+            page.settings().setAttribute(
+                QWebEngineSettings.WebAttribute.PlaybackRequiresUserGesture, False
+            )
+            page.fullScreenRequested.connect(lambda request: request.accept())
+            page.setBackgroundColor(QColor("#000000"))
+            view.setUrl(url)
+        except Exception:  # noqa: BLE001 - WebEngine is optional in the build
+            view = None
+        if view is None:
+            panel = QWidget()
+            inner = QVBoxLayout(panel)
+            inner.setContentsMargins(28, 28, 28, 24)
+            inner.setSpacing(10)
+            inner.addStretch(1)
+            inner.addWidget(label("Open trailer in your browser", "pageTitle"))
+            inner.addWidget(label(
+                "This build has no embedded browser, so the trailer cannot play "
+                "here. Nothing opens until you press the button.",
+                "detailNote", wrap=True,
+            ))
+            open_btn = QPushButton("Open trailer in your browser")
+            open_btn.setObjectName("suggested")
+            open_btn.clicked.connect(lambda: platform_support.open_url(url))
+            inner.addWidget(open_btn, 0, Qt.AlignLeft)
+            inner.addStretch(1)
+            column.addWidget(panel, 1)
+        else:
+            column.addWidget(view, 1)
+        close = QPushButton("Close")
+        close.clicked.connect(self.accept)
+        bottom = QHBoxLayout()
+        bottom.setContentsMargins(16, 8, 16, 12)
+        bottom.addStretch(1)
+        bottom.addWidget(close)
+        column.addLayout(bottom)
+
+
 # --------------------------------------------------------------------------
 # page
 # --------------------------------------------------------------------------
@@ -763,6 +834,13 @@ class MediaPage(QWidget):
         self.detail_back.setCursor(Qt.PointingHandCursor)
         self.detail_back.clicked.connect(lambda: self.show_section(self._section))
         top.addWidget(self.detail_back)
+        # Hidden until TMDB says this title has a trailer we can embed.
+        self.trailer_btn = QPushButton("▶  Trailer")
+        self.trailer_btn.setObjectName("heroAction")
+        self.trailer_btn.setCursor(Qt.PointingHandCursor)
+        self.trailer_btn.setVisible(False)
+        self.trailer_btn.clicked.connect(self._open_trailer)
+        top.addWidget(self.trailer_btn)
         top.addStretch(1)
         column.addLayout(top)
         self.detail_hero = HeroPanel()
@@ -1147,7 +1225,10 @@ class MediaPage(QWidget):
         self.stack.setCurrentWidget(self._detail_page)
         self._load_image(card.backdrop_url or card.poster_url, f"backdrop-{card.key}",
                          self.detail_hero.set_pixmap)
+        self._detail_trailer = None
+        self.trailer_btn.setVisible(False)
         self._load_episodes(card)
+        self._load_trailer(card)
 
     def _sync_spoiler_note(self) -> None:
         """Say the mode is on, and where to turn it off, beside the episodes."""
@@ -1239,6 +1320,46 @@ class MediaPage(QWidget):
                 self.episode_column.addWidget(row)
 
         run_async(work, done, lambda exc: self._note_error(exc))
+
+    def _load_trailer(self, card: Card) -> None:
+        """Ask TMDB for this title's trailer without blocking the page."""
+        if card.kind not in ("movie", "tv") or card.tmdb_id <= 0:
+            return
+        client = getattr(self, "_tmdb", None)
+        fetch = getattr(client, "get", None)
+
+        def work() -> object:
+            return trailer_data.load_trailer(
+                card.kind, card.tmdb_id, settings=self.settings, fetch=fetch
+            )
+
+        def done(result: object) -> None:
+            if getattr(self, "_detail_card", None) is not card:
+                return
+            trailer = getattr(result, "trailer", None)
+            self._detail_trailer = trailer
+            self.trailer_btn.setVisible(trailer is not None)
+            if trailer is None:
+                return
+            self.trailer_btn.setToolTip(str(trailer.get("name") or "Play the trailer"))
+            if trailers.autoplay_allowed(self.settings):
+                self._start_trailer(autoplay=True, muted=True)
+
+        run_async(work, done, lambda _exc: None)
+
+    def _open_trailer(self, _checked: bool = False) -> None:
+        """The button: play the trailer the page already found."""
+        self._start_trailer(autoplay=True, muted=False)
+
+    def _start_trailer(self, *, autoplay: bool, muted: bool) -> None:
+        trailer = getattr(self, "_detail_trailer", None)
+        if trailer is None:
+            return
+        url = trailer_data.embed_url(trailer.get("key"), autoplay=autoplay, muted=muted)
+        if not url:
+            return
+        card = getattr(self, "_detail_card", None)
+        TrailerDialog(url, getattr(card, "title", "") or "", self).exec()
 
     def _play_current(self) -> None:
         """Play button on the home hero: the hero's own title."""
