@@ -588,6 +588,17 @@ class SettingsDialog(QDialog):
         column.addWidget(SettingRow(
             "Autoplay", "Start playing as soon as an episode or movie opens.", autoplay
         ))
+
+        trailer_autoplay = QCheckBox()
+        trailer_autoplay.setChecked(bool(self.settings.get("trailer_autoplay", False)))
+        trailer_autoplay.toggled.connect(
+            lambda on: self.settings.set("trailer_autoplay", bool(on))
+        )
+        column.addWidget(SettingRow(
+            "Autoplay trailers",
+            "Start a title's trailer muted as soon as its detail page opens.",
+            trailer_autoplay,
+        ))
         column.addStretch(1)
         return body
 

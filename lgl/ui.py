@@ -10227,6 +10227,15 @@ class SettingsDialog(Gtk.Dialog):
             self._media_autoplay,
         ), False, False, 0)
 
+        self._trailer_autoplay = Gtk.Switch()
+        self._trailer_autoplay.set_active(bool(self._settings.get("trailer_autoplay", False)))
+        self._trailer_autoplay.connect("notify::active", self._on_trailer_autoplay_changed)
+        box.pack_start(self._switch_row(
+            "Autoplay trailers",
+            "Start a title's trailer muted as soon as its detail page opens.",
+            self._trailer_autoplay,
+        ), False, False, 0)
+
         return self._scrolled(box)
 
     def _build_shortcuts(self) -> Gtk.Widget:
@@ -10464,6 +10473,9 @@ class SettingsDialog(Gtk.Dialog):
 
     def _on_media_autoplay_changed(self, switch, _param) -> None:
         self._settings.set("media_autoplay", bool(switch.get_active()))
+
+    def _on_trailer_autoplay_changed(self, switch, _param) -> None:
+        self._settings.set("trailer_autoplay", bool(switch.get_active()))
 
 
 # -- application -------------------------------------------------------------
