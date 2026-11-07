@@ -14,7 +14,7 @@ import gi
 gi.require_version("Gtk", "3.0")
 from gi.repository import Gtk
 
-from . import platform_support
+from . import profiles
 from .collections import COLLECTIONS_FILENAME, CollectionStore
 
 #: Shown under the title column when a collection has no titles yet.
@@ -405,9 +405,7 @@ class CollectionsWindow(Gtk.Window):
 
 def show_collections(parent: Any) -> CollectionsWindow:
     """Open Collections, stored beside the library like the Qt build."""
-    store = CollectionStore(
-        platform_support.data_dir() / COLLECTIONS_FILENAME
-    )
+    store = CollectionStore(profiles.active_file(COLLECTIONS_FILENAME))
     window = CollectionsWindow(parent, store, library_entries(parent))
     window.show_all()
     window.present()

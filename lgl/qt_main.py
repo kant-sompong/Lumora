@@ -37,6 +37,7 @@ from PySide6.QtWidgets import (
 )
 
 from . import discovery
+from . import profiles
 from . import recently_viewed
 from . import suggestions
 from . import view_prefs
@@ -101,6 +102,12 @@ class Window(QMainWindow):
                  settings: Settings | None = None) -> None:
         super().__init__()
         self._settings = settings or Settings()
+        # The profile whose files this window was built from, so the header can
+        # say what a switch will change only after a restart.
+        try:
+            self._session_profile = profiles.active_profile().name
+        except Exception:  # noqa: BLE001 - a header label must never break
+            self._session_profile = ""
         self.client = client
         self.manager = manager
         self.download_dir = Path(download_dir) if download_dir else platform_support.default_download_dir()
@@ -278,7 +285,25 @@ class Window(QMainWindow):
         self.refresh_btn = IconButton("refresh", "Refresh (reload collection, rescan library)", 17, 34)
         self.refresh_btn.clicked.connect(self.refresh_all)
         row.addWidget(self.refresh_btn)
+
+        # The profile in use, so it is obvious which library and settings are open.
+        self.profile_label = QLabel("", header)
+        self.profile_label.setObjectName("keyHint")
+        self.profile_label.setToolTip("Active profile · Library tools → Profiles… to switch")
+        row.addWidget(self.profile_label)
+        self.refresh_profile_label()
         return header
+
+    def refresh_profile_label(self, was: str | None = None) -> None:
+        """Show the active profile; after a switch, show where it came from."""
+        try:
+            name = profiles.load().active().name
+        except Exception:  # noqa: BLE001 - a header label must never break the window
+            return
+        if was and was != name:
+            self.profile_label.setText(f"Profile · {was} → {name}")
+        else:
+            self.profile_label.setText(f"Profile · {name}")
 
     def _install_shortcuts(self) -> None:
         from . import shortcut_prefs
@@ -780,10 +805,19 @@ class Window(QMainWindow):
 
     def show_profiles(self) -> None:
         """Choose which profile's library and settings the next start uses."""
-        from .profiles import PROFILES_FILE, Profiles
         from .qt_profiles import ProfilesDialog
 
-        ProfilesDialog(Profiles(platform_support.data_dir() / PROFILES_FILE), self).exec()
+        dialog = ProfilesDialog(profiles.load(), self, on_switch=self._profile_switched)
+        dialog.exec()
+        self.refresh_profile_label()
+
+    def _profile_switched(self, profile) -> None:
+        """The active profile changed; it is read at the next start."""
+        self.refresh_profile_label(was=self._session_profile)
+        try:
+            self.toast.show_message(f"Restart Lumora to switch to {profile.name}.")
+        except Exception:  # noqa: BLE001 - the toast is decoration only
+            pass
 
     def show_shortcuts(self) -> None:
         """Rebind the keys; the window picks them up the next time it opens."""
@@ -796,7 +830,7 @@ class Window(QMainWindow):
         from .collections import COLLECTIONS_FILENAME, CollectionStore
         from .qt_collections import CollectionsDialog
 
-        store = CollectionStore(platform_support.data_dir() / COLLECTIONS_FILENAME)
+        store = CollectionStore(profiles.active_file(COLLECTIONS_FILENAME))
         CollectionsDialog(store, list(self.library._entries), self).exec()  # noqa: SLF001
 
     def show_activity(self) -> None:
@@ -1145,9 +1179,14 @@ def _resolve_task_url(snapshot: TaskSnapshot) -> str | None:
 
 def build_window(settings: Settings, download_dir: Path | None = None) -> Window:
     """Create the window and every long-lived object it needs."""
+    # Pin the profile folder for the whole run: switching before a restart must
+    # not let a later store open the other profile's files.
+    profiles.start_session()
     download_dir = Path(download_dir or settings.download_dir
                         or platform_support.default_download_dir())
-    store = LibraryStore(platform_support.data_dir() / "library.json", download_dir)
+    # The active profile owns the library index; the Default profile's folder
+    # is the one every existing install already uses.
+    store = LibraryStore(profiles.active_file("library.json"), download_dir)
     client = ArchiveClient(cache_root=platform_support.cache_dir(),
                            timeout=float(settings.network_timeout))
     bridge_holder: dict[str, DownloadBridge] = {}
@@ -1202,7 +1241,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     app.setApplicationName(APP_TITLE)
     app.setApplicationDisplayName(APP_TITLE)
     platform_support.ensure_app_dirs()
-    settings = Settings()
+    profiles.start_session()
+    settings = Settings(profiles.active_settings_path())
     apply_theme(app, settings.theme)
     window = build_window(settings)
     if "--self-test" in args:

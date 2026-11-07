@@ -25,7 +25,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from . import library_tools, platform_support
+from . import library_tools, profiles
 from .collections import COLLECTIONS_FILENAME, CollectionStore
 
 
@@ -130,7 +130,7 @@ class QtBulk:
     def collection_store(self) -> CollectionStore:
         if self._collections is None:
             self._collections = CollectionStore(
-                platform_support.data_dir() / COLLECTIONS_FILENAME
+                profiles.active_file(COLLECTIONS_FILENAME)
             )
         return self._collections
 

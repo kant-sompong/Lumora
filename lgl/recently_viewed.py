@@ -27,10 +27,10 @@ _MAX_KEY = 200
 
 
 def default_path() -> Path:
-    """Where the Qt frontend keeps the history."""
-    from . import platform_support
+    """Where both frontends keep the history: the active profile's folder."""
+    from . import profiles
 
-    return platform_support.data_dir() / "recently-viewed.json"
+    return profiles.active_file("recently-viewed.json")
 
 
 def _text(value: Any, limit: int = _MAX_TEXT) -> str:

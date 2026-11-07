@@ -46,6 +46,7 @@ from gi.repository import (  # noqa: E402
 )
 
 from . import browse_filters
+from . import profiles
 from . import recently_viewed
 from . import APP_ID, APP_NAME, __version__, platform_support  # noqa: E402
 from . import external_dm  # noqa: E402
@@ -6378,6 +6379,10 @@ class MainWindow(Gtk.ApplicationWindow):
         self._download_dir = download_dir
         self._startup_warning = startup_warning
         self.library_store = library_store
+        try:
+            self._session_profile = profiles.active_profile().name
+        except Exception:  # noqa: BLE001 - a header label must never break
+            self._session_profile = ""
         self.catalog_store = catalog_store if catalog_store is not None else CatalogStore()
         self.library_lock = threading.Lock()
 
@@ -6514,7 +6519,30 @@ class MainWindow(Gtk.ApplicationWindow):
         refresh_btn.set_valign(Gtk.Align.CENTER)
         header.pack_end(refresh_btn)
         header.pack_end(self._build_menu_button())
+
+        # Which profile's files are open, so it is never a guess.
+        self._profile_label = Gtk.Label()
+        self._profile_label.get_style_context().add_class("dim")
+        self._profile_label.set_valign(Gtk.Align.CENTER)
+        self._profile_label.set_tooltip_text(
+            "Active profile — Tools → Profiles… to switch"
+        )
+        self._set_profile_name()
+        header.pack_end(self._profile_label)
         return header
+
+    def _set_profile_name(self, name: str | None = None,
+                          was: str | None = None) -> None:
+        """Put the active profile's name in the header."""
+        if name is None:
+            try:
+                name = profiles.load().active().name
+            except Exception:  # noqa: BLE001 - a header label must never break
+                name = ""
+        if was and was != name:
+            self._profile_label.set_text(f"Profile · {was} → {name}")
+        else:
+            self._profile_label.set_text(f"Profile · {name}" if name else "")
 
     def _combined_refresh(self) -> None:
         """Rescan library + reload collection in one action."""
@@ -9508,7 +9536,16 @@ class MainWindow(Gtk.ApplicationWindow):
         """Open the profiles window: choose, create, rename or delete one."""
         from . import gtk_profiles
 
-        self._profiles_window = gtk_profiles.show_profiles(self)
+        self._profiles_window = gtk_profiles.show_profiles(
+            self, on_switch=self._profile_switched
+        )
+
+    def _profile_switched(self, profile: Any) -> None:
+        """The choice is read at the next start, so say that instead of pretending."""
+        self._set_profile_name(
+            profile.name, was=getattr(self, "_session_profile", None)
+        )
+        self.toast(f"Restart Lumora to switch to {profile.name}.")
 
     def show_about(self) -> None:
         dialog = Gtk.AboutDialog(transient_for=self, modal=True)
@@ -12215,11 +12252,19 @@ class Application(Gtk.Application):
         # Copy pre-0.6.0 folders across before anything reads or writes
         # the config, so a first-launch save cannot overwrite it.
         platform_support.ensure_app_dirs()
-        self.settings = Settings()
+        # Pin the profile folder for the whole run: a switch only takes effect
+        # at the next start, so no store may open the other profile's files now.
+        profiles.start_session()
+        # The profile in use owns the settings and the library index.  The
+        # Default profile keeps the folder this install already uses, so an
+        # existing library is never moved or copied.
+        self.profiles = profiles.load()
+        self.profile_data_dir = profiles.active_data_dir()
+        self.settings = Settings(profiles.active_settings_path())
         self.client = ArchiveClient()
         self.download_dir = self._initial_download_dir()
         self.library_store = LibraryStore(
-            path=platform_support.data_dir() / "library.json",
+            path=self.profile_data_dir / "library.json",
             download_root=self.download_dir,
         )
         self.manager = DownloadManager(
