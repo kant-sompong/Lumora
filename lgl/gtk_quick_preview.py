@@ -30,6 +30,8 @@ from .util import human_size
 
 #: How long the pointer has to rest on a tile before the popover opens.
 HOVER_MS = 400
+#: How often the pointer is sampled, for when motion events do not arrive.
+POLL_MS = 100
 #: Cover box in the popover.
 COVER = (96, 128)
 #: How much of the description is shown: the first two non-empty lines.
@@ -171,6 +173,9 @@ class QuickPreview(Gtk.Popover):
         self._watched: list[Gtk.Window] = []
         self._hovered: Gtk.Widget | None = None
         self._tips: bool | None = None
+        self._poll = 0
+        self._motion_id = 0
+        self._last_at: tuple[int, int] | None = None
         self.set_modal(False)
         self.set_position(Gtk.PositionType.RIGHT)
         self.get_style_context().add_class("quick-preview")
@@ -237,16 +242,18 @@ class QuickPreview(Gtk.Popover):
         self._flow = flow
         flow.connect("key-press-event", self._on_key)
         flow.connect("map", self._watch_pointer)
+        flow.connect("unmap", self._on_unmap)
         self._watch_pointer()
 
     def _watch_pointer(self, *_args: Any) -> None:
-        """Listen for pointer motion on the window that owns the tiles.
+        """Follow the pointer on the window that owns the tiles.
 
         A ``Gtk.FlowBoxChild`` has no ``GdkWindow`` of its own, so it never sees
         crossing events however many masks it asks for — the window under the
-        pointer is the toplevel's.  Tracking motion there and asking which tile
-        is under the pointer is what makes the hover work with a real mouse.
+        pointer is the toplevel's.  Motion there is the fast path; the pointer
+        is also sampled, because some windows drop those events entirely.
         """
+        self._start_poll()
         flow = self._flow
         if flow is None:
             return
@@ -256,9 +263,88 @@ class QuickPreview(Gtk.Popover):
         toplevel.add_events(
             Gdk.EventMask.POINTER_MOTION_MASK | Gdk.EventMask.LEAVE_NOTIFY_MASK
         )
-        toplevel.connect("motion-notify-event", self._on_motion)
+        self._motion_id = toplevel.connect("motion-notify-event", self._on_motion)
         toplevel.connect("leave-notify-event", self._on_window_leave)
         self._watched.append(toplevel)
+        self._window = toplevel
+        try:
+            toplevel.connect("notify::is-active", self._on_active)
+        except TypeError:  # pragma: no cover - older GTK without the property
+            toplevel.connect("focus-out-event", self._on_focus_out)
+
+    # -- polling for the pointer ---------------------------------------------
+    def polling(self) -> bool:
+        """True while the pointer sampling source is running."""
+        return bool(self._poll)
+
+    def _wanted(self) -> bool:
+        """Poll only for a mapped, enabled view in the active window."""
+        flow = self._flow
+        if flow is None or not self.enabled():
+            return False
+        if not flow.get_mapped():
+            return False
+        toplevel = self._toplevel()
+        return toplevel is not None and toplevel.is_active()
+
+    def _start_poll(self) -> None:
+        """Sample the pointer position until something says to stop.
+
+        Motion events are only a fast path: some windows never see them with a
+        real X pointer, so the tile under the pointer is read from the seat too.
+        """
+        if self._poll or not self._wanted():
+            return
+        self._poll = GLib.timeout_add(POLL_MS, self._on_poll)
+
+    def _stop_poll(self) -> None:
+        self._last_at = None
+        if self._poll:
+            GLib.source_remove(self._poll)
+            self._poll = 0
+
+    def _on_poll(self) -> bool:
+        self._poll = 0
+        if not self._wanted():
+            return False
+        self._poll = GLib.timeout_add(POLL_MS, self._on_poll)
+        position = self._pointer()
+        if position is None:
+            return False
+        # Finding the tile costs a walk over every card, so only do it when
+        # the pointer has actually moved: an idle app weighs nothing.
+        if position == self._last_at:
+            return False
+        self._last_at = position
+        self._update(self._tile_at(*position))
+        return False
+
+    def _pointer(self) -> tuple[int, int] | None:
+        """The pointer's root position, or None when there is no pointer."""
+        display = Gdk.Display.get_default()
+        if display is None:
+            return None
+        device = None
+        if hasattr(display, "get_default_seat"):
+            seat = display.get_default_seat()
+            if seat is not None:
+                device = seat.get_pointer()
+        if device is None:  # pragma: no cover - older GTK without seats
+            manager = display.get_device_manager()
+            device = manager.get_client_pointer() if manager is not None else None
+        if device is None:  # pragma: no cover - no pointer device at all
+            return None
+        moved = device.get_position()
+        if len(moved) == 3:
+            return int(moved[1]), int(moved[2])
+        return int(moved[0]), int(moved[1])
+
+    def _on_unmap(self, *_args: Any) -> None:
+        """The grid is gone: nothing to look at until it is mapped again."""
+        self._stop_poll()
+        self._hovered = None
+        if self.get_visible():
+            self.dismiss(remember=False)
 
     def track(self, tile: Gtk.Widget) -> None:
         """Watch one tile; called from the view for every rendered card."""
@@ -267,6 +353,8 @@ class QuickPreview(Gtk.Popover):
         self._tiles[tile] = getattr(tile, "entry", None)
         tile.connect("key-press-event", self._on_key)
         self._tooltips([tile])
+        # A populate is also how the switch comes back on, so look again.
+        self._start_poll()
 
     def _tooltips(self, tiles: list[Gtk.Widget] | None = None) -> None:
         """Hide the cards' own tooltips while the popover says the same thing.
@@ -307,15 +395,21 @@ class QuickPreview(Gtk.Popover):
                 return tile
         return None
 
-    def _on_motion(self, _widget: Gtk.Widget, event: Gdk.EventMotion) -> bool:
-        """Start the hover timer when the pointer moves onto a new tile."""
+    def _update(self, tile: Gtk.Widget | None) -> None:
+        """The one place that reacts to which tile the pointer is over.
+
+        Motion events and the pointer poll both come through here, so they can
+        never disagree about the hovered tile.
+        """
         if self._tips != (not self.enabled()):
             self._tooltips()
         if not self.enabled():
-            return False
-        tile = self._tile_at(event.x_root, event.y_root)
+            if self.get_visible():
+                self.dismiss(remember=False)
+            return
+        self._start_poll()
         if tile is self._hovered:
-            return False
+            return
         self._hovered = tile
         if tile is None:
             # Empty space inside the window is a leave: the tile under the
@@ -323,17 +417,18 @@ class QuickPreview(Gtk.Popover):
             # never open the preview again.
             if self.get_visible():
                 self.dismiss(remember=False)
-            return False
+            return
         self._hover(tile)
+
+    def _on_motion(self, _widget: Gtk.Widget, event: Gdk.EventMotion) -> bool:
+        """Fast path: the window did deliver motion, so there is no poll lag."""
+        self._update(self._tile_at(event.x_root, event.y_root))
         return False
 
     def _on_window_leave(self, _widget: Gtk.Widget,
                          _event: Gdk.EventCrossing) -> bool:
         """The pointer left the window the tiles live in."""
-        if self.get_visible():
-            self.dismiss(remember=False)
-        else:
-            self._hovered = None
+        self._update(None)
         return False
 
     def _hover(self, tile: Gtk.Widget) -> None:
@@ -521,8 +616,15 @@ class QuickPreview(Gtk.Popover):
             toplevel.connect("focus-out-event", self._on_focus_out)
 
     def _on_active(self, window: Gtk.Window, _param: Any = None) -> None:
-        if not window.is_active() and self.get_visible():
-            self.dismiss()
+        """Do no work in the background: sample the pointer only when focused."""
+        if window.is_active():
+            self._start_poll()
+            return
+        self._stop_poll()
+        # Losing the window is like leaving it, not like pressing Escape.
+        self._hovered = None
+        if self.get_visible():
+            self.dismiss(remember=False)
 
     def _on_focus_out(self, _window: Gtk.Window,
                       _event: Gdk.EventFocus) -> bool:  # pragma: no cover - fallback

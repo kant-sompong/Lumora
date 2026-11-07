@@ -157,6 +157,20 @@ def park(device, window):
     pump(3)
 
 
+def focus(window):
+    """Give the window the focus, the way a window manager would.
+
+    Xvfb runs without a window manager, so the X focus is PointerRoot: the
+    window only reports itself active while the pointer is inside it, or once
+    it is focused here.  A real desktop focuses the window for the user.
+    """
+    window.present()
+    pump(2)
+    window.get_window().focus(Gdk.CURRENT_TIME)
+    pump(3)
+    return window.is_active()
+
+
 def hover(device, tile, window):
     """Move the real pointer onto a tile, from outside the window.
 
@@ -360,6 +374,79 @@ def test_escape_keeps_it_closed_while_the_pointer_stays(warping):
     pump(4)
 
     assert preview.get_visible() is False
+    window.destroy()
+
+
+def test_hover_opens_from_the_pointer_poll_alone(warping):
+    """Block our motion handler: the sample of the pointer still finds the tile.
+
+    This is the failing case from the review — a real X pointer whose motion
+    events do not reach the toplevel.  Nothing is emitted by hand; the pointer
+    is warped and the main loop is pumped.
+    """
+    window, _flow, preview, tiles, _view = library(delay=150)
+    assert focus(window) is True
+    gap = empty_spot(window, tiles)
+    assert gap is not None
+    # Both moves are inside the window, so its focus never changes and the
+    # poll keeps running: only the sample can see the tile under the pointer.
+    warp_to(warping, *gap)
+    assert wait_for(preview.polling)
+    window.handler_block(preview._motion_id)
+    try:
+        warp_to(warping, *tile_centre(tiles["game-0"], window))
+        assert wait_for(preview.get_visible), "the poll alone did not open it"
+        assert preview.get_relative_to() is tiles["game-0"]
+        assert preview.title.get_text() == "Hollow Knight"
+
+        # Off the tile is noticed by the same sample, not by a motion event.
+        warp_to(warping, *gap)
+        assert wait_for(lambda: not preview.get_visible())
+    finally:
+        window.handler_unblock(preview._motion_id)
+    window.destroy()
+
+
+def test_the_poll_stops_when_the_switch_goes_off(warping):
+    window, _flow, preview, _tiles, view = library(delay=0)
+    assert focus(window) is True
+    assert preview.polling() is True
+
+    view._settings["quick_preview"] = False
+
+    assert wait_for(lambda: not preview.polling(), 1.0), "still sampling"
+    window.destroy()
+
+
+def test_the_poll_stops_when_the_view_is_unmapped(warping):
+    window, flow, preview, _tiles, _view = library(delay=0)
+    assert focus(window) is True
+    assert preview.polling() is True
+
+    window.hide()
+    pump(3)
+    assert flow.get_mapped() is False
+    assert preview.polling() is False
+
+    window.show_all()
+    assert focus(window) is True
+    assert preview.polling() is True
+    window.destroy()
+
+
+def test_only_one_poll_runs_at_a_time(warping):
+    window, _flow, preview, _tiles, _view = library(delay=0)
+    assert focus(window) is True
+    preview._stop_poll()
+    preview._start_poll()
+    first = preview._poll
+    assert first
+
+    preview._start_poll()
+    preview._start_poll()
+
+    assert preview._poll == first
+    preview._stop_poll()
     window.destroy()
 
 
