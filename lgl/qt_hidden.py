@@ -20,6 +20,8 @@ from PySide6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QPushButton,
+    QSizePolicy,
+    QSpacerItem,
     QSpinBox,
     QVBoxLayout,
     QWidget,
@@ -128,6 +130,25 @@ class HiddenGemsPanel(QWidget):
         self.detail.setWordWrap(True)
         layout.addWidget(self.detail)
 
+        # Text lines keep their own height, and the stretch below only exists
+        # while there is no list to fill the page, so a failure stays compact
+        # instead of spreading the remaining lines down the window.
+        for text_label in (heading, blurb, self.cutoff_note, self.error,
+                           self.status, self.detail):
+            text_label.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
+        self._layout = layout
+        self._tail = QSpacerItem(0, 0, QSizePolicy.Minimum, QSizePolicy.Expanding)
+        self._tail_installed = False
+
+    def _compact(self, compact: bool) -> None:
+        """Keep the lines at the top when there is no list under them."""
+        if compact and not self._tail_installed:
+            self._layout.addItem(self._tail)
+            self._tail_installed = True
+        elif not compact and self._tail_installed:
+            self._layout.removeItem(self._tail)
+            self._tail_installed = False
+
     # -- saved thresholds ------------------------------------------------
     def _saved_score(self, fallback: int) -> int:
         saved = self.settings.get(MIN_SCORE_KEY) if self.settings is not None else None
@@ -200,6 +221,7 @@ class HiddenGemsPanel(QWidget):
         # A failure leaves one readable line, not empty boxes.
         self.list.setVisible(not failed)
         self.detail.setVisible(not failed)
+        self._compact(failed)
         if result.cutoff:
             source = (
                 "from the control" if result.max_popularity
@@ -225,6 +247,7 @@ class HiddenGemsPanel(QWidget):
         self.error.setVisible(True)
         self.list.setVisible(False)
         self.detail.setVisible(False)
+        self._compact(True)
 
     # -- behaviour ------------------------------------------------------
     def _on_selected(self, current: QListWidgetItem | None, _previous: Any = None) -> None:
