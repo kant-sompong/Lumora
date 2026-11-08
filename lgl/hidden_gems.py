@@ -306,7 +306,7 @@ def load_anime_lists(
             "errors": [],
             "from_cache": True,
         }
-    call = post or fetch_catalogue.__globals__["anilist_post"]
+    call = post or release_feed.anilist_post
     added: list[dict[str, Any]] = []
     completed: list[dict[str, Any]] = []
     errors: list[str] = []

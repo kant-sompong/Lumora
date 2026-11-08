@@ -128,6 +128,12 @@ class SeasonCompareDialog(QDialog):
         self._tail = QSpacerItem(0, 0, QSizePolicy.Minimum, QSizePolicy.Expanding)
         self._tail_installed = False
 
+        # Nothing is loaded until Compare is pressed, so no empty result box.
+        for widget in (self.summary, self.error, self.detail):
+            widget.setVisible(False)
+        for widget in list(self.section_heads.values()) + list(self.lists.values()):
+            widget.setVisible(False)
+
         close = QPushButton("Close", self)
         close.clicked.connect(self.accept)
         foot = QHBoxLayout()
@@ -210,6 +216,8 @@ class SeasonCompareDialog(QDialog):
         self.compare_btn.setEnabled(True)
         self._result = result
 
+        self.summary.setVisible(True)
+        self.detail.setVisible(True)
         self.summary.setText(result.summary)
         error = result.error_text
         self.error.setText(error)

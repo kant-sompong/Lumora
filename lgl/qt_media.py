@@ -551,14 +551,12 @@ class MediaPage(QWidget):
             bar.addWidget(btn)
         bar.addStretch(1)
 
-        self.provider_label = label("Provider", "mediaNote")
-        bar.addWidget(self.provider_label)
         self.provider_combo = QComboBox()
         self.provider_combo.setFixedWidth(120)
         self.provider_combo.setCursor(Qt.PointingHandCursor)
         self.provider_combo.setToolTip("Provider used to play movies and TV")
         self.provider_combo.currentIndexChanged.connect(self._provider_picked)
-        bar.addWidget(self.provider_combo)
+        self.provider_combo.setVisible(False)  # selection lives in the badge menu
         self.health_badge = QPushButton("")
         self.health_badge.setObjectName("mediaBadge")
         self.health_badge.setFlat(True)
@@ -906,7 +904,7 @@ class MediaPage(QWidget):
         def schedule() -> list[object]:
             result = feed()
             if not result.entries and result.errors:
-                raise RuntimeError("; ".join(result.errors))
+                raise RuntimeError("\n".join(result.errors))
             return list(result.entries)
 
         self.set_column_loaders({
@@ -1745,7 +1743,6 @@ class MediaPage(QWidget):
             max(0, self.provider_combo.findData(current))
         )
         self.provider_combo.blockSignals(False)
-        self.provider_label.setText("Anime provider" if anime else "Provider")
         self.provider_combo.setToolTip(
             "Provider used to play anime" if anime
             else "Provider used to play movies and TV"
@@ -1834,7 +1831,7 @@ class MediaPage(QWidget):
             line.addWidget(ms)
             line.addWidget(status, 1)
             self.health_rows.addWidget(row)
-        self.health_list.setVisible(bool(self.health_results))
+        self.health_list.setVisible(getattr(self, "_health_list_open", False))
         if self.health_results:
             reachable = sum(1 for entry in self.health_results if entry.get("ok"))
             self.health_note.setText(
@@ -1856,13 +1853,18 @@ class MediaPage(QWidget):
         menu.exec(self.health_badge.mapToGlobal(self.health_badge.rect().bottomLeft()))
 
     def _toggle_health_list(self) -> None:
-        self.health_list.setVisible(not self.health_list.isVisible())
+        self._health_list_open = not getattr(self, "_health_list_open", False)
+        self.health_list.setVisible(self._health_list_open and bool(self.health_results))
 
     def _update_badge(self) -> None:
         key = self._active_provider()
         for entry in getattr(self, "health_results", []):
             if entry.get("provider") == key:
-                self.health_badge.setText(provider_health.describe(entry))
+                text = provider_health.describe(entry)
+                self.health_badge.setText(text)
+                self.health_badge.setMinimumWidth(
+                    self.health_badge.fontMetrics().horizontalAdvance(text) + 26
+                )
                 return
         self.health_badge.setText("")
 

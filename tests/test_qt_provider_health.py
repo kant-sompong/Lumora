@@ -76,7 +76,7 @@ def test_active_provider_badge_shows_time(page):
     settings.set("provider_auto_select", False)
     widget.show_section("home")
     widget._apply_health(RESULTS)
-    assert widget.health_badge.text() == "ToFlix · 420 ms"
+    assert widget.health_badge.text() == "ToFlix 420 ms"
 
 
 def test_use_fastest_selects_the_quickest_reachable(page):
