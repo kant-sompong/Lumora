@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Callable, Iterable, Sequence
 
 from PySide6.QtCore import QRectF, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QPainter, QPixmap
+from PySide6.QtGui import QColor, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -551,21 +551,12 @@ class MediaPage(QWidget):
             bar.addWidget(btn)
         bar.addStretch(1)
 
-        self.provider_combo = QComboBox()
-        self.provider_combo.setFixedWidth(120)
-        self.provider_combo.setCursor(Qt.PointingHandCursor)
-        self.provider_combo.setToolTip("Provider used to play movies and TV")
-        self.provider_combo.currentIndexChanged.connect(self._provider_picked)
-        self.provider_combo.setVisible(False)  # selection lives in the badge menu
-        self.health_badge = QPushButton("")
-        self.health_badge.setObjectName("mediaBadge")
-        self.health_badge.setFlat(True)
-        self.health_badge.setCursor(Qt.PointingHandCursor)
-        self.health_badge.setToolTip(
-            "Provider health · click for Test connection and Use fastest"
-        )
-        self.health_badge.clicked.connect(self._show_badge_menu)
-        bar.addWidget(self.health_badge)
+        # One button: the current provider and its ping.  The menu behind it
+        # lists Auto, every provider of the active list, and Test connections.
+        self.provider_button = ProviderButton(self)
+        self.provider_button.clicked.connect(self._show_provider_menu)
+        bar.addWidget(self.provider_button)
+        self.health_badge = self.provider_button  # kept name: same single button
         # The AniList lookup is part of the search field now (as on Linux):
         # typing a title searches TMDB, MyAnimeList and AniList at once, so a
         # second "Lookup…" box beside it only asked for the same title twice.
@@ -1182,8 +1173,7 @@ class MediaPage(QWidget):
             self._player_return = None
         self._section = key
         self._artwork.clear()
-        if hasattr(self, "provider_combo"):
-            self._fill_provider_combo(key)
+        self._fill_provider_combo(key)
         for name, button in self._nav.items():
             button.setChecked(name == key)
         page = self._pages.get(key)
@@ -1731,31 +1721,19 @@ class MediaPage(QWidget):
 
     # provider picker -------------------------------------------------------
     def _fill_provider_combo(self, section: str) -> None:
-        """Movies use the streaming providers; Anime uses the anime ones."""
-        anime = section == "anime"
-        keys = streaming.ANIME_PROVIDERS if anime else streaming.PROVIDERS
-        current = self._anime_provider() if anime else self._provider()
-        self.provider_combo.blockSignals(True)
-        self.provider_combo.clear()
-        for key in keys:
-            self.provider_combo.addItem(streaming.LABELS.get(key, key), key)
-        self.provider_combo.setCurrentIndex(
-            max(0, self.provider_combo.findData(current))
-        )
-        self.provider_combo.blockSignals(False)
-        self.provider_combo.setToolTip(
-            "Provider used to play anime" if anime
-            else "Provider used to play movies and TV"
-        )
-        if hasattr(self, "health_badge"):
-            self._update_badge()
+        """Name kept for the callers: it now updates the one provider button."""
+        current = self._anime_provider() if section == "anime" else self._provider()
+        button = getattr(self, "provider_button", None)
+        if button is not None:
+            button.setToolTip(
+                "Provider used to play anime · click to change" if section == "anime"
+                else "Provider used to play movies and TV · click to change"
+            )
+        self._update_badge()
 
-    def _provider_picked(self, _index: int) -> None:
-        """Persist the pick so the next Watch Now uses it straight away."""
-        if self.settings is None:
-            return
-        key = self.provider_combo.currentData()
-        if not key:
+    def _choose_provider(self, key: str) -> None:
+        """Persist a provider picked from the menu, exactly as the combo did."""
+        if self.settings is None or not key:
             return
         if self._section == "anime":
             self.settings.set("anime_streaming_provider", key)
@@ -1789,6 +1767,8 @@ class MediaPage(QWidget):
 
     def test_connection(self) -> None:
         """Ask every provider how fast it answers (three attempts each)."""
+        self._measuring = True
+        self._update_badge()
         self.health_note.setText("Testing providers…")
         if not self.health.start(force=True):
             self.health_note.setText("A health check is already running.")
@@ -1797,6 +1777,7 @@ class MediaPage(QWidget):
         self.test_connection()
 
     def _apply_health(self, results: object) -> None:
+        self._measuring = False
         items = [item for item in (results or []) if isinstance(item, dict)]
         self.health_results = provider_health.sort_results(items)
         self._render_health_rows()
@@ -1841,16 +1822,63 @@ class MediaPage(QWidget):
     def _active_provider(self) -> str:
         return self._anime_provider() if self._section == "anime" else self._provider()
 
-    def _show_badge_menu(self) -> None:
-        """Test connection / Use fastest, from the one badge in the header."""
+    def _provider_row_text(self, key: str) -> str:
+        """``Name  ·  180 ms`` / ``offline`` / ``not tested`` for one menu row."""
+        name = streaming.LABELS.get(key, key)
+        entry = next(
+            (item for item in getattr(self, "health_results", [])
+             if item.get("provider") == key),
+            None,
+        )
+        if entry is None:
+            return f"{name}  ·  not tested"
+        if not entry.get("ok"):
+            return f"{name}  ·  offline"
+        ms = entry.get("ms")
+        return f"{name}  ·  {ms} ms" if isinstance(ms, int) else f"{name}  ·  not tested"
+
+    def _provider_menu(self) -> object:
+        """Auto, one row per provider of this section, then Test connections."""
         from PySide6.QtWidgets import QMenu
 
         menu = QMenu(self)
-        menu.addAction("Test connection", self.test_connection)
-        menu.addAction("Use fastest", self.use_fastest)
+        fastest = (
+            provider_health.fastest(self.health_results, self._section_providers())
+            if self.health_results else None
+        )
+        auto_text = "Auto (fastest)"
+        if fastest:
+            auto_text = f"Auto (fastest: {streaming.LABELS.get(fastest, fastest)})"
+        auto = menu.addAction(auto_text)
+        auto.setCheckable(True)
+        auto.setChecked(self.health.enabled())
+        auto.triggered.connect(lambda _checked=False: self._toggle_auto())
         menu.addSeparator()
-        menu.addAction("Show measured providers", self._toggle_health_list)
-        menu.exec(self.health_badge.mapToGlobal(self.health_badge.rect().bottomLeft()))
+        current = self._active_provider()
+        for key in self._section_providers():
+            action = menu.addAction(self._provider_row_text(key))
+            action.setCheckable(True)
+            action.setChecked(key == current)
+            action.triggered.connect(lambda _checked=False, name=key: self._choose_provider(name))
+        menu.addSeparator()
+        test = menu.addAction("Test connections now")
+        test.triggered.connect(self.test_connection)
+        return menu
+
+    def _toggle_auto(self) -> None:
+        if self.settings is None:
+            return
+        self.settings.set(provider_health.AUTO_KEY, not self.health.enabled())
+        health = getattr(self, "health", None)
+        if health is not None:
+            health.mark_manual() if not health.enabled() else None
+        self._update_badge()
+
+    def _show_provider_menu(self) -> None:
+        menu = self._provider_menu()
+        menu.exec(self.provider_button.mapToGlobal(self.provider_button.rect().bottomLeft()))
+
+    _show_badge_menu = _show_provider_menu
 
     def _toggle_health_list(self) -> None:
         self._health_list_open = not getattr(self, "_health_list_open", False)
@@ -1858,15 +1886,23 @@ class MediaPage(QWidget):
 
     def _update_badge(self) -> None:
         key = self._active_provider()
-        for entry in getattr(self, "health_results", []):
-            if entry.get("provider") == key:
-                text = provider_health.describe(entry)
-                self.health_badge.setText(text)
-                self.health_badge.setMinimumWidth(
-                    self.health_badge.fontMetrics().horizontalAdvance(text) + 26
-                )
-                return
-        self.health_badge.setText("")
+        name = streaming.LABELS.get(key, key)
+        entry = next(
+            (item for item in getattr(self, "health_results", [])
+             if item.get("provider") == key),
+            None,
+        )
+        button = getattr(self, "provider_button", None)
+        if button is None:
+            return
+        if getattr(self, "_measuring", False) and entry is None:
+            button.set_state(name, "pending")
+        elif entry is None:
+            button.set_state(name, "unknown")
+        elif not entry.get("ok"):
+            button.set_state(name, "offline")
+        else:
+            button.set_state(name, "ok", entry.get("ms"))
 
     def _auto_select(self) -> None:
         """Apply the fastest provider when automatic selection allows it."""
@@ -2032,6 +2068,72 @@ class MediaPage(QWidget):
         card = getattr(self, "_detail_card", None)
         if card is not None and card.tmdb_id:
             platform_support.open_url(f"https://www.themoviedb.org/{card.kind}/{card.tmdb_id}")
+
+
+class ProviderButton(QPushButton):
+    """Current provider and its ping, with a painted dot; click opens the menu."""
+
+    COLOURS = {"ok": "#4caf72", "slow": "#e0a458", "offline": "#8a8f98",
+               "unknown": "#8a8f98", "pending": "#e0a458"}
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("mediaBadge")
+        self.setFlat(True)
+        self.setCursor(Qt.PointingHandCursor)
+        self.setToolTip("Provider · click to change or test connections")
+        self._name = ""
+        self._suffix = ""
+        self._tone = "unknown"
+        self.setMinimumWidth(150)
+
+    def set_state(self, name: str, status: str = "unknown", ms: object = None) -> None:
+        self._name = str(name or "Provider")
+        if status == "ok":
+            number = int(ms or 0)
+            self._suffix = f" · {number} ms"
+            self._tone = "ok" if number < 300 else ("slow" if number <= 800 else "offline")
+        elif status == "offline":
+            self._suffix = ": offline"
+            self._tone = "offline"
+        elif status == "pending":
+            self._suffix = " · …"
+            self._tone = "pending"
+        else:
+            self._suffix = " · not tested"
+            self._tone = "unknown"
+        text = f"{self._name}{self._suffix}"
+        super().setText(text)
+        self.setMinimumWidth(max(150, self.fontMetrics().horizontalAdvance(text) + 34))
+
+    def paintEvent(self, event) -> None:  # noqa: N802 - Qt API
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setPen(QPen(QColor(255, 255, 255, 26), 1))
+        painter.setBrush(QColor(255, 255, 255, 8) if self.underMouse() else Qt.NoBrush)
+        painter.drawRoundedRect(QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5), 7, 7)
+        dot = QRectF(11, self.height() / 2 - 3, 6, 6)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QColor(self.COLOURS.get(self._tone, "#8a8f98")))
+        painter.drawEllipse(dot)
+        metrics = self.fontMetrics()
+        text_left = dot.right() + 7
+        suffix_width = metrics.horizontalAdvance(self._suffix)
+        name_room = max(20, self.width() - int(text_left) - suffix_width - 12)
+        name = metrics.elidedText(self._name, Qt.ElideRight, name_room)
+        painter.setPen(QColor(self.palette().color(self.foregroundRole())))
+        painter.drawText(
+            QRectF(text_left, 0, self.width() - text_left - 8, self.height()),
+            Qt.AlignLeft | Qt.AlignVCenter, name + self._suffix,
+        )
+
+    def enterEvent(self, event) -> None:  # noqa: N802
+        self.update()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event) -> None:  # noqa: N802
+        self.update()
+        super().leaveEvent(event)
 
 
 class _Dot(QWidget):

@@ -76,7 +76,7 @@ def test_active_provider_badge_shows_time(page):
     settings.set("provider_auto_select", False)
     widget.show_section("home")
     widget._apply_health(RESULTS)
-    assert widget.health_badge.text() == "ToFlix 420 ms"
+    assert widget.health_badge.text() == "ToFlix · 420 ms"
 
 
 def test_use_fastest_selects_the_quickest_reachable(page):
@@ -84,7 +84,7 @@ def test_use_fastest_selects_the_quickest_reachable(page):
     widget._apply_health(RESULTS)
     widget.fastest_btn.click()
     assert settings.get("streaming_provider") == "vidy"
-    assert widget.provider_combo.currentData() == "vidy"
+    assert widget._provider() == "vidy"
     assert "Vidy" in widget.health_note.text()
 
 
@@ -124,8 +124,7 @@ def test_anime_use_fastest_ignores_providers_without_an_anime_route(page):
 def test_manual_pick_switches_automatic_selection_off(page):
     widget, settings = page
     widget.show_section("home")
-    index = widget.provider_combo.findData("moonflix")
-    widget.provider_combo.setCurrentIndex(index)
+    widget._choose_provider("moonflix")
     assert settings.get("provider_auto_select") is False
     assert widget.health.manual is True
     assert widget.health_note.text() == ph.MANUAL_MESSAGE
