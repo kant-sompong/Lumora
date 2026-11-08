@@ -34,6 +34,7 @@ from . import (
     mal,
     media_history,
     platform_support,
+    provider_health,
     streaming,
     tmdb,
     trailer_data,
@@ -501,6 +502,8 @@ class MediaPage(QWidget):
 
     configure_requested = Signal()
     surprise_requested = Signal()
+    #: Emitted from the health-check worker thread; Qt queues it to the GUI.
+    health_ready = Signal(list)
 
     def __init__(self, settings: Settings | None = None,
                  cache_root: Path | None = None,
@@ -563,6 +566,9 @@ class MediaPage(QWidget):
         self.provider_combo.setToolTip("Provider used to play movies and TV")
         self.provider_combo.currentIndexChanged.connect(self._provider_picked)
         bar.addWidget(self.provider_combo)
+        self.health_badge = label("", "mediaNote")
+        self.health_badge.setToolTip("Measured response time of the active provider")
+        bar.addWidget(self.health_badge)
         # The AniList lookup is part of the search field now (as on Linux):
         # typing a title searches TMDB, MyAnimeList and AniList at once, so a
         # second "Lookup…" box beside it only asked for the same title twice.
@@ -579,6 +585,49 @@ class MediaPage(QWidget):
         stop.clicked.connect(lambda: self.search.clear())
         bar.addWidget(stop)
         root.addWidget(top)
+
+        # Provider health: one compact strip, then the measured list of
+        # providers below it.  Nothing here starts a request by itself.
+        self.health_results: list[dict] = []
+        self.health_bar = QFrame()
+        self.health_bar.setObjectName("mediaHealthBar")
+        health_outer = QVBoxLayout(self.health_bar)
+        health_outer.setContentsMargins(24, 6, 24, 8)
+        health_outer.setSpacing(6)
+        health_controls = QHBoxLayout()
+        health_controls.setSpacing(10)
+        self.health_btn = QPushButton("Test connection")
+        self.health_btn.setObjectName("suggested")
+        self.health_btn.setCursor(Qt.PointingHandCursor)
+        self.health_btn.setToolTip("Contact each provider once and measure the reply")
+        self.health_btn.clicked.connect(self.test_connection)
+        self.health_refresh = QPushButton("Refresh")
+        self.health_refresh.setCursor(Qt.PointingHandCursor)
+        self.health_refresh.setToolTip("Force a new health check")
+        self.health_refresh.clicked.connect(self.refresh_health)
+        self.fastest_btn = QPushButton("Use fastest")
+        self.fastest_btn.setCursor(Qt.PointingHandCursor)
+        self.fastest_btn.setToolTip("Select the quickest reachable provider")
+        self.fastest_btn.clicked.connect(self.use_fastest)
+        self.health_note = label("", "mediaNote")
+        health_controls.addWidget(self.health_btn)
+        health_controls.addWidget(self.health_refresh)
+        health_controls.addWidget(self.fastest_btn)
+        health_controls.addWidget(self.health_note, 1)
+        health_outer.addLayout(health_controls)
+        self.health_list = QWidget()
+        self.health_rows = QVBoxLayout(self.health_list)
+        self.health_rows.setContentsMargins(0, 0, 0, 0)
+        self.health_rows.setSpacing(2)
+        self.health_list.setVisible(False)
+        health_outer.addWidget(self.health_list)
+        root.addWidget(self.health_bar)
+        self.health_ready.connect(self._apply_health)
+        self.health = provider_health.AutoSelect(
+            settings, on_results=self.health_ready.emit, token="qt-media"
+        )
+        if settings is not None:
+            QTimer.singleShot(3000, self._startup_health)
 
         self.stack = QStackedWidget()
         root.addWidget(self.stack, 1)
@@ -889,6 +938,10 @@ class MediaPage(QWidget):
             self._render_list()
         elif key == "history":
             self._render_history()
+        # Opening Media reuses a fresh cache and only re-checks when it is old.
+        if getattr(self, "_health_opened", False):
+            self._startup_health()
+        self._health_opened = True
         if not self._loaded:
             self._loaded = True
             QTimer.singleShot(0, self.reload)
@@ -1434,6 +1487,8 @@ class MediaPage(QWidget):
             "Provider used to play anime" if anime
             else "Provider used to play movies and TV"
         )
+        if hasattr(self, "health_badge"):
+            self._update_badge()
 
     def _provider_picked(self, _index: int) -> None:
         """Persist the pick so the next Watch Now uses it straight away."""
@@ -1446,6 +1501,141 @@ class MediaPage(QWidget):
             self.settings.set("anime_streaming_provider", key)
         else:
             self.settings.set("streaming_provider", key)
+        # A manual pick wins for the rest of the session.
+        health = getattr(self, "health", None)
+        if health is not None:
+            health.mark_manual()
+            self.health_note.setText(provider_health.MANUAL_MESSAGE)
+            self._update_badge()
+
+    # provider health -------------------------------------------------------
+    def _section_providers(self) -> tuple[str, ...]:
+        if self._section == "anime":
+            return tuple(
+                key for key in streaming.ANIME_PROVIDERS
+                if key == streaming.ANI_PROVIDER or streaming.has_anime_route(key)
+            )
+        return streaming.PROVIDERS
+
+    def _playing(self) -> bool:
+        player = getattr(self, "player", None)
+        return player is not None and self.stack.currentWidget() is player
+
+    def _startup_health(self) -> None:
+        """Steady, non-blocking check after launch; a fresh cache is reused."""
+        if self.settings is None or not self.health.enabled():
+            return
+        self.health.start()
+
+    def test_connection(self) -> None:
+        """Ask every provider how fast it answers (three attempts each)."""
+        self.health_note.setText("Testing providers…")
+        if not self.health.start(force=True):
+            self.health_note.setText("A health check is already running.")
+
+    def refresh_health(self) -> None:
+        self.test_connection()
+
+    def _apply_health(self, results: object) -> None:
+        items = [item for item in (results or []) if isinstance(item, dict)]
+        self.health_results = provider_health.sort_results(items)
+        self._render_health_rows()
+        self._update_badge()
+        self._auto_select()
+
+    def _render_health_rows(self) -> None:
+        while self.health_rows.count():
+            item = self.health_rows.takeAt(0)
+            widget = item.widget() if item is not None else None
+            if widget is not None:
+                widget.deleteLater()
+        for entry in self.health_results:
+            row = QWidget()
+            line = QHBoxLayout(row)
+            line.setContentsMargins(0, 0, 0, 0)
+            line.setSpacing(14)
+            name = label(streaming.LABELS.get(entry["provider"], entry["provider"]))
+            name.setFixedWidth(120)
+            ms = label(
+                f"{entry['ms']} ms" if entry.get("ms") is not None else "--"
+            )
+            ms.setFixedWidth(80)
+            status = label(str(entry.get("status") or ""), "mediaNote")
+            reason = entry.get("reason") or ""
+            if reason:
+                status.setText(f"{status.text()} · {reason}")
+            for widget in (name, ms, status):
+                if not entry.get("ok"):
+                    widget.setStyleSheet("color: #8a8f98;")
+            line.addWidget(name)
+            line.addWidget(ms)
+            line.addWidget(status, 1)
+            self.health_rows.addWidget(row)
+        self.health_list.setVisible(bool(self.health_results))
+        if self.health_results:
+            reachable = sum(1 for entry in self.health_results if entry.get("ok"))
+            self.health_note.setText(
+                f"{reachable} of {len(self.health_results)} providers reachable"
+            )
+
+    def _active_provider(self) -> str:
+        return self._anime_provider() if self._section == "anime" else self._provider()
+
+    def _update_badge(self) -> None:
+        key = self._active_provider()
+        for entry in getattr(self, "health_results", []):
+            if entry.get("provider") == key:
+                self.health_badge.setText(provider_health.describe(entry))
+                return
+        self.health_badge.setText("")
+
+    def _auto_select(self) -> None:
+        """Apply the fastest provider when automatic selection allows it."""
+        if not self.health_results:
+            return
+        if not provider_health.should_auto_apply(
+            enabled=self.health.enabled(), playing=self._playing(),
+            manual=self.health.manual,
+        ):
+            return
+        key = provider_health.fastest(self.health_results, self._section_providers())
+        if key is None:
+            self.health_note.setText(provider_health.NO_PROVIDER_MESSAGE)
+            return
+        if key != self._active_provider():
+            self._select_provider(key)
+
+    def _select_provider(self, key: str) -> None:
+        if self.settings is not None:
+            field_name = (
+                "anime_streaming_provider" if self._section == "anime"
+                else "streaming_provider"
+            )
+            self.settings.set(field_name, key)
+        self._fill_provider_combo(self._section)
+        self._update_badge()
+
+    def use_fastest(self) -> None:
+        """Pick the quickest reachable provider for this section; no playback."""
+        results = self.health_results
+        if not results:
+            self.health_note.setText(
+                "Test the providers first, then Use fastest can pick one."
+            )
+            return
+        key = provider_health.fastest(results, self._section_providers())
+        if key is None:
+            self.health_note.setText(provider_health.NO_PROVIDER_MESSAGE)
+            return
+        self._select_provider(key)
+        self.health_note.setText(
+            f"Using {streaming.LABELS.get(key, key)} for "
+            f"{'anime' if self._section == 'anime' else 'movies and TV'}."
+        )
+
+    def closeEvent(self, event) -> None:  # noqa: N802 - Qt naming
+        self.health.shutdown()
+        super().closeEvent(event)
 
     def _provider(self) -> str:
         default = streaming.DEFAULT_PROVIDER

@@ -54,6 +54,7 @@ from . import gtk_shortcuts
 from . import kryoto  # noqa: E402
 from . import magnet as magnetlib  # noqa: E402
 from . import metadata as metalib  # noqa: E402
+from . import provider_health  # noqa: E402
 from . import theme_gtk  # noqa: E402
 from . import view_prefs
 from .gtk_quick_preview import QuickPreview  # noqa: E402
@@ -10200,6 +10201,30 @@ class SettingsDialog(Gtk.Dialog):
             self._media_anime_provider,
         ), False, False, 0)
 
+        auto_on = bool(self._settings.get(provider_health.AUTO_KEY, True))
+        self._media_auto_provider = Gtk.Switch()
+        self._media_auto_provider.set_active(auto_on)
+        self._media_auto_provider.connect(
+            "notify::active", self._on_media_auto_provider
+        )
+        box.pack_start(self._switch_row(
+            "Choose the fastest provider automatically",
+            "Measures every provider and uses whichever answers quickest.",
+            self._media_auto_provider,
+        ), False, False, 0)
+
+        self._media_pinned_provider = Gtk.Switch()
+        self._media_pinned_provider.set_active(not auto_on)
+        self._media_pinned_provider.connect(
+            "notify::active", self._on_media_pinned_provider
+        )
+        box.pack_start(self._switch_row(
+            "I pick the provider myself",
+            "Keeps the provider you selected; picking one yourself also "
+            "switches the automatic choice off.",
+            self._media_pinned_provider,
+        ), False, False, 0)
+
         playback_heading = Gtk.Label(label="Playback", xalign=0)
         playback_heading.set_margin_top(8)
         playback_heading.get_style_context().add_class("fact-name")
@@ -10453,9 +10478,31 @@ class SettingsDialog(Gtk.Dialog):
         self._mal_status.set_text("The saved MyAnimeList Client ID was removed.")
 
 
+    def _on_media_auto_provider(self, switch, _param=None) -> None:
+        automatic = bool(switch.get_active())
+        self._settings.set(provider_health.AUTO_KEY, automatic)
+        if bool(self._media_pinned_provider.get_active()) == automatic:
+            self._media_pinned_provider.set_active(not automatic)
+
+    def _on_media_pinned_provider(self, switch, _param=None) -> None:
+        automatic = not bool(switch.get_active())
+        self._settings.set(provider_health.AUTO_KEY, automatic)
+        if bool(self._media_auto_provider.get_active()) != automatic:
+            self._media_auto_provider.set_active(automatic)
+
+    def _pin_provider(self) -> None:
+        """A manual pick turns automatic selection off."""
+        self._settings.set(provider_health.AUTO_KEY, False)
+        if hasattr(self, "_media_auto_provider"):
+            if self._media_auto_provider.get_active():
+                self._media_auto_provider.set_active(False)
+            if not self._media_pinned_provider.get_active():
+                self._media_pinned_provider.set_active(True)
+
     def _on_media_provider_changed(self, combo) -> None:
         from . import streaming
         self._settings.set("streaming_provider", combo.get_active_id() or streaming.DEFAULT_PROVIDER)
+        self._pin_provider()
 
 
     def _on_media_anime_provider_changed(self, combo) -> None:
@@ -10464,6 +10511,7 @@ class SettingsDialog(Gtk.Dialog):
             "anime_streaming_provider",
             streaming.clean_anime_provider(combo.get_active_id() or streaming.DEFAULT_ANIME_PROVIDER),
         )
+        self._pin_provider()
 
 
     def _on_media_audio_changed(self, combo) -> None:

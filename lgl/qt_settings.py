@@ -32,7 +32,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from . import __version__, mal, platform_support, streaming, theme, tmdb, view_prefs
+from . import (
+    __version__, mal, platform_support, provider_health, streaming, theme, tmdb,
+    view_prefs,
+)
 from .qt_widgets import Toast, label, run_async
 from .settings import Settings
 from .sources import RawgSource
@@ -514,6 +517,17 @@ class SettingsDialog(QDialog):
 
         run_async(work, done, failed)
 
+    def _provider_mode(self, automatic: bool) -> None:
+        """Persist the mode and keep the two checkboxes in step."""
+        automatic = bool(automatic)
+        self.settings.set(provider_health.AUTO_KEY, automatic)
+        for box, value in ((self._auto_provider, automatic),
+                           (self._manual_provider, not automatic)):
+            if box.isChecked() != value:
+                box.blockSignals(True)
+                box.setChecked(value)
+                box.blockSignals(False)
+
     def _clear_provider(self, key: str) -> None:
         self.settings.clear_api_key(key)
         self._provider_fields[key].clear()
@@ -563,6 +577,30 @@ class SettingsDialog(QDialog):
             "Provider used for anime playback. ani.pm plays from an AniList or "
             "MyAnimeList id and needs no key (https://ani.pm/developers).",
             self._anime_provider,
+        ))
+
+        # Two mutually exclusive modes; both write the same setting.
+        auto_on = bool(self.settings.get(provider_health.AUTO_KEY, True))
+        self._auto_provider = QCheckBox()
+        self._auto_provider.setChecked(auto_on)
+        self._manual_provider = QCheckBox()
+        self._manual_provider.setChecked(not auto_on)
+        self._auto_provider.toggled.connect(
+            lambda on: self._provider_mode(bool(on))
+        )
+        self._manual_provider.toggled.connect(
+            lambda on: self._provider_mode(not bool(on))
+        )
+        column.addWidget(SettingRow(
+            "Choose the fastest provider automatically",
+            "Test the providers at launch and use whichever answers quickest.",
+            self._auto_provider,
+        ))
+        column.addWidget(SettingRow(
+            "I pick the provider myself",
+            "Keep the provider you select; a manual pick also turns the "
+            "automatic choice off.",
+            self._manual_provider,
         ))
 
         column.addWidget(label("Playback", "settLabel"))
