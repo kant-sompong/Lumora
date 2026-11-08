@@ -34,6 +34,7 @@ from PySide6.QtWidgets import (
 )
 
 from . import browse_filters
+from . import discovery
 from . import platform_support
 from .archive import ArchiveClient, ArchiveItem, GameSummary
 from .qt_archive import (
@@ -52,6 +53,7 @@ from .qt_archive import (
     thumb_url,
     tile_meta,
 )
+from .qt_feed import PosterRow
 from .qt_icons import icon, paint_icon
 from .qt_widgets import (
     CheckRow,
@@ -930,18 +932,24 @@ class BrowsePage(QWidget):
     selection_changed = Signal(bool)
     count_changed = Signal(int)
     catalog_download_requested = Signal(str)
+    #: A poster in one of the discovery rows was clicked.
+    item_requested = Signal(object)
 
     def __init__(self, client: ArchiveClient | None = None,
                  cache_root: Path | None = None,
                  formats_for: Callable[[str], Sequence[str]] | None = None,
                  catalog: object | None = None,
-                 settings: object | None = None) -> None:
+                 settings: object | None = None,
+                 rows_provider: Callable[[], Sequence[object]] | None = None,
+                 liked_provider: Callable[[], Sequence[str]] | None = None) -> None:
         super().__init__()
         self.client = client
         self.catalog = catalog
         self.settings = settings
         self._cache_root = cache_root
         self._formats_for = formats_for or (lambda _identifier: ())
+        self._rows_provider = rows_provider
+        self._liked_provider = liked_provider
         self._games: list[GameSummary] = []
         #: The archive collection and the imported catalogue are kept apart:
         #: either can be replaced without losing the other.
@@ -1025,6 +1033,21 @@ class BrowsePage(QWidget):
         self.shelves_column.setContentsMargins(0, 4, 0, 10)
         self.shelves_column.setSpacing(6)
         self.shelves_host.hide()
+
+        # Two ranked rows from what the window already holds (the library and
+        # the cards it loaded); nothing here starts a request.
+        self.recommended_row = PosterRow(
+            "Recommended for you", "Close to what you already like", view_all=False
+        )
+        self.recommended_row.setObjectName("browseRecommendedRow")
+        self.recommended_row.item_clicked.connect(self.item_requested.emit)
+        column.addWidget(self.recommended_row)
+        self.gems_row = PosterRow(
+            "Hidden gems", "Well rated, easy to miss", view_all=False
+        )
+        self.gems_row.setObjectName("browseHiddenGemsRow")
+        self.gems_row.item_clicked.connect(self.item_requested.emit)
+        column.addWidget(self.gems_row)
         column.addWidget(self.shelves_host)
         column.addWidget(self.grid_host)
         self.list_host = QWidget()
@@ -1222,6 +1245,7 @@ class BrowsePage(QWidget):
                      if format_matches(self._formats_for(g.identifier), self.filters.format)]
         self._shown = sort_games(shown, self._sort_key, self._descending)
         self._limit = ROW_LIMIT
+        self.refresh_rows()
         self._render_shelves()
         if self._view == "grid":
             self.list_host.hide()
@@ -1349,6 +1373,31 @@ class BrowsePage(QWidget):
         self._render_shelves()
         if self._cards:
             self._render()
+
+    def refresh_rows(self) -> None:
+        """Fill the two discovery rows from local rows; hide them when empty."""
+        provider = self._rows_provider
+        rows: list[dict] = []
+        if provider is not None:
+            try:
+                rows = [dict(row) for row in (provider() or []) if isinstance(row, dict)]
+            except Exception:  # noqa: BLE001 - a broken row must not break Browse
+                rows = []
+        liked = list(self._liked_provider() or []) if self._liked_provider else []
+        for row in rows:
+            row["meta"] = str(row.get("meta") or self._row_meta(row))
+        self.recommended_row.set_cards(discovery.recommend(rows, liked))
+        self.gems_row.set_cards(discovery.hidden_gems(rows))
+
+    @staticmethod
+    def _row_meta(row: dict) -> str:
+        """The dim line under a poster: the year, then the first genre."""
+        genres = row.get("genres") or ()
+        if isinstance(genres, str):
+            genres = [part for part in genres.replace(";", ",").split(",")]
+        first = next((str(part).strip() for part in genres if str(part).strip()), "")
+        year = str(row.get("year") or "").strip()
+        return " · ".join(part for part in (year, first) if part)
 
     def _render_shelves(self) -> None:
         """Custom shelves above the grid, one row of titles each."""

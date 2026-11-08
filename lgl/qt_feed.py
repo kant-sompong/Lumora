@@ -59,6 +59,13 @@ class _Arrow(QPushButton):
         self.setIcon(icon(name, 15, color("muted"), 1.9))
 
 
+def _field(card: Any, name: str) -> str:
+    """One text field from a poster card or from a plain row mapping."""
+    if isinstance(card, dict):
+        return str(card.get(name) or "")
+    return str(getattr(card, name, "") or "")
+
+
 def _simple_poster(card: Any) -> QWidget:
     """Fallback poster for callers without their own card widget."""
     frame = QFrame()
@@ -67,14 +74,14 @@ def _simple_poster(card: Any) -> QWidget:
     column = QVBoxLayout(frame)
     column.setContentsMargins(0, 0, 0, 0)
     column.setSpacing(0)
-    title = str(getattr(card, "title", "") or "Untitled")
+    title = _field(card, "title") or "Untitled"
     cover = CoverArt(150, 225, radius=6, crop=True, title=title)
     column.addWidget(cover)
     name = ElideLabel(title)
     name.setObjectName("posterTitle")
     name.setContentsMargins(0, 8, 0, 0)
     column.addWidget(name)
-    meta = ElideLabel(str(getattr(card, "meta", "") or "—"))
+    meta = ElideLabel(_field(card, "meta") or "—")
     meta.setObjectName("posterMeta")
     column.addWidget(meta)
     return frame

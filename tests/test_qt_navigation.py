@@ -18,7 +18,7 @@ pytest.importorskip("PySide6.QtWidgets")
 
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
-from lgl import nav_layout, palette as palette_lib, qt_main  # noqa: E402
+from lgl import nav_layout, palette as palette_lib, qt_browse, qt_main  # noqa: E402
 from lgl.settings import Settings  # noqa: E402
 
 ARTIFACTS = Path(__file__).resolve().parents[1] / "artifacts"
@@ -53,33 +53,64 @@ def tab_texts(widget) -> list[str]:
     return [widget.tabText(index) for index in range(widget.count())]
 
 
-def test_the_rail_lists_discover_between_library_and_media(window, app):
-    assert list(window.rail_buttons)[:5] == [
-        "browse", "library", "discover", "media", "downloads",
-    ]
-    window.rail_buttons["discover"].clicked.emit()
-    pump(app)
-    assert window._current == "discover"
-    assert window.stack.currentWidget() is window.discover
+def test_the_rail_has_no_discover_entry(window):
+    assert list(window.rail_buttons)[:4] == ["browse", "library", "media", "downloads"]
+    assert "discover" not in window.rail_buttons
+    assert not hasattr(window, "discover")
 
 
-def test_discover_shows_its_five_tabs_and_switches_them(window, app):
-    assert tab_texts(window.discover.tabs) == [
-        "For you", "Hidden gems", "More like this", "Complete the set", "Anime gems",
+def test_the_palette_has_no_discover_command():
+    commands = palette_lib.commands()
+    keys = [command.key for command in commands]
+
+    assert "page.discover" not in keys
+    assert [key for key in keys if key.startswith("tab.discover")] == []
+    assert not any(command.group == "Discover" for command in commands)
+
+
+def test_browse_has_two_discovery_rows_filled_from_the_library(app):
+    rows = [
+        {"key": "a", "title": "Alpha", "genres": ["RPG"], "rating": 9.0,
+         "favorite": True},
+        {"key": "b", "title": "Beta", "genres": ["RPG"], "rating": 8.0,
+         "popularity": 5},
+        {"key": "c", "title": "Gamma", "genres": ["RPG", "Puzzle"], "rating": 4.0,
+         "popularity": 60},
     ]
-    window.show_place("discover", "anime-gems")
+    page = qt_browse.BrowsePage(rows_provider=lambda: rows, liked_provider=lambda: ["a"])
+    page.set_games([])
+
+    assert [card["title"] for card in page.recommended_row.cards()] == ["Beta", "Gamma"]
+    assert [card["title"] for card in page.gems_row.cards()] == ["Alpha", "Beta"]
+    assert not page.recommended_row.isHidden()
+    assert not page.gems_row.isHidden()
+
+
+def test_the_discovery_rows_stay_hidden_without_local_data(app):
+    page = qt_browse.BrowsePage()
+    page.set_games([])
+
+    assert page.recommended_row.isHidden()
+    assert page.gems_row.isHidden()
+
+
+def test_the_library_has_a_complete_the_set_tab_with_an_empty_state(window, app):
+    assert "Complete the set" in tab_texts(window.library.tabs)
+
+    window.show_place("library", "complete-the-set")
     pump(app)
-    assert window.discover.tabs.currentIndex() == 4
-    window.show_place("discover", "for-you")
-    pump(app)
-    assert window.discover.tabs.currentIndex() == 0
-    assert window.discover.surprise_btn.text() == "Surprise me"
+
+    assert window.library.tab_key() == "complete-the-set"
+    panel = window.library.tabs.currentWidget().layout().itemAt(0).widget()
+    assert panel.__class__.__name__ == "CompleteTheSetDialog"
+    assert panel.suggestions.isHidden()
+    assert not panel.empty.isHidden()
 
 
 def test_library_tabs_exist_and_switching_builds_the_panel(window, app):
     assert tab_texts(window.library.tabs) == [
-        "Games", "Favourites", "Collections", "Tags", "Activity",
-        "Statistics", "Recently viewed",
+        "Games", "Favourites", "Collections", "Complete the set", "Tags",
+        "Activity", "Statistics", "Recently viewed",
     ]
     window.show_place("library", "statistics")
     pump(app)

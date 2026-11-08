@@ -906,12 +906,15 @@ class LibraryPage(QWidget):
 
     def __init__(self, store: LibraryStore | None, settings=None,
                  client: ArchiveClient | None = None,
-                 download_dir: Path | None = None) -> None:
+                 download_dir: Path | None = None,
+                 candidates=None) -> None:
         super().__init__()
         self.store = store
         self.settings = settings
         self.client = client
         self.download_dir = Path(download_dir) if download_dir else Path.home()
+        #: Local titles the "Complete the set" tab may suggest (the catalogue).
+        self._candidates = candidates
         self._entries: list[LibraryEntry] = []
         self._shown: list[LibraryEntry] = []
         self._cards: dict[str, QWidget] = {}
@@ -1460,6 +1463,17 @@ class LibraryPage(QWidget):
         if key == "collections":
             store = CollectionStore(profiles.active_file(COLLECTIONS_FILENAME))
             return CollectionsDialog(store, entries, self, embedded=True)
+        if key == "complete-the-set":
+            from .qt_discover import CompleteTheSetDialog
+
+            rows = [as_entry(entry) for entry in entries]
+            try:
+                pool = list(self._candidates() or []) if self._candidates else []
+            except Exception:  # noqa: BLE001 - a broken pool just means no gaps
+                pool = []
+            return CompleteTheSetDialog(
+                pool, [str(row.get("key") or "") for row in rows], self, embedded=True
+            )
         if key == "tags":
             return TagsDialog(entries, self.settings, self, embedded=True)
         if key == "activity":

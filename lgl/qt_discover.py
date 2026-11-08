@@ -334,80 +334,61 @@ class SeasonCompareDialog(QDialog):
         self.summary.setText(season_compare.summary(result))
 
 
-class DiscoverPage(QWidget):
-    """The Discover page: a Surprise me button above the five discovery tabs."""
+class CompleteTheSetDialog(QDialog):
+    """Collection gaps: titles that would fill genres the library covers.
 
-    surprise_requested = Signal()
+    ``items`` is the pool to suggest from (the loaded catalogue, not the
+    library) and ``owned`` the library keys, which are never suggested back.
+    """
 
     def __init__(
         self,
         items: Sequence[Mapping[str, Any]],
-        liked: Sequence[str] = (),
         owned: Sequence[str] = (),
-        settings: Any = None,
         parent: QWidget | None = None,
+        *,
+        embedded: bool = False,
     ) -> None:
         super().__init__(parent)
+        self.embedded = embedded
+        if embedded:
+            self.setWindowFlags(Qt.Widget)
+        self.setWindowTitle("Complete the set")
+        self.resize(640, 520)
+        self.items = [dict(item) for item in items]
+        self.owned = [str(key) for key in owned]
+
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
-
-        header = QHBoxLayout()
-        header.setContentsMargins(24, 16, 24, 8)
-        heading = QLabel("DISCOVER", self)
+        heading = QLabel("COMPLETE THE SET", self)
         heading.setObjectName("detailEyebrow")
-        header.addWidget(heading)
-        header.addStretch(1)
-        self.surprise_btn = QPushButton("Surprise me", self)
-        self.surprise_btn.setCursor(Qt.PointingHandCursor)
-        self.surprise_btn.setToolTip("Open one random game or title")
-        self.surprise_btn.clicked.connect(self.surprise_requested.emit)
-        header.addWidget(self.surprise_btn)
-        layout.addLayout(header)
-
-        self.panel = DiscoverDialog(
-            items, liked, owned, self, settings=settings, embedded=True
+        layout.addWidget(heading)
+        self.note = _empty_note(
+            "Games that fill genres your collection already covers, taken from "
+            "the catalogue loaded on this computer.", self,
         )
-        layout.addWidget(self.panel, 1)
-        self.tabs = self.panel.tabs
+        layout.addWidget(self.note)
+        self.suggestions = QListWidget(self)
+        layout.addWidget(self.suggestions, 1)
+        self.empty = _empty_note(
+            "No games to suggest yet. Add a few games with genres to the library "
+            "and load the collection, and the gaps it could fill appear here.", self,
+        )
+        layout.addWidget(self.empty)
+        self.refresh()
 
-    def show_tab(self, tab: str) -> None:
-        """Bring one of the five tabs to the front."""
-        from . import nav_layout
-
-        keys = nav_layout.tab_keys("discover")
-        if tab in keys:
-            self.tabs.setCurrentIndex(keys.index(tab))
-
-    def set_items(
-        self,
-        items: Sequence[Mapping[str, Any]],
-        liked: Sequence[str] = (),
-        owned: Sequence[str] = (),
-    ) -> None:
-        """Re-run every ranking over a new library."""
-        panel = self.panel
-        panel.items = [dict(item) for item in items]
-        panel.liked = [str(key) for key in liked]
-        panel.owned = [str(key) for key in owned]
-        _fill(panel.recommendations, discovery.recommend(panel.items, panel.liked))
-        _fill(panel.gems, discovery.hidden_gems(panel.items))
-        _fill(panel.suggestions, discovery.suggestions(panel.items, panel.owned))
-        seed = panel.seed
-        seed.blockSignals(True)
-        seed.clear()
-        for item in panel.items:
-            seed.addItem(
-                str(item.get("title") or item.get("key") or "Untitled"), item.get("key")
-            )
-        seed.blockSignals(False)
-        panel.refresh_similar()
+    def refresh(self) -> None:
+        """Re-run the gap ranking over the pool this dialog was built with."""
+        found = discovery.suggestions(self.items, self.owned)
+        _fill(self.suggestions, found)
+        self.note.setVisible(bool(found))
+        self.suggestions.setVisible(bool(found))
+        self.empty.setVisible(not found)
 
 
 __all__ = [
     "ActivityTimelineDialog",
+    "CompleteTheSetDialog",
     "DiscoverDialog",
-    "DiscoverPage",
     "FavouritesDialog",
     "SeasonCompareDialog",
 ]

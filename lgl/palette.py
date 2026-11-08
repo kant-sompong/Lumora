@@ -17,17 +17,18 @@ MAX_RESULTS = 12
 PAGES: tuple[tuple[str, str], ...] = (
     ("archive", "Browse"),
     ("library", "Library"),
-    ("discover", "Discover"),
     ("downloads", "Downloads"),
     ("media", "Movies & TV"),
 )
 
 #: Tabs that used to be a separate menu entry: key, title, group, page, tab.
 TAB_TARGETS: tuple[tuple[str, str, str, str, str], ...] = (
-    ("tab.discover.for-you", "Recommendations", "Discover", "discover", "for-you"),
-    ("tab.discover.hidden-gems", "Hidden gems", "Discover", "discover", "hidden-gems"),
     ("tab.library.favourites", "Favourites", "Library", "library", "favourites"),
     ("tab.library.collections", "Collections", "Library", "library", "collections"),
+    (
+        "tab.library.complete-the-set", "Complete the set", "Library",
+        "library", "complete-the-set",
+    ),
     ("tab.library.tags", "Tags", "Library", "library", "tags"),
     ("tab.library.activity", "Activity", "Library", "library", "activity"),
     ("tab.library.statistics", "Statistics", "Library", "library", "statistics"),

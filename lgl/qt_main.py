@@ -50,7 +50,6 @@ from .library_store import LibraryStore
 from .qt_discover import (
     ActivityTimelineDialog,
     DiscoverDialog,
-    DiscoverPage,
     FavouritesDialog,
 )
 from .qt_library_tools import (
@@ -153,7 +152,10 @@ class Window(QMainWindow):
         self.browse = BrowsePage(
             client, cache_root=platform_support.cache_dir(), catalog=self.catalog,
             settings=self._settings,
+            rows_provider=self._discover_rows,
+            liked_provider=self._liked_keys,
         )
+        self.browse.item_requested.connect(self._open_browse_row)
         self.browse.download_requested.connect(self._download_requested)
         self.browse.files_download_requested.connect(self._files_download_requested)
         self.browse.catalog_download_requested.connect(self._catalog_download_requested)
@@ -161,7 +163,10 @@ class Window(QMainWindow):
         self.browse.reload_catalog()
         self.stack.addWidget(self.browse)
 
-        self.library = LibraryPage(store, self._settings, client, self.download_dir)
+        self.library = LibraryPage(
+            store, self._settings, client, self.download_dir,
+            candidates=self._catalogue_rows,
+        )
         self.library.magnet_requested.connect(self.add_magnet)
         self.stack.addWidget(self.library)
 
@@ -180,13 +185,6 @@ class Window(QMainWindow):
         self.media.configure_requested.connect(lambda: self.show_settings("providers"))
         self.media.surprise_requested.connect(self.pick_random)
         self.stack.addWidget(self.media)
-
-        self.discover = DiscoverPage(
-            self._discover_rows(), self._liked_keys(), self._owned_keys(),
-            self._settings, self,
-        )
-        self.discover.surprise_requested.connect(self.pick_random)
-        self.stack.addWidget(self.discover)
 
         self.toast = Toast(root)
         # The interface preferences are applied before the first page is shown,
@@ -232,7 +230,6 @@ class Window(QMainWindow):
         for key, icon_name, text, tip in (
             ("browse", "grid", "Browse", "Browse the collection (Ctrl+1)"),
             ("library", "library", "Library", "Your downloaded games (Ctrl+2)"),
-            ("discover", "star", "Discover", "Recommendations, hidden gems and more"),
             ("media", "media", "Media", "Movies & TV (Ctrl+4)"),
             ("downloads", "downloads", "Downloads", "The download queue (Ctrl+3)"),
         ):
@@ -354,7 +351,6 @@ class Window(QMainWindow):
     # navigation -----------------------------------------------------------
     VIEW_TITLES = {
         "browse": "Browse", "library": "Library",
-        "discover": "Discover",
         "downloads": "Downloads", "media": "Movies & TV",
     }
 
@@ -362,7 +358,6 @@ class Window(QMainWindow):
         aliases = {
             "Archive": "browse", "Browse": "browse", "browse": "browse",
             "Library": "library", "library": "library",
-            "Discover": "discover", "discover": "discover",
             "Downloads": "downloads", "downloads": "downloads",
             "Media": "media", "media": "media",
         }
@@ -373,12 +368,9 @@ class Window(QMainWindow):
         page = {
             "browse": self.browse,
             "library": self.library,
-            "discover": self.discover,
             "downloads": self.downloads,
             "media": self.media,
         }[key]
-        if key == "discover":
-            self._refresh_discover()
         self._transition_to(page)  # type: ignore[arg-type]
         self.browse.detail.hide() if key != "browse" else None
         self._remember(key)
@@ -416,7 +408,6 @@ class Window(QMainWindow):
     def _apply_history(self, key: str) -> None:
         page = {
             "browse": self.browse, "library": self.library,
-            "discover": self.discover,
             "downloads": self.downloads, "media": self.media,
         }.get(key)
         if page is None:
@@ -455,9 +446,6 @@ class Window(QMainWindow):
             self.search_field.setEnabled(True)
         elif key == "media":
             self.search_field.setPlaceholderText("Search movies, TV, anime…")
-            self.search_field.setEnabled(True)
-        elif key == "discover":
-            self.search_field.setPlaceholderText("Search games")
             self.search_field.setEnabled(True)
         else:
             self.search_field.setPlaceholderText("Search")
@@ -659,11 +647,6 @@ class Window(QMainWindow):
             if tab:
                 self.library.show_tab(tab)
             return
-        if key == "discover":
-            self.show_view("discover")
-            if tab:
-                self.discover.show_tab(tab)
-            return
         if key == "media":
             self.show_view("media")
             if tab:
@@ -672,24 +655,39 @@ class Window(QMainWindow):
         self.show_view(key)
 
     def _discover_rows(self) -> list[dict]:
-        """Everything Discover may recommend: the library and the media cards."""
+        """Local rows the discovery ranks use: the library and the media cards."""
         return self._library_rows() + self._media_rows()
 
     def _liked_keys(self) -> list[str]:
         return [row["key"] for row in self._library_rows() if row.get("favorite")]
 
-    def _owned_keys(self) -> list[str]:
-        return [row["key"] for row in self._discover_rows()]
+    def _catalogue_rows(self) -> list[dict]:
+        """The loaded catalogue as rows, so the library can fill its own gaps."""
+        browse = getattr(self, "browse", None)
+        games = getattr(browse, "_games", None) or []  # noqa: SLF001
+        return [
+            {
+                "key": game.identifier,
+                "title": game.title,
+                "year": game.year,
+                "tags": list(game.subjects or ()),
+            }
+            for game in games
+        ]
 
-    def _refresh_discover(self) -> None:
-        """Re-run the recommendations over what is loaded right now."""
-        page = getattr(self, "discover", None)
-        if page is None:
+    def _open_browse_row(self, item: object) -> None:
+        """Open one poster from Browse's discovery rows."""
+        key = str(item.get("key") or "") if isinstance(item, dict) else ""
+        if not key:
             return
-        try:
-            page.set_items(self._discover_rows(), self._liked_keys(), self._owned_keys())
-        except Exception:  # noqa: BLE001 - a broken row must not stop navigation
-            pass
+        if self.browse.game(key) is not None:
+            self.show_view("browse")
+            self.browse.select(key)
+            return
+        card = self.media.card(key)
+        if card is not None:
+            self.show_view("media")
+            self.media.open_card(card)
 
     def show_tools(self) -> None:
         """Open the tools window: providers, downloads, backup, profiles and more."""
@@ -742,9 +740,15 @@ class Window(QMainWindow):
 
     # library tools --------------------------------------------------------
     def _library_rows(self) -> list[dict]:
-        return [as_entry(entry) for entry in self.library._entries]  # noqa: SLF001
+        # Browse asks for these while the window is still being built, so a page
+        # that does not exist yet simply offers no rows.
+        library = getattr(self, "library", None)
+        entries = getattr(library, "_entries", None) or []
+        return [as_entry(entry) for entry in entries]
 
     def _media_rows(self) -> list[dict]:
+        media = getattr(self, "media", None)
+        cards = media._all_cards() if media is not None else []  # noqa: SLF001
         return [
             {
                 "key": card.key,
@@ -753,7 +757,7 @@ class Window(QMainWindow):
                 "rating": card.rating,
                 "kind": card.kind,
             }
-            for card in self.media._all_cards()  # noqa: SLF001
+            for card in cards
         ]
 
     def show_tags(self) -> None:
