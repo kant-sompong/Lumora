@@ -134,7 +134,7 @@ def test_automatic_selection_respects_playback(page):
     widget, settings = page
     widget.show_section("home")
     settings.set("streaming_provider", "toflix")
-    widget._fill_provider_combo("home")
+    widget._fill_provider_menu("home")
     widget.stack.setCurrentWidget(widget.player)
     widget._apply_health(RESULTS)
     assert settings.get("streaming_provider") == "toflix"
@@ -144,7 +144,7 @@ def test_automatic_selection_applies_when_idle(page):
     widget, settings = page
     widget.show_section("home")
     settings.set("streaming_provider", "toflix")
-    widget._fill_provider_combo("home")
+    widget._fill_provider_menu("home")
     widget._apply_health(RESULTS)
     assert settings.get("streaming_provider") == "vidy"
 

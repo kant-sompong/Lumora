@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Iterable, Sequence
 
-from PySide6.QtCore import QRectF, Qt, QTimer, Signal
+from PySide6.QtCore import QRectF, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
     QComboBox,
@@ -560,11 +560,11 @@ class MediaPage(QWidget):
         # The AniList lookup is part of the search field now (as on Linux):
         # typing a title searches TMDB, MyAnimeList and AniList at once, so a
         # second "Lookup…" box beside it only asked for the same title twice.
-        self._fill_provider_combo("home")
+        self._fill_provider_menu("home")
 
         self.search = QLineEdit()
-        self.search.setPlaceholderText("Search movies, TV, anime…")
-        self.search.setMinimumWidth(120)
+        self.search.setPlaceholderText("Search Movies & TV")
+        self.search.setMinimumWidth(150)
         self.search.setMaximumWidth(240)
         self.search.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         self.search.setClearButtonEnabled(True)
@@ -770,7 +770,7 @@ class MediaPage(QWidget):
         try:
             from .qt_season import SeasonCompareDialog
 
-            self.compare_panel = SeasonCompareDialog(self, threaded=False)
+            self.compare_panel = SeasonCompareDialog(self, threaded=False, embedded=True)
             compare_column.addWidget(self.compare_panel)
         except Exception:  # noqa: BLE001 - never take the whole page down
             self.compare_panel = None
@@ -1158,7 +1158,7 @@ class MediaPage(QWidget):
         """Two anime seasons side by side; it fetches only when Compare runs."""
         from .qt_season import SeasonCompareDialog
 
-        self.compare_panel = SeasonCompareDialog(self, threaded=False)
+        self.compare_panel = SeasonCompareDialog(self, threaded=False, embedded=True)
         column.addWidget(self.compare_panel, 1)
 
     # navigation ------------------------------------------------------------
@@ -1173,7 +1173,7 @@ class MediaPage(QWidget):
             self._player_return = None
         self._section = key
         self._artwork.clear()
-        self._fill_provider_combo(key)
+        self._fill_provider_menu(key)
         for name, button in self._nav.items():
             button.setChecked(name == key)
         page = self._pages.get(key)
@@ -1720,7 +1720,7 @@ class MediaPage(QWidget):
         self.stack.setCurrentWidget(page)
 
     # provider picker -------------------------------------------------------
-    def _fill_provider_combo(self, section: str) -> None:
+    def _fill_provider_menu(self, section: str) -> None:
         """Name kept for the callers: it now updates the one provider button."""
         current = self._anime_provider() if section == "anime" else self._provider()
         button = getattr(self, "provider_button", None)
@@ -1747,6 +1747,12 @@ class MediaPage(QWidget):
             self._update_badge()
 
     # provider health -------------------------------------------------------
+    def _menu_providers(self) -> tuple[str, ...]:
+        """Every provider the menu offers: the same list the old combo had."""
+        if self._section == "anime":
+            return tuple(streaming.ANIME_PROVIDERS)
+        return tuple(streaming.PROVIDERS)
+
     def _section_providers(self) -> tuple[str, ...]:
         if self._section == "anime":
             return tuple(
@@ -1855,7 +1861,7 @@ class MediaPage(QWidget):
         auto.triggered.connect(lambda _checked=False: self._toggle_auto())
         menu.addSeparator()
         current = self._active_provider()
-        for key in self._section_providers():
+        for key in self._menu_providers():
             action = menu.addAction(self._provider_row_text(key))
             action.setCheckable(True)
             action.setChecked(key == current)
@@ -1927,7 +1933,7 @@ class MediaPage(QWidget):
                 else "streaming_provider"
             )
             self.settings.set(field_name, key)
-        self._fill_provider_combo(self._section)
+        self._fill_provider_menu(self._section)
         self._update_badge()
 
     def use_fastest(self) -> None:
@@ -2075,6 +2081,11 @@ class ProviderButton(QPushButton):
 
     COLOURS = {"ok": "#4caf72", "slow": "#e0a458", "offline": "#8a8f98",
                "unknown": "#8a8f98", "pending": "#e0a458"}
+    #: Painted dot, the gap after it, and the right padding.
+    DOT_LEFT = 11
+    DOT_SIZE = 6
+    GAP = 7
+    PAD = 8
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -2085,7 +2096,7 @@ class ProviderButton(QPushButton):
         self._name = ""
         self._suffix = ""
         self._tone = "unknown"
-        self.setMinimumWidth(150)
+        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
 
     def set_state(self, name: str, status: str = "unknown", ms: object = None) -> None:
         self._name = str(name or "Provider")
@@ -2102,9 +2113,32 @@ class ProviderButton(QPushButton):
         else:
             self._suffix = " · not tested"
             self._tone = "unknown"
-        text = f"{self._name}{self._suffix}"
-        super().setText(text)
-        self.setMinimumWidth(max(150, self.fontMetrics().horizontalAdvance(text) + 34))
+        super().setText(self._full_text())
+        self.updateGeometry()
+
+    def _full_text(self) -> str:
+        return f"{self._name}{self._suffix}"
+
+    def _text_left(self) -> int:
+        return self.DOT_LEFT + self.DOT_SIZE + self.GAP
+
+    def _ping_width(self) -> int:
+        """The dot and the ping: the name is elided, this never is."""
+        return (
+            self._text_left() + self.fontMetrics().horizontalAdvance(self._suffix) + self.PAD
+        )
+
+    def _content_width(self) -> int:
+        """Room for the dot, the whole name and the ping, plus the border."""
+        return self.fontMetrics().horizontalAdvance(self._full_text()) + self._text_left() + self.PAD
+
+    def sizeHint(self) -> QSize:  # noqa: N802 - Qt API
+        """Ask for the full text; the header only elides when it runs out."""
+        hint = super().sizeHint()
+        return QSize(max(self._ping_width(), self._content_width()), hint.height())
+
+    def minimumSizeHint(self) -> QSize:  # noqa: N802 - Qt API
+        return QSize(self._ping_width(), super().minimumSizeHint().height())
 
     def paintEvent(self, event) -> None:  # noqa: N802 - Qt API
         painter = QPainter(self)
@@ -2112,18 +2146,19 @@ class ProviderButton(QPushButton):
         painter.setPen(QPen(QColor(255, 255, 255, 26), 1))
         painter.setBrush(QColor(255, 255, 255, 8) if self.underMouse() else Qt.NoBrush)
         painter.drawRoundedRect(QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5), 7, 7)
-        dot = QRectF(11, self.height() / 2 - 3, 6, 6)
+        dot = QRectF(self.DOT_LEFT, self.height() / 2 - self.DOT_SIZE / 2,
+                     self.DOT_SIZE, self.DOT_SIZE)
         painter.setPen(Qt.NoPen)
         painter.setBrush(QColor(self.COLOURS.get(self._tone, "#8a8f98")))
         painter.drawEllipse(dot)
         metrics = self.fontMetrics()
-        text_left = dot.right() + 7
+        text_left = self._text_left()
         suffix_width = metrics.horizontalAdvance(self._suffix)
-        name_room = max(20, self.width() - int(text_left) - suffix_width - 12)
+        name_room = max(20, self.width() - int(text_left) - suffix_width - self.PAD)
         name = metrics.elidedText(self._name, Qt.ElideRight, name_room)
         painter.setPen(QColor(self.palette().color(self.foregroundRole())))
         painter.drawText(
-            QRectF(text_left, 0, self.width() - text_left - 8, self.height()),
+            QRectF(text_left, 0, self.width() - text_left - self.PAD, self.height()),
             Qt.AlignLeft | Qt.AlignVCenter, name + self._suffix,
         )
 

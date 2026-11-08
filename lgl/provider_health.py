@@ -268,11 +268,11 @@ def fastest(results: Iterable[dict[str, Any]], providers: Iterable[str]) -> str 
 
 
 def describe(item: dict[str, Any]) -> str:
-    """``CineSrc 180 ms`` / ``Moonflix: offline``."""
+    """``CineSrc · 180 ms`` / ``Moonflix · unreachable``."""
     label = streaming.LABELS.get(str(item.get("provider")), str(item.get("provider")))
     if item.get("ok") and isinstance(item.get("ms"), int):
-        return f"{label} {item['ms']} ms"
-    return f"{label}: offline"
+        return f"{label} · {item['ms']} ms"
+    return f"{label} · {item.get('status') or 'unreachable'}"
 
 
 def should_auto_apply(*, enabled: bool, playing: bool, manual: bool) -> bool:

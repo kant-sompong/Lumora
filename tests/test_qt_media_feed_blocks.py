@@ -87,3 +87,5 @@ def test_the_compare_card_embeds_the_season_picker(app, tmp_path):
     assert media.compare_card is not None
     assert media.compare_panel is not None
     assert media.compare_panel.parent() is media.compare_card or media.compare_panel.window() is media.window()
+    # Embedding is not a dialog: no leftover Close button that does nothing.
+    assert media.compare_panel.close_btn is None

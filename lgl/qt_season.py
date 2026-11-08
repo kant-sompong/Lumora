@@ -48,6 +48,7 @@ class SeasonCompareDialog(QDialog):
         post: Any = None,
         cache_path: Any = None,
         threaded: bool = True,
+        embedded: bool = False,
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle("Compare seasons")
@@ -134,12 +135,17 @@ class SeasonCompareDialog(QDialog):
         for widget in list(self.section_heads.values()) + list(self.lists.values()):
             widget.setVisible(False)
 
-        close = QPushButton("Close", self)
-        close.clicked.connect(self.accept)
-        foot = QHBoxLayout()
-        foot.addStretch(1)
-        foot.addWidget(close)
-        layout.addLayout(foot)
+        # A dialog closes with this button; an embedded card has no window to
+        # close, so the leftover button would do nothing there.
+        self.close_btn: QPushButton | None = None
+        if not embedded:
+            close = QPushButton("Close", self)
+            close.clicked.connect(self.accept)
+            self.close_btn = close
+            foot = QHBoxLayout()
+            foot.addStretch(1)
+            foot.addWidget(close)
+            layout.addLayout(foot)
 
     # -- pickers -----------------------------------------------------------
     def _pickers(self, layout: QVBoxLayout, side: str, season: str, year: int,

@@ -86,17 +86,31 @@ def test_resize_before_the_toast_exists_is_safe(app, tmp_path):
 
 
 def test_media_provider_picker_switches_with_the_section(app):
-    """The Media bar offers movie providers, and anime ones on the Anime page."""
+    """One button opens a menu: movie providers, anime ones on the Anime page."""
     from lgl import streaming
     from lgl.qt_media import MediaPage
 
     qt_main.apply_theme(app, "dark")
     page = MediaPage(None)
-    assert page.provider_combo.count() == len(streaming.PROVIDERS)
+
+    def rows():
+        menu = page._provider_menu()
+        return [a.text() for a in menu.actions() if not a.isSeparator()]
+
+    texts = rows()
+    assert texts[0].startswith("Auto (fastest")
+    assert texts[-1] == "Test connections now"
+    assert len(texts) - 2 == len(streaming.PROVIDERS)
+
     page.show_section("anime")
-    assert page.provider_combo.count() == len(streaming.ANIME_PROVIDERS)
+    texts = rows()
+    assert texts[0].startswith("Auto (fastest")
+    assert texts[-1] == "Test connections now"
+    assert len(texts) - 2 == len(page._menu_providers())
+    assert len(texts) - 2 == len(streaming.ANIME_PROVIDERS)
+
     page.show_section("movies")
-    assert page.provider_combo.count() == len(streaming.PROVIDERS)
+    assert len(rows()) - 2 == len(streaming.PROVIDERS)
     page.deleteLater()
 
 

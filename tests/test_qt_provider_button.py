@@ -118,7 +118,7 @@ def test_the_settings_choice_and_the_button_stay_in_sync(app, tmp_path):
     widget, store = page(tmp_path)
     store.set("streaming_provider", "vidy")
 
-    widget._fill_provider_combo("home")
+    widget._fill_provider_menu("home")
 
     assert widget.provider_button.text().startswith("Vidy")
 
@@ -126,11 +126,50 @@ def test_the_settings_choice_and_the_button_stay_in_sync(app, tmp_path):
 def test_the_button_is_never_clipped_at_three_widths(app, tmp_path):
     widget, _ = page(tmp_path)
     widget._apply_health(RESULTS)
+    widget.show()
     for width in (1000, 1280, 1920):
         widget.resize(width, 900)
-        widget.layout().activate() if widget.layout() else None
         app.processEvents()
         button = widget.provider_button
-        needed = button.fontMetrics().horizontalAdvance(button.text()) + 34
-        assert button.width() >= needed, (width, button.width(), needed)
+        metrics = button.fontMetrics()
+        # The ping is never elided, even where the header has no room to spare.
+        ping_room = (button._text_left() + metrics.horizontalAdvance(button._suffix)
+                     + button.PAD)
+        assert button.width() >= ping_room, (width, button.width(), ping_room)
+        if width >= 1280:
+            needed = metrics.horizontalAdvance(button.text()) + button._text_left() + button.PAD
+            assert button.width() >= needed, (width, button.width(), needed)
         assert widget.width() >= 1000
+    widget.close()
+
+
+def test_the_button_keeps_its_full_text_at_1280(app, tmp_path):
+    store = Store()
+    store.set("streaming_provider", "cinesrc")
+    store.set("provider_auto_select", False)
+    widget = qt_media.MediaPage(settings=store, cache_root=tmp_path)
+    widget._apply_health([{"provider": "cinesrc", "ms": 180, "ok": True,
+                           "status": "fast", "reason": None}])
+    widget.show()
+    widget.resize(1280, 900)
+    app.processEvents()
+
+    button = widget.provider_button
+    assert button.text() == "CineSrc · 180 ms"
+    needed = button.fontMetrics().horizontalAdvance("CineSrc · 180 ms")
+    assert button.width() >= needed, (button.width(), needed)
+    widget.close()
+
+
+def test_the_search_placeholder_fits_at_1280(app, tmp_path):
+    widget, _ = page(tmp_path)
+    widget.show()
+    widget.resize(1280, 900)
+    app.processEvents()
+
+    field = widget.search
+    text = field.placeholderText()
+    assert text
+    assert field.width() >= field.fontMetrics().horizontalAdvance(text) + 24, (
+        field.width(), text)
+    widget.close()
