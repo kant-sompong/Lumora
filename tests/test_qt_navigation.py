@@ -121,6 +121,17 @@ def test_a_failing_row_provider_shows_why(app):
     assert page.recommended_row.cards() == []
 
 
+def test_the_rows_stay_on_screen_when_the_catalogue_list_is_empty(window, app):
+    window.show_view("browse")
+    pump(app, 0.6)
+
+    browse = window.browse
+    assert browse._shown == []
+    assert not browse.scroll.isHidden()
+    for row in (browse.recommended_row, browse.gems_row):
+        assert row.isHidden() or row.isVisibleTo(browse)
+
+
 def test_each_page_names_its_own_search(window, app):
     for view, text in (
         ("browse", "Search games"),

@@ -1349,7 +1349,10 @@ class BrowsePage(QWidget):
             self._cards[game.identifier] = card
 
         has = bool(visible)
-        self.scroll.setVisible(has)
+        # The ranked rows share this scroll, so an empty catalogue list must not
+        # hide the scroll and take them down with it; the empty state sits below
+        # them instead.
+        self.scroll.setVisible(True)
         self.empty.setVisible(not has)
         if not has:
             if self._games:
