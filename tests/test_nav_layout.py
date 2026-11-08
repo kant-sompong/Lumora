@@ -24,10 +24,10 @@ def test_discover_is_not_a_page_of_its_own_any_more():
     assert nav_layout.place("discover") == ("page", "browse", None)
 
 
-def test_library_has_eight_tabs_starting_with_the_grid():
+def test_library_has_seven_tabs_without_tags():
     assert [label for _key, label in nav_layout.tabs_for("library")] == [
-        "Games", "Favourites", "Collections", "Complete the set", "Tags",
-        "Activity", "Statistics", "Recently viewed",
+        "Games", "Favourites", "Collections", "Activity", "Statistics",
+        "Recently viewed", "Complete the set",
     ]
 
 
@@ -75,11 +75,11 @@ def test_no_two_old_entries_land_on_the_same_tab():
 
 def test_entries_on_lists_what_a_page_absorbed():
     assert nav_layout.entries_on("library") == [
-        "activity", "bulk", "collections", "favourites", "statistics", "tags", "viewed",
+        "activity", "bulk", "collections", "favourites", "statistics", "viewed",
     ]
     assert nav_layout.entries_on("media") == ["calendar", "seasons"]
     assert nav_layout.entries_on("browse") == ["discover"]
-    assert nav_layout.entries_on("library", "tags") == ["tags"]
+    assert nav_layout.place("tags") == ("dialog", "tags", None)
 
 
 def test_menu_for_keeps_the_menus_order():

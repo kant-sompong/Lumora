@@ -178,6 +178,8 @@ class LibraryCard(QFrame):
     """Square cover card for an installed game."""
 
     clicked = Signal(str)
+    #: Right-click: the game's identifier and where the menu should open.
+    menu_requested = Signal(str, object)
 
     def __init__(self, entry: LibraryEntry) -> None:
         super().__init__()
@@ -253,11 +255,15 @@ class LibraryCard(QFrame):
             self.clicked.emit(self.identifier)
         super().mouseReleaseEvent(event)
 
+    def contextMenuEvent(self, event) -> None:  # noqa: N802
+        self.menu_requested.emit(self.identifier, event.globalPos())
+
 
 class LibraryRow(QFrame):
     """Compact list line for the library."""
 
     clicked = Signal(str)
+    menu_requested = Signal(str, object)
 
     def __init__(self, entry: LibraryEntry, *, compact: bool = False) -> None:
         super().__init__()
@@ -1250,6 +1256,7 @@ class LibraryPage(QWidget):
 
     def _wire(self, card: QWidget, entry: LibraryEntry) -> None:
         card.clicked.connect(self.select)  # type: ignore[attr-defined]
+        card.menu_requested.connect(self._show_game_menu)  # type: ignore[attr-defined]
         self.preview.track(card, entry)
         self._cards[entry.identifier] = card
         if entry.identifier in self._pix:
@@ -1397,13 +1404,12 @@ class LibraryPage(QWidget):
     def _more_menu(self) -> None:
         popover = Popover(self)
         actions = (
-            ("Find duplicates…", self.show_duplicates),
             ("Export library…", self.export_library),
             ("Import library…", self.import_library),
             ("Forget missing entries", self.forget_missing),
         )
         for index, (text, callback) in enumerate(actions):
-            if index == 3:
+            if index == 2:
                 line = QFrame()
                 line.setFixedHeight(1)
                 line.setObjectName("detailDivider")
@@ -1415,6 +1421,82 @@ class LibraryPage(QWidget):
             popover.add_widget(btn)
         popover.show_at(self.more)
         self._more_popover = popover
+
+    # right-click -----------------------------------------------------------
+    def game_menu(self, identifier: str) -> object:
+        """The right-click menu for one game, built but not shown."""
+        from PySide6.QtWidgets import QMenu
+
+        entry = self._entry(identifier)
+        menu = QMenu(self)
+        menu.setObjectName("libraryGameMenu")
+        if entry is None:
+            return menu
+        favourite = (
+            "Remove from favourites" if entry.favorite else "Add to favourites"
+        )
+        for text, callback in (
+            ("Edit details…", lambda: self._edit(entry)),
+            ("Edit tags…", lambda: self._edit_tags(entry)),
+            ("Add to collection…", lambda: self._add_to_collection(entry)),
+            (favourite, lambda: self._toggle_favourite(entry)),
+            ("Find duplicates of this game…", lambda: self._duplicates_of(entry)),
+            ("Select", lambda: self.select(identifier)),
+        ):
+            action = menu.addAction(text)
+            action.triggered.connect(callback)
+        return menu
+
+    def _show_game_menu(self, identifier: str, position: object) -> None:
+        """Open the game menu where the right-click happened."""
+        menu = self.game_menu(identifier)
+        self._game_menu = menu
+        menu.exec(position)  # type: ignore[arg-type]
+
+    def _edit_tags(self, entry: LibraryEntry) -> None:
+        from .qt_library_tools import TagsDialog
+
+        TagsDialog([entry], self.settings, self).exec()
+        self.refresh()
+
+    def _add_to_collection(self, entry: LibraryEntry) -> None:
+        from . import profiles
+        from .collections import COLLECTIONS_FILENAME, CollectionStore
+        from .qt_collections import CollectionsDialog
+
+        store = CollectionStore(profiles.active_file(COLLECTIONS_FILENAME))
+        dialog = CollectionsDialog(store, self._entries, self)
+        dialog.exec()
+        self.refresh()
+
+    def _toggle_favourite(self, entry: LibraryEntry) -> None:
+        if self.store is None:
+            return
+        self.store.toggle_favorite(entry.identifier)
+        self._entries = self.store.entries()
+        refreshed = self._entry(entry.identifier)
+        if refreshed is not None and self.detail.isVisible():
+            self.detail.show_entry(refreshed, self._pix.get(entry.identifier))
+        self.refresh()
+        self.changed.emit()
+
+    def _duplicates_of(self, entry: LibraryEntry) -> None:
+        """Duplicate files from this game's folder; nothing is deleted."""
+        if self.store is None:
+            return
+        store = self.store
+        folder = str(entry.folder or "")
+
+        def done(result: object) -> None:
+            groups = [
+                group for group in (result or [])  # type: ignore[union-attr]
+                if any(folder and folder in path
+                       for path in getattr(group, "paths", []))
+            ]
+            DuplicatesDialog(groups, self).exec()
+
+        run_async(lambda: store.find_duplicates(), done,
+                  lambda exc: self._toast(f"Could not scan for duplicates: {exc}", error=True))
 
     # tabs ------------------------------------------------------------------
     def tab_key(self) -> str:
@@ -1474,8 +1556,6 @@ class LibraryPage(QWidget):
             return CompleteTheSetDialog(
                 pool, [str(row.get("key") or "") for row in rows], self, embedded=True
             )
-        if key == "tags":
-            return TagsDialog(entries, self.settings, self, embedded=True)
         if key == "activity":
             return ActivityTimelineDialog(
                 build_events(entries, viewed), self, embedded=True

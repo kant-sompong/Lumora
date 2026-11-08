@@ -29,7 +29,6 @@ TAB_TARGETS: tuple[tuple[str, str, str, str, str], ...] = (
         "tab.library.complete-the-set", "Complete the set", "Library",
         "library", "complete-the-set",
     ),
-    ("tab.library.tags", "Tags", "Library", "library", "tags"),
     ("tab.library.activity", "Activity", "Library", "library", "activity"),
     ("tab.library.statistics", "Statistics", "Library", "library", "statistics"),
     ("tab.library.recent", "Recently viewed", "Library", "library", "recent"),
@@ -77,6 +76,8 @@ def commands(*, with_settings: bool = True) -> list[Command]:
             for page, label in SETTINGS_PAGES
         ]
     items += [
+        Command("tags.edit", "Edit tags", "Library", hint="Add or remove tags on a title",
+                action="tags.edit"),
         Command("tools.open", "Open tools", "Tools", hint="Providers, updates, plugins"),
         Command("search.focus", "Search the collection", "Tools", hint="Ctrl+K"),
         Command("updates.check", "Check for updates", "Tools"),

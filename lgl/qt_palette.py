@@ -157,6 +157,11 @@ class PaletteDialog(QDialog):
             if callable(show_settings):
                 show_settings(action.split(".", 1)[1])
             return
+        if action == "tags.edit":
+            show_tags = getattr(owner, "show_tags", None)
+            if callable(show_tags):
+                show_tags()
+            return
         method_name = "focus_search" if action == "search.focus" else None
         if action in _TOOLS_ACTIONS:
             method_name = "show_tools"

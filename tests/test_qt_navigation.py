@@ -136,8 +136,8 @@ def test_the_library_has_a_complete_the_set_tab_with_an_empty_state(window, app)
 
 def test_library_tabs_exist_and_switching_builds_the_panel(window, app):
     assert tab_texts(window.library.tabs) == [
-        "Games", "Favourites", "Collections", "Complete the set", "Tags",
-        "Activity", "Statistics", "Recently viewed",
+        "Games", "Favourites", "Collections", "Activity", "Statistics",
+        "Recently viewed", "Complete the set",
     ]
     window.show_place("library", "statistics")
     pump(app)
