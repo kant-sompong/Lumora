@@ -44,6 +44,7 @@ from . import (  # noqa: E402
     framextv,
     mal,
     media_history,
+    provider_health,
     streaming,
     tmdb,
     trailer_data,
@@ -1154,6 +1155,170 @@ class AniPmTile(Gtk.FlowBoxChild):
         images.load(item.poster_url, POSTER_SIZE, poster.set_pixbuf)
 
 
+class ProviderHealthDialog(Gtk.Dialog):
+    """Test every streaming provider and pick the quickest one.
+
+    The checks run on :class:`provider_health.AutoSelect`'s worker thread; the
+    dialog only ever receives finished results, so it never blocks the UI.
+    """
+
+    def __init__(self, window: "MoviesWindow", settings: Any = None) -> None:
+        super().__init__(title="Provider health", transient_for=window._parent)
+        self._window = window
+        self._settings = settings
+        self.set_default_size(560, 380)
+        self.set_border_width(16)
+        self._rows: dict[str, tuple[Gtk.Label, Gtk.Label, Gtk.Label]] = {}
+        self._row_boxes: dict[str, Gtk.Box] = {}
+
+        box = self.get_content_area()
+        box.set_spacing(10)
+
+        self._headline = Gtk.Label(
+            label="Press Test connection to measure every provider.", xalign=0
+        )
+        self._headline.get_style_context().add_class("movie-meta")
+        box.pack_start(self._headline, False, False, 0)
+
+        self._list = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        for key in streaming.PROVIDERS:
+            row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=14)
+            name = Gtk.Label(label=streaming.LABELS.get(key, key), xalign=0)
+            name.set_size_request(140, -1)
+            ms = Gtk.Label(label="--", xalign=0)
+            ms.set_size_request(80, -1)
+            status = Gtk.Label(label="not tested", xalign=0)
+            status.get_style_context().add_class("movie-meta")
+            row.pack_start(name, False, False, 0)
+            row.pack_start(ms, False, False, 0)
+            row.pack_start(status, True, True, 0)
+            self._list.pack_start(row, False, False, 0)
+            self._rows[key] = (name, ms, status)
+            self._row_boxes[key] = row
+        box.pack_start(self._list, False, False, 0)
+
+        self._active = Gtk.Label(label="", xalign=0)
+        self._active.get_style_context().add_class("movie-meta")
+        box.pack_start(self._active, False, False, 0)
+
+        actions = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        self._test = Gtk.Button(label="Test connection")
+        self._test.connect("clicked", lambda *_a: self.test_connection())
+        self._refresh = Gtk.Button(label="Refresh")
+        self._refresh.connect("clicked", lambda *_a: self.test_connection())
+        self._fastest = Gtk.Button(label="Use fastest")
+        self._fastest.connect("clicked", lambda *_a: self.use_fastest())
+        actions.pack_start(self._test, False, False, 0)
+        actions.pack_start(self._refresh, False, False, 0)
+        actions.pack_start(self._fastest, False, False, 0)
+        box.pack_start(actions, False, False, 0)
+
+        self.add_button("Close", Gtk.ResponseType.CLOSE)
+        self._results: list[dict[str, Any]] = []
+        self._auto = provider_health.AutoSelect(
+            settings, on_results=self._received, token="gtk-media"
+        )
+        self.show_all()
+        self._update_active()
+
+    # callbacks ---------------------------------------------------------
+    def _received(self, results: list[dict[str, Any]]) -> None:
+        GLib.idle_add(self._apply, list(results))
+
+    def _apply(self, results: list[dict[str, Any]]) -> bool:
+        self._results = provider_health.sort_results(results)
+        for entry in self._results:
+            row = self._rows.get(str(entry.get("provider")))
+            if row is None:
+                continue
+            name, ms, status = row
+            ms.set_text(f"{entry['ms']} ms" if entry.get("ms") is not None else "--")
+            text = str(entry.get("status") or "")
+            if entry.get("reason"):
+                text = f"{text} · {entry['reason']}"
+            status.set_text(text)
+            for widget in (name, ms, status):
+                context = widget.get_style_context()
+                if not entry.get("ok"):
+                    if not context.has_class("dim"):
+                        context.add_class("dim")
+                elif context.has_class("dim"):
+                    context.remove_class("dim")
+        # Fastest first, exactly as measured.
+        for position, entry in enumerate(self._results):
+            box = self._row_boxes.get(str(entry.get("provider")))
+            if box is not None:
+                self._list.reorder_child(box, position)
+        reachable = sum(1 for entry in self._results if entry.get("ok"))
+        self._headline.set_text(
+            f"{reachable} of {len(self._results)} providers reachable"
+            if self._results else "No results yet."
+        )
+        self._update_active()
+        self._auto_apply()
+        return False
+
+    def _providers(self):
+        if getattr(self._window, "_active_section", "home") == "anime":
+            return tuple(
+                key for key in streaming.ANIME_PROVIDERS
+                if key == streaming.ANI_PROVIDER or streaming.has_anime_route(key)
+            )
+        return streaming.PROVIDERS
+
+    def _current(self):
+        if getattr(self._window, "_active_section", "home") == "anime":
+            return self._window._anime_provider()
+        return self._window._streaming_provider()
+
+    def _update_active(self):
+        key = self._current()
+        entry = next((e for e in self._results if e.get("provider") == key), None)
+        label = streaming.LABELS.get(key, key)
+        if entry is None:
+            self._active.set_text("Active: " + label)
+        else:
+            self._active.set_text("Active: " + provider_health.describe(entry))
+
+    def _select(self, key):
+        if getattr(self._window, "_active_section", "home") == "anime":
+            self._window._set_anime_provider(key)
+        else:
+            self._window._set_streaming_provider(key)
+        self._update_active()
+
+    def use_fastest(self):
+        key = provider_health.fastest(self._results, self._providers())
+        if key is None:
+            self._headline.set_text(provider_health.NO_PROVIDER_MESSAGE)
+            return
+        self._select(key)
+        self._headline.set_text("Using " + streaming.LABELS.get(key, key) + ".")
+
+    def test_connection(self):
+        self._headline.set_text("Testing providers...")
+        self._auto.start(force=True)
+
+    def _auto_apply(self):
+        if not provider_health.should_auto_apply(
+            enabled=self._auto.enabled(),
+            playing=bool(getattr(self._window, "_playback_attempts", [])),
+            manual=self._auto.manual,
+        ):
+            return
+        key = provider_health.fastest(self._results, self._providers())
+        if key is not None and key != self._current():
+            self._select(key)
+
+    def destroy(self):
+        self._auto.shutdown()
+        super().destroy()
+
+    def run(self):
+        self._auto.start()
+        return super().run()
+
+
 class MoviesWindow(Gtk.Box):
     """The cinematic Movies & TV surface, embedded in the main window."""
 
@@ -1196,6 +1361,11 @@ class MoviesWindow(Gtk.Box):
         self._playback_title = ""
         self._playback_reason = ""
         self._player_fullscreen = False
+        self._active_section = "home"
+        self._health_results: list[dict[str, Any]] = []
+        self._health = provider_health.AutoSelect(
+            self._settings, on_results=self._health_received, token="gtk-window"
+        )
 
         self._stack = Gtk.Stack()
         self._stack.set_transition_type(Gtk.StackTransitionType.CROSSFADE)
@@ -1313,6 +1483,15 @@ class MoviesWindow(Gtk.Box):
         # Settings gear — opens the Media settings tab.
         self._gear.get_style_context().add_class("movie-icon-button")
         self._gear.set_tooltip_text("Media settings (providers, audio, backdrop)")
+        self._health_button = Gtk.Button(label="Provider health")
+        self._health_button.get_style_context().add_class("movie-btn-dark")
+        self._health_button.set_tooltip_text(
+            "Test each streaming provider and use the fastest one"
+        )
+        self._health_button.connect(
+            "clicked", lambda *_a: self.open_provider_health()
+        )
+        header.pack_end(self._health_button)
         self._gear.connect("clicked", lambda *_a: self._open_media_settings())
         header.pack_end(self._gear)
         header.pack_end(self._search)
@@ -1331,6 +1510,44 @@ class MoviesWindow(Gtk.Box):
         if not self._initial_loaded:
             self._initial_loaded = True
             self._load_home()
+            GLib.timeout_add_seconds(3, self._startup_health)
+
+    # provider health -----------------------------------------------------
+    def open_provider_health(self) -> None:
+        """Open the health sheet; checks start only when it is asked to."""
+        dialog = ProviderHealthDialog(self, self._settings)
+        dialog.run()
+        dialog.destroy()
+
+    def _health_received(self, results: list[dict[str, Any]]) -> None:
+        GLib.idle_add(self._apply_health, list(results))
+
+    def _apply_health(self, results: list[dict[str, Any]]) -> bool:
+        self._health_results = provider_health.sort_results(results)
+        if not provider_health.should_auto_apply(
+            enabled=self._health.enabled(),
+            playing=bool(self._playback_attempts),
+            manual=self._health.manual,
+        ):
+            return False
+        key = provider_health.fastest(self._health_results, streaming.PROVIDERS)
+        if key is not None and key != self._streaming_provider():
+            self._set_streaming_provider(key)
+        return False
+
+    def _startup_health(self) -> bool:
+        """One background check shortly after launch; a fresh cache is reused."""
+        if not self._health.enabled():
+            return False
+        self._health.start()
+        return False
+
+    def destroy(self) -> None:
+        try:
+            self._health.shutdown()
+        except Exception:  # noqa: BLE001 - shutdown must never raise
+            pass
+        super().destroy()
 
     def refresh_providers(self) -> None:
         self._client = TmdbClient(load_api_key(settings=self._settings))
@@ -1412,6 +1629,7 @@ class MoviesWindow(Gtk.Box):
             self._load_home()
 
     def _set_active_nav(self, key: str) -> None:
+        self._active_section = key
         for name, button in self._nav_buttons.items():
             context = button.get_style_context()
             if name == key:
@@ -3969,6 +4187,13 @@ class MoviesWindow(Gtk.Box):
         if index >= len(attempts):
             return False
         provider, url = attempts[index]
+        failed = attempts[index - 1][0]
+        detail = self._playback_reason
+        self._playback_reason = (
+            f"{detail}{streaming.LABELS.get(failed, failed)} failed, trying "
+            f"{streaming.LABELS.get(provider, provider)} "
+            f"({index + 1} of {len(attempts)}). "
+        )
         self._playback_index = index
         self._open_player(
             url,

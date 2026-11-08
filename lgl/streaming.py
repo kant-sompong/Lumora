@@ -37,11 +37,13 @@ from dataclasses import dataclass
 from typing import Literal
 
 Provider = Literal[
-    "cinesrc", "rivestream", "toflix", "cinelite", "framextv", "atlantic", "ani"
+    "cinesrc", "rivestream", "toflix", "cinelite", "framextv", "atlantic", "ani",
+    "vidy", "chillflix", "vidcore", "velarium", "afterdusk", "moonflix",
 ]
 
 #: Providers that can play a movie or TV episode from a TMDB id, in the order
-#: they are tried when the preferred one fails.
+#: they are tried when the preferred one fails.  The newer providers are
+#: appended so the documented fallback order of the originals does not move.
 PROVIDERS: tuple[str, ...] = (
     "cinesrc",
     "rivestream",
@@ -49,6 +51,12 @@ PROVIDERS: tuple[str, ...] = (
     "cinelite",
     "framextv",
     "atlantic",
+    "vidy",
+    "chillflix",
+    "vidcore",
+    "velarium",
+    "afterdusk",
+    "moonflix",
 )
 #: Providers that can play anime.  ani.pm uses an AniList/MAL id instead of
 #: TMDB, so it is listed separately.
@@ -70,10 +78,16 @@ LABELS: dict[str, str] = {
     "framextv": "frameXTV",
     "atlantic": "Atlantic",
     "ani": "ani.pm (anime)",
+    "vidy": "Vidy",
+    "chillflix": "Chillflix",
+    "vidcore": "VidCore",
+    "velarium": "Velarium",
+    "afterdusk": "Afterdusk",
+    "moonflix": "Moonflix",
 }
 
 #: Providers whose anime route is keyed by an **AniList** id.
-ANILIST_ANIME_PROVIDERS: tuple[str, ...] = ("toflix", "cinelite")
+ANILIST_ANIME_PROVIDERS: tuple[str, ...] = ("toflix", "cinelite", "vidy")
 
 #: Audio/subtitle paths each provider's embed accepts.  Only ani.pm documents
 #: an audio-track parameter; the TMDB providers pick their own source, and the
@@ -87,6 +101,12 @@ LANGUAGES: dict[str, tuple[str, ...]] = {
     "framextv": ("sub", "dub"),
     "atlantic": ("sub", "dub"),
     "ani": ("sub", "dub", "vostfr"),
+    "vidy": ("sub",),
+    "chillflix": ("sub",),
+    "vidcore": ("sub",),
+    "velarium": ("sub",),
+    "afterdusk": ("sub",),
+    "moonflix": ("sub",),
 }
 LANGUAGE_LABELS: dict[str, str] = {
     "sub": "Sub",
@@ -155,6 +175,48 @@ SPECS: dict[str, ProviderSpec] = {
         key="ani", label="ani.pm", host="ani.pm",
         languages=LANGUAGES["ani"], iframe_sandbox=None,
     ),
+    # https://www.vidy.st/#docs - /movie/{tmdb}, /tv/{tmdb}/{s}/{e} and an
+    # AniList-keyed /anime/{anilist}/{episode} route.
+    "vidy": ProviderSpec(
+        key="vidy", label="Vidy", host="www.vidy.st",
+        languages=LANGUAGES["vidy"], iframe_sandbox=None,
+        embed_prefix="/",
+    ),
+    # https://www.chillflix.lol/player-api - /embed/movie/{tmdb} and
+    # /embed/tv/{tmdb}/{s}/{e}; no anime route is documented.
+    "chillflix": ProviderSpec(
+        key="chillflix", label="Chillflix", host="chillflix.lol",
+        languages=LANGUAGES["chillflix"], iframe_sandbox=None,
+        embed_prefix="/embed",
+    ),
+    # https://www.vidcore.net/ documents the player on vidcore.io as
+    # /movie/{tmdb} and /tv/{tmdb}/{s}/{e} (TMDB or IMDb id).
+    "vidcore": ProviderSpec(
+        key="vidcore", label="VidCore", host="vidcore.io",
+        languages=LANGUAGES["vidcore"], iframe_sandbox=None,
+        embed_prefix="/",
+    ),
+    # https://velarium.cc/en/docs/endpoints - /{lang}/watch/movie/{id} and
+    # /{lang}/watch/tv/{id}-{season}-{episode}.
+    "velarium": ProviderSpec(
+        key="velarium", label="Velarium", host="velarium.cc",
+        languages=LANGUAGES["velarium"], iframe_sandbox=None,
+        embed_prefix="/",
+    ),
+    # https://afterdusk.app/api - /embed/movie/{tmdb} and
+    # /embed/tv/{tmdb}/{s}/{e}.
+    "afterdusk": ProviderSpec(
+        key="afterdusk", label="Afterdusk", host="afterdusk.app",
+        languages=LANGUAGES["afterdusk"], iframe_sandbox=None,
+        embed_prefix="/embed",
+    ),
+    # https://player.moonflix.website/ - /movie/{tmdb} and
+    # /tv/{tmdb}/{s}/{e}; the TV URL is that one provider's episode format.
+    "moonflix": ProviderSpec(
+        key="moonflix", label="Moonflix", host="player.moonflix.website",
+        languages=LANGUAGES["moonflix"], iframe_sandbox=None,
+        embed_prefix="/",
+    ),
 }
 
 
@@ -209,6 +271,8 @@ def anime_url(provider: str, anilist_id: object, episode: object = 1) -> str:
         return f"https://toflix.co/embed/anime/{anilist_id}/{episode}"
     if spec.key == "cinelite":
         return f"https://embed.cinelite.xyz/anime/{anilist_id}/{episode}"
+    if spec.key == "vidy":
+        return f"https://www.vidy.st/anime/{anilist_id}/{episode}"
     raise EmbedUrlError(f"{spec.label} has no AniList anime route.")
 
 
@@ -322,6 +386,18 @@ def movie_url(provider: str, tmdb_id: object, *, title: str = "", dub: bool = Fa
         return f"https://embed.cinelite.xyz/{tmdb_id}"
     if provider == "atlantic":
         return f"https://atlantic.st/embed/movie/{tmdb_id}"
+    if provider == "vidy":
+        return f"https://www.vidy.st/movie/{tmdb_id}"
+    if provider == "chillflix":
+        return f"https://chillflix.lol/embed/movie/{tmdb_id}"
+    if provider == "vidcore":
+        return f"https://vidcore.io/movie/{tmdb_id}"
+    if provider == "velarium":
+        return f"https://velarium.cc/en/watch/movie/{tmdb_id}"
+    if provider == "afterdusk":
+        return f"https://afterdusk.app/embed/movie/{tmdb_id}"
+    if provider == "moonflix":
+        return f"https://player.moonflix.website/movie/{tmdb_id}"
     if provider == ANI_PROVIDER:
         raise ValueError("ani.pm is an anime provider; use ani_url() instead.")
     return f"https://framextv.xyz/embed/{tmdb_id}"
@@ -345,6 +421,19 @@ def episode_url(provider: str, tmdb_id: object, season: object, episode: object,
         return f"https://embed.cinelite.xyz/{tmdb_id}/{season}/{episode}"
     if provider == "atlantic":
         return f"https://atlantic.st/embed/tv/{tmdb_id}/{season}/{episode}"
+    if provider == "vidy":
+        return f"https://www.vidy.st/tv/{tmdb_id}/{season}/{episode}"
+    if provider == "chillflix":
+        return f"https://chillflix.lol/embed/tv/{tmdb_id}/{season}/{episode}"
+    if provider == "vidcore":
+        return f"https://vidcore.io/tv/{tmdb_id}/{season}/{episode}"
+    if provider == "velarium":
+        # The language is a path segment; en keeps the player in English.
+        return f"https://velarium.cc/en/watch/tv/{tmdb_id}-{season}-{episode}"
+    if provider == "afterdusk":
+        return f"https://afterdusk.app/embed/tv/{tmdb_id}/{season}/{episode}"
+    if provider == "moonflix":
+        return f"https://player.moonflix.website/tv/{tmdb_id}/{season}/{episode}"
     if provider == ANI_PROVIDER:
         raise ValueError("ani.pm is an anime provider; use ani_url() instead.")
     return f"https://framextv.xyz/embed/{tmdb_id}/{season}/{episode}"
