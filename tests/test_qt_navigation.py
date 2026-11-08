@@ -68,30 +68,57 @@ def test_the_palette_has_no_discover_command():
     assert not any(command.group == "Discover" for command in commands)
 
 
+ROWS = [
+    {"key": "a", "title": "Alpha", "genres": ["RPG"], "rating": 9.0, "favorite": True},
+    {"key": "b", "title": "Beta", "genres": ["RPG"], "rating": 8.0, "popularity": 5},
+    {"key": "c", "title": "Gamma", "genres": ["RPG", "Puzzle"], "rating": 4.0,
+     "popularity": 60},
+]
+
+
+def wait_until(app, predicate, timeout: float = 5.0) -> bool:
+    end = time.time() + timeout
+    while time.time() < end:
+        app.processEvents()
+        if predicate():
+            return True
+        time.sleep(0.01)
+    return predicate()
+
+
 def test_browse_has_two_discovery_rows_filled_from_the_library(app):
-    rows = [
-        {"key": "a", "title": "Alpha", "genres": ["RPG"], "rating": 9.0,
-         "favorite": True},
-        {"key": "b", "title": "Beta", "genres": ["RPG"], "rating": 8.0,
-         "popularity": 5},
-        {"key": "c", "title": "Gamma", "genres": ["RPG", "Puzzle"], "rating": 4.0,
-         "popularity": 60},
-    ]
-    page = qt_browse.BrowsePage(rows_provider=lambda: rows, liked_provider=lambda: ["a"])
+    page = qt_browse.BrowsePage(
+        rows_provider=lambda: ROWS, liked_provider=lambda: ["a"],
+    )
     page.set_games([])
 
+    assert wait_until(app, lambda: page.recommended_row.cards())
+    assert wait_until(app, lambda: page.gems_row.cards())
     assert [card["title"] for card in page.recommended_row.cards()] == ["Beta", "Gamma"]
     assert [card["title"] for card in page.gems_row.cards()] == ["Alpha", "Beta"]
     assert not page.recommended_row.isHidden()
     assert not page.gems_row.isHidden()
 
 
-def test_the_discovery_rows_stay_hidden_without_local_data(app):
-    page = qt_browse.BrowsePage()
+def test_the_discovery_rows_hide_themselves_when_there_is_nothing(app):
+    page = qt_browse.BrowsePage(rows_provider=lambda: [], liked_provider=lambda: [])
     page.set_games([])
 
-    assert page.recommended_row.isHidden()
-    assert page.gems_row.isHidden()
+    assert wait_until(app, lambda: page.recommended_row.isHidden())
+    assert wait_until(app, lambda: page.gems_row.isHidden())
+
+
+def test_a_failing_row_provider_shows_why(app):
+    def broken():
+        raise RuntimeError("library unreadable")
+
+    page = qt_browse.BrowsePage(rows_provider=broken)
+    page.set_games([])
+
+    assert wait_until(app, lambda: not page.recommended_row.isHidden())
+    assert wait_until(app, lambda: not page.gems_row.isHidden())
+    assert page.recommended_row.error.text() == "Could not load: library unreadable"
+    assert page.recommended_row.cards() == []
 
 
 def test_the_library_has_a_complete_the_set_tab_with_an_empty_state(window, app):
