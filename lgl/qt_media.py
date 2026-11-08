@@ -43,6 +43,7 @@ from . import (
 )
 from . import recently_viewed
 from .qt_icons import icon, paint_icon
+from .qt_feed import PosterRow
 from .qt_library import ArtworkBackdrop
 from .qt_player import EmbeddedPlayer, make_player
 from .qt_widgets import (
@@ -720,26 +721,123 @@ class MediaPage(QWidget):
         self.hero.list_clicked.connect(self._toggle_current_list)
         self.hero.setVisible(False)
 
-        self._home_carousels: dict[str, Carousel] = {}
-        for key, title, note in (
-            ("continue", "Continue Watching", "Recently watched"),
-            ("trending", "Trending Now", "This week on TMDB"),
-            ("movies", "Movies", "Popular on TMDB"),
-            ("tv", "TV Shows", "Popular on TMDB"),
-        ):
-            carousel = Carousel(title, note=note, show_all=key in ("trending", "movies", "tv"))
-            carousel.item_clicked.connect(self.open_card)
-            if key == "trending":
-                carousel.all_clicked.connect(lambda: self.show_section("movies"))
-            elif key == "movies":
-                carousel.all_clicked.connect(lambda: self.show_section("movies"))
-            elif key == "tv":
-                carousel.all_clicked.connect(lambda: self.show_section("tv"))
-            carousel.setVisible(False)
-            column.addWidget(carousel)
-            self._home_carousels[key] = carousel
+        # The home page is one long scroll of poster rows, the way a streaming
+        # site reads.  Every row owns its own loader, so a slow or failed
+        # section never holds up the page or the rows after it.
+        self._home_rows: dict[str, PosterRow] = {}
+        self.home_loaders: dict[str, Callable[[], object]] = {}
+        sections = (
+            ("continue", "Continue Watching", "Pick up where you left off", None, False),
+            ("trending", "Trending Now", "This week on TMDB", "movies", True),
+            ("movies", "Movies", "Popular on TMDB", "movies", True),
+            ("tv", "TV Shows", "Popular on TMDB", "tv", True),
+            ("for_you", "For you", "From what you watch and save", None, False),
+            # Hidden gems and Anime gems read the same AniList list, so they are
+            # merged into this one row instead of showing the same titles twice.
+            ("hidden_gems", "Hidden gems",
+             "Anime · high scores, few viewers (Anime gems)", "anime", True),
+            ("more_like", "More like this", "Because of what you watched last", None, False),
+        )
+        for key, title, note, target, show_all in sections:
+            row = PosterRow(
+                title, note,
+                poster_factory=lambda card: PosterCard(card, 150),
+                poster_width=150,
+                view_all=show_all,
+            )
+            row.item_clicked.connect(self.open_card)
+            if target:
+                row.view_all_clicked.connect(
+                    lambda _checked=False, section=target: self.show_section(section)
+                )
+            row.setVisible(False)
+            column.addWidget(row)
+            self._home_rows[key] = row
+        self._home_carousels = self._home_rows  # kept: history and posters read it
 
         column.addStretch(1)
+
+    def set_home_loaders(self, loaders: dict[str, Callable[[], object]] | None = None,
+                         **extra: Callable[[], object]) -> None:
+        """Inject a loader per home section (tests use this instead of the network)."""
+        merged = dict(loaders or {})
+        merged.update(extra)
+        for key, loader in merged.items():
+            row = self._home_rows.get(key)
+            if row is not None and callable(loader):
+                self.home_loaders[key] = loader
+                row.set_loader(loader)
+
+    def refresh_home(self) -> None:
+        """Start every section that has a loader; each one hides itself on empty."""
+        for row in self._home_rows.values():
+            if row.loader() is not None:
+                row.refresh()
+
+    @staticmethod
+    def _card_from_gem(entry: object) -> Card:
+        """A hidden-gems entry as a poster card (AniList ids stand in for MAL ids)."""
+        data = entry if isinstance(entry, dict) else {}
+        ident = int(data.get("id") or 0)
+        score = data.get("score")
+        try:
+            rating = float(score) / 10 if score is not None else None
+        except (TypeError, ValueError):
+            rating = None
+        return Card(
+            key=f"anime:{ident}",
+            title=str(data.get("title") or "Untitled"),
+            kind="anime",
+            mal_id=ident,
+            rating=rating,
+        )
+
+    def _install_default_home_loaders(self) -> None:
+        """For you / Hidden gems / More like this, from the loaded TMDB pool."""
+        from . import discovery, hidden_gems
+
+        saved = set(self._watchlist()) | {
+            str(entry.get("key")) for entry in self._history()
+        }
+
+        def pool() -> list[dict[str, object]]:
+            return [
+                {
+                    "key": card.key,
+                    "title": card.title,
+                    "kind": card.kind,
+                    # TMDB shelf items carry no genres; the kind is the one
+                    # shared label the similarity logic can use offline.
+                    "genres": [card.kind],
+                }
+                for card in self._tmdb_items
+            ]
+
+        def to_cards(items: list[object]) -> list[Card]:
+            cards = [self.card(str(item.get("key"))) for item in items if isinstance(item, dict)]
+            return [card for card in cards if card is not None]
+
+        def for_you() -> list[Card]:
+            if not saved:
+                return [
+                    card for card in self._tmdb_items
+                    if card.key not in {entry.get("key") for entry in self._history()}
+                ][:18]
+            return to_cards(discovery.recommend(pool(), saved))
+
+        def more_like() -> list[Card]:
+            seeds = [str(entry.get("key")) for entry in self._history()] + list(self._watchlist())
+            if not seeds:
+                return []
+            return to_cards(discovery.similar(pool(), seeds[0]))
+
+        def gems() -> list[Card]:
+            result = hidden_gems.load_gems(excluded=saved)
+            if not result.entries and result.error:
+                raise RuntimeError(result.error)
+            return [self._card_from_gem(entry) for entry in result.entries]
+
+        self.set_home_loaders(for_you=for_you, hidden_gems=gems, more_like=more_like)
 
     # movies / tv -----------------------------------------------------------
     def _build_grid_page(self, column: QVBoxLayout, key: str) -> None:
@@ -969,6 +1067,8 @@ class MediaPage(QWidget):
             self._load_home(tmdb_client)
         if mal_client.configured:
             self._load_anime(mal_client)
+        self._install_default_home_loaders()
+        self.refresh_home()
 
     def _load_home(self, client: object) -> None:
         def work() -> dict[str, object]:
@@ -1004,6 +1104,7 @@ class MediaPage(QWidget):
             self._pages_bits["tv"][1].set_cards(shows)
             self._render_history()
             self._load_posters()
+            self.refresh_home()
 
         run_async(work, done, lambda exc: self._note_error(exc))
 
