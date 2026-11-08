@@ -161,6 +161,40 @@ def test_the_button_keeps_its_full_text_at_1280(app, tmp_path):
     widget.close()
 
 
+STATES = (("unknown", None), ("offline", None), ("pending", None), ("ok", 180))
+
+
+def test_the_name_is_not_elided_in_any_state_at_1280(app, tmp_path):
+    """The reported bug: at 1280 px the header painted ``CineS… · not tested``."""
+    widget, _ = page(tmp_path)
+    widget.show()
+    widget.resize(1280, 900)
+    app.processEvents()
+    button = widget.provider_button
+
+    for status, ms in STATES:
+        button.set_state("CineSrc", status, ms)
+        app.processEvents()
+        hint = button.sizeHint()
+        button.resize(hint)
+        assert button.displayed_text() == button.text(), (
+            status, hint.width(), button.displayed_text())
+    widget.close()
+
+
+def test_the_width_does_not_change_while_a_test_runs(app, tmp_path):
+    widget, _ = page(tmp_path)
+    button = widget.provider_button
+
+    widths = set()
+    for status, ms in STATES:
+        button.set_state("CineSrc", status, ms)
+        widths.add(button.sizeHint().width())
+
+    assert len(widths) == 1, widths
+    widget.close()
+
+
 def test_the_search_placeholder_fits_at_1280(app, tmp_path):
     widget, _ = page(tmp_path)
     widget.show()

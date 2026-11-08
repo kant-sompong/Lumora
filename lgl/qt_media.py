@@ -9,11 +9,12 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
+from math import ceil
 from pathlib import Path
 from typing import Callable, Iterable, Sequence
 
 from PySide6.QtCore import QRectF, QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QPainter, QPen, QPixmap
+from PySide6.QtGui import QColor, QFontMetricsF, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -2086,6 +2087,13 @@ class ProviderButton(QPushButton):
     DOT_SIZE = 6
     GAP = 7
     PAD = 8
+    #: Every suffix a connection test can put on screen.  ``sizeHint`` keeps
+    #: room for the widest of them, so the header does not resize mid-test.
+    STATE_SUFFIXES = (" · not tested", ": offline", " · …", " · 0000 ms")
+    #: Sub-pixel slack between measuring a width and painting into it.
+    SLACK = 1
+    #: The name is never squeezed below this, even in a tight header.
+    MIN_NAME_ROOM = 20
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -2119,21 +2127,62 @@ class ProviderButton(QPushButton):
     def _full_text(self) -> str:
         return f"{self._name}{self._suffix}"
 
+    def _metrics(self) -> QFontMetricsF:
+        """The font ``paintEvent`` draws with.
+
+        The theme sets the family and size through the application stylesheet,
+        so the widget only holds its final font after it has been polished.
+        """
+        self.ensurePolished()
+        return QFontMetricsF(self.font())
+
     def _text_left(self) -> int:
         return self.DOT_LEFT + self.DOT_SIZE + self.GAP
+
+    def _states(self) -> tuple[str, ...]:
+        """The suffix on screen, plus every one a connection test can swap in."""
+        return tuple(dict.fromkeys((self._suffix, *self.STATE_SUFFIXES)))
+
+    def _name_room(self, width: int) -> int:
+        """Pixels left for the name in a button ``width`` wide.
+
+        ``paintEvent`` elides the name to exactly this, so measuring and
+        painting cannot drift apart.
+        """
+        metrics = self._metrics()
+        used = self._text_left() + ceil(metrics.horizontalAdvance(self._suffix)) + self.PAD
+        return max(self.MIN_NAME_ROOM, int(width) - used)
+
+    def _needed_width(self, suffix: str) -> int:
+        """Width for the dot, the whole name, this suffix and the padding."""
+        metrics = self._metrics()
+        total = max(
+            metrics.horizontalAdvance(self._name) + metrics.horizontalAdvance(suffix),
+            metrics.horizontalAdvance(self._name + suffix),
+        )
+        return self._text_left() + ceil(total) + self.PAD + self.SLACK
 
     def _ping_width(self) -> int:
         """The dot and the ping: the name is elided, this never is."""
         return (
-            self._text_left() + self.fontMetrics().horizontalAdvance(self._suffix) + self.PAD
+            self._text_left() + ceil(self._metrics().horizontalAdvance(self._suffix))
+            + self.PAD
         )
 
     def _content_width(self) -> int:
-        """Room for the dot, the whole name and the ping, plus the border."""
-        return self.fontMetrics().horizontalAdvance(self._full_text()) + self._text_left() + self.PAD
+        """Room for the whole name in the widest state, so a ping cannot resize it."""
+        return max(self._needed_width(suffix) for suffix in self._states())
+
+    def _drawn_name(self, width: int) -> str:
+        """The name as painted in a button ``width`` wide, elided if it must be."""
+        return self._metrics().elidedText(self._name, Qt.ElideRight, self._name_room(width))
+
+    def displayed_text(self) -> str:
+        """Exactly the string ``paintEvent`` draws, elided name included."""
+        return self._drawn_name(self.width()) + self._suffix
 
     def sizeHint(self) -> QSize:  # noqa: N802 - Qt API
-        """Ask for the full text; the header only elides when it runs out."""
+        """Ask for the full text in any state; the header only elides on squeeze."""
         hint = super().sizeHint()
         return QSize(max(self._ping_width(), self._content_width()), hint.height())
 
@@ -2151,15 +2200,12 @@ class ProviderButton(QPushButton):
         painter.setPen(Qt.NoPen)
         painter.setBrush(QColor(self.COLOURS.get(self._tone, "#8a8f98")))
         painter.drawEllipse(dot)
-        metrics = self.fontMetrics()
+        painter.setFont(self.font())
         text_left = self._text_left()
-        suffix_width = metrics.horizontalAdvance(self._suffix)
-        name_room = max(20, self.width() - int(text_left) - suffix_width - self.PAD)
-        name = metrics.elidedText(self._name, Qt.ElideRight, name_room)
         painter.setPen(QColor(self.palette().color(self.foregroundRole())))
         painter.drawText(
             QRectF(text_left, 0, self.width() - text_left - self.PAD, self.height()),
-            Qt.AlignLeft | Qt.AlignVCenter, name + self._suffix,
+            Qt.AlignLeft | Qt.AlignVCenter, self.displayed_text(),
         )
 
     def enterEvent(self, event) -> None:  # noqa: N802
