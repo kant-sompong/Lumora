@@ -385,7 +385,7 @@ class ThreeColumnList(QWidget):
         if key not in self.columns:
             return ""
         error = self.columns[key][1]
-        return error.text() if error.isVisible() else ""
+        return error.text()
 
 
 class ScheduleStrip(QWidget):

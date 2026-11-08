@@ -30,6 +30,7 @@ from . import platform_support, release_feed, season_data
 #: Three hours, the same freshness as the season list and release calendar.
 CACHE_TTL = season_data.CACHE_TTL
 CACHE_FILENAME = "hidden-gems.json"
+LISTS_CACHE_FILENAME = "anime-lists.json"
 #: A score of 78 is "good, not just fine" on AniList's 100-point average.
 MIN_SCORE = 78
 #: Highest value the popularity control accepts; 0 means "the fetched median".
@@ -228,6 +229,114 @@ def fetch_catalogue(*, post: Post | None = None) -> list[dict[str, Any]]:
 
 
 # -- cache -----------------------------------------------------------------
+
+LISTS_QUERY = """
+query ($sort: [MediaSort]) {
+  Page(page: 1, perPage: 50) {
+    media(type: ANIME, sort: $sort, isAdult: false) {
+      id
+      title { romaji english }
+      format
+      status
+      episodes
+      endDate { year month day }
+    }
+  }
+}
+"""
+
+
+def _list_rows(block: Any) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    page = (block or {}).get("data", {}).get("Page") if isinstance(block, dict) else None
+    if not isinstance(page, dict):
+        return rows
+    for raw in page.get("media") or []:
+        if not isinstance(raw, dict):
+            continue
+        titles = raw.get("title") if isinstance(raw.get("title"), dict) else {}
+        title = str(titles.get("english") or titles.get("romaji") or "").strip()
+        if not title:
+            continue
+        end = raw.get("endDate") if isinstance(raw.get("endDate"), dict) else {}
+        end_text = ""
+        if end.get("year") and end.get("month") and end.get("day"):
+            end_text = f"{int(end['year']):04d}-{int(end['month']):02d}-{int(end['day']):02d}"
+        rows.append({
+            "id": _int(raw.get("id")) or 0,
+            "title": title,
+            "format": str(raw.get("format") or ""),
+            "status": str(raw.get("status") or ""),
+            "episodes": _int(raw.get("episodes")) or 0,
+            "end_date": end_text,
+        })
+    return rows
+
+
+def load_anime_lists(
+    *,
+    post: Post | None = None,
+    now: float | None = None,
+    ttl: float = CACHE_TTL,
+    cache_path: Path | str | None = None,
+    force: bool = False,
+) -> dict[str, Any]:
+    """New Added and Just Completed anime, from AniList, cached for three hours.
+
+    A read-only companion to :func:`load_gems`: same transport, own cache file,
+    and one plain sentence per source instead of an exception.
+    """
+    path = Path(cache_path) if cache_path is not None else platform_support.cache_dir() / LISTS_CACHE_FILENAME
+    current = time.time() if now is None else float(now)
+    cached: dict[str, Any] = {}
+    try:
+        cached = json.loads(path.read_text("utf-8")) if path.is_file() else {}
+    except (OSError, ValueError):
+        cached = {}
+    if (
+        not force
+        and isinstance(cached, dict)
+        and isinstance(cached.get("fetched_at"), (int, float))
+        and 0 <= current - float(cached["fetched_at"]) < ttl
+        and isinstance(cached.get("new_added"), list)
+    ):
+        return {
+            "new_added": list(cached.get("new_added") or []),
+            "just_completed": list(cached.get("just_completed") or []),
+            "errors": [],
+            "from_cache": True,
+        }
+    call = post or fetch_catalogue.__globals__["anilist_post"]
+    added: list[dict[str, Any]] = []
+    completed: list[dict[str, Any]] = []
+    errors: list[str] = []
+    try:
+        added = _list_rows(call({"query": LISTS_QUERY, "variables": {"sort": ["ID_DESC"]}}))
+    except Exception as exc:  # noqa: BLE001 - shown as one line
+        errors.append(f"New Added: {exc}")
+    try:
+        completed = _list_rows(
+            call({"query": LISTS_QUERY, "variables": {"sort": ["END_DATE_DESC"]}})
+        )
+    except Exception as exc:  # noqa: BLE001
+        errors.append(f"Just Completed: {exc}")
+    if errors and isinstance(cached.get("new_added"), list):
+        return {
+            "new_added": list(cached.get("new_added") or []),
+            "just_completed": list(cached.get("just_completed") or []),
+            "errors": errors,
+            "from_cache": True,
+        }
+    block = {"fetched_at": current, "new_added": added, "just_completed": completed}
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(block), "utf-8")
+        tmp.replace(path)
+    except OSError:
+        pass
+    return {"new_added": added, "just_completed": completed, "errors": errors, "from_cache": False}
+
 
 def default_cache_path() -> Path:
     """Beside the release calendar's cache, like the season list."""
@@ -453,6 +562,7 @@ __all__ = [
     "fetch_catalogue",
     "format_popularity",
     "is_excluded",
+    "load_anime_lists",
     "load_gems",
     "median_popularity",
     "select",

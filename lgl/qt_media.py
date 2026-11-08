@@ -43,7 +43,7 @@ from . import (
 )
 from . import recently_viewed
 from .qt_icons import icon, paint_icon
-from .qt_feed import PosterRow
+from .qt_feed import PosterRow, ScheduleStrip, ThreeColumnList
 from .qt_library import ArtworkBackdrop
 from .qt_player import EmbeddedPlayer, make_player
 from .qt_widgets import (
@@ -755,7 +755,167 @@ class MediaPage(QWidget):
             self._home_rows[key] = row
         self._home_carousels = self._home_rows  # kept: history and posters read it
 
+        # Section 7: three vertical lists, five small rows each.
+        self.three_columns = ThreeColumnList()
+        column.addWidget(self.three_columns)
+        self.column_loaders: dict[str, Callable[[], object]] = {}
+        self.columns_placeholder = label("", "mediaNote")
+        self.columns_placeholder.setVisible(False)
+        column.addWidget(self.columns_placeholder)
+
+        # Section 8: the day strip and the airing list for the chosen day.
+        self.schedule = ScheduleStrip()
+        column.addWidget(self.schedule)
+        self.schedule_error = label("", "mediaNote", wrap=True)
+        self.schedule_error.setVisible(False)
+        column.addWidget(self.schedule_error)
+        self.schedule_loader: Callable[[], object] | None = None
+        self.schedule.setVisible(False)
+
+        # Section 9: the existing season comparison, embedded as a card.
+        self.compare_card = QFrame()
+        self.compare_card.setObjectName("feedColumn")
+        compare_column = QVBoxLayout(self.compare_card)
+        compare_column.setContentsMargins(16, 12, 16, 12)
+        compare_column.setSpacing(8)
+        compare_column.addWidget(SectionTitle("Compare seasons"))
+        try:
+            from .qt_season import SeasonCompareDialog
+
+            self.compare_panel = SeasonCompareDialog(self, threaded=False)
+            compare_column.addWidget(self.compare_panel)
+        except Exception:  # noqa: BLE001 - never take the whole page down
+            self.compare_panel = None
+            compare_column.addWidget(label("Season comparison is unavailable.", "mediaNote"))
+        column.addWidget(self.compare_card)
+
         column.addStretch(1)
+
+    # sections 7-9 ----------------------------------------------------------
+    def set_column_loaders(self, loaders: dict[str, Callable[[], object]] | None = None,
+                           **extra: Callable[[], object]) -> None:
+        merged = dict(loaders or {})
+        merged.update(extra)
+        for key, loader in merged.items():
+            if key in self.three_columns.columns and callable(loader):
+                self.column_loaders[key] = loader
+
+    def refresh_columns(self) -> None:
+        """Load the three lists together, one worker, one error line per column."""
+        if not self.column_loaders:
+            return
+        loaders = dict(self.column_loaders)
+
+        def work() -> dict[str, object]:
+            found: dict[str, object] = {}
+            for key, loader in loaders.items():
+                try:
+                    found[key] = loader()
+                except Exception as exc:  # noqa: BLE001 - becomes the column line
+                    found[key] = exc
+            return found
+
+        def done(result: object) -> None:
+            data = result if isinstance(result, dict) else {}
+            for key, value in data.items():
+                if isinstance(value, Exception):
+                    self.three_columns.set_error(key, value)
+                else:
+                    self.three_columns.set_items(key, value)  # type: ignore[arg-type]
+            self.columns_placeholder.setVisible(False)
+
+        self.columns_placeholder.setText("Loading…")
+        self.columns_placeholder.setVisible(True)
+        run_async(work, done, lambda exc: self._columns_failed(exc))
+
+    def _columns_failed(self, exc: object) -> None:
+        self.columns_placeholder.setVisible(False)
+        for key in self.column_loaders:
+            self.three_columns.set_error(key, exc)
+
+    def set_schedule_loader(self, loader: Callable[[], object] | None) -> None:
+        self.schedule_loader = loader
+
+    def refresh_schedule(self) -> None:
+        if self.schedule_loader is None:
+            return
+        loader = self.schedule_loader
+        self.schedule.setVisible(False)
+        self.schedule_error.setVisible(False)
+
+        def done(result: object) -> None:
+            entries = [entry for entry in (result or [])]  # type: ignore[union-attr]
+            if not entries:
+                self.schedule.setVisible(False)
+                return
+            self.schedule.set_entries(entries)
+            self.schedule.setVisible(True)
+
+        def failed(exc: object) -> None:
+            self.schedule.setVisible(False)
+            self.schedule_error.setText(f"Could not load: {exc}")
+            self.schedule_error.setVisible(True)
+
+        run_async(lambda: loader(), done, failed)
+
+    def _install_default_block_loaders(self) -> None:
+        """New Release / New Added / Just Completed and the schedule."""
+        from . import hidden_gems, release_feed
+
+        def feed():
+            getter = None
+            if self.settings is not None:
+                getter = release_feed.tmdb_getter(self.settings)
+            return release_feed.load_feed(release_feed.default_cache_path(), tmdb_get=getter)
+
+        def new_release() -> list[dict[str, object]]:
+            now = time.time()
+            aired = [
+                entry for entry in feed().entries
+                if entry.air_at is not None and entry.air_at <= now
+            ]
+            aired.sort(key=lambda entry: entry.air_at or 0.0, reverse=True)
+            return [
+                {
+                    "title": entry.title,
+                    "meta": f"{entry.source} · {time.strftime('%d %b', time.localtime(entry.air_at or 0))}",
+                    "key": entry.key,
+                }
+                for entry in aired[:5]
+            ]
+
+        def lists() -> dict[str, object]:
+            return hidden_gems.load_anime_lists()
+
+        def list_rows(key: str) -> list[dict[str, object]]:
+            block = lists()
+            rows = block.get(key) if isinstance(block, dict) else None
+            return [
+                {
+                    "title": str(row.get("title") or "Untitled"),
+                    "meta": " · ".join(
+                        part for part in (
+                            str(row.get("format") or ""),
+                            str(row.get("end_date") or ""),
+                        ) if part
+                    ),
+                    "key": f"anime:{row.get('id')}",
+                }
+                for row in (rows or [])[:5]
+            ]
+
+        def schedule() -> list[object]:
+            result = feed()
+            if not result.entries and result.errors:
+                raise RuntimeError("; ".join(result.errors))
+            return list(result.entries)
+
+        self.set_column_loaders({
+            "new_release": new_release,
+            "new_added": lambda: list_rows("new_added"),
+            "just_completed": lambda: list_rows("just_completed"),
+        })
+        self.set_schedule_loader(schedule)
 
     def set_home_loaders(self, loaders: dict[str, Callable[[], object]] | None = None,
                          **extra: Callable[[], object]) -> None:
@@ -1069,6 +1229,9 @@ class MediaPage(QWidget):
             self._load_anime(mal_client)
         self._install_default_home_loaders()
         self.refresh_home()
+        self._install_default_block_loaders()
+        self.refresh_columns()
+        self.refresh_schedule()
 
     def _load_home(self, client: object) -> None:
         def work() -> dict[str, object]:
