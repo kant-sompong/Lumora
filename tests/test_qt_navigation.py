@@ -16,7 +16,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 pytest.importorskip("PySide6.QtWidgets")
 
-from PySide6.QtWidgets import QApplication  # noqa: E402
+from PySide6.QtWidgets import QApplication, QLabel  # noqa: E402
 
 from lgl import nav_layout, palette as palette_lib, qt_browse, qt_main  # noqa: E402
 from lgl.settings import Settings  # noqa: E402
@@ -119,6 +119,41 @@ def test_a_failing_row_provider_shows_why(app):
     assert wait_until(app, lambda: not page.gems_row.isHidden())
     assert page.recommended_row.error.text() == "Could not load: library unreadable"
     assert page.recommended_row.cards() == []
+
+
+def test_each_page_names_its_own_search(window, app):
+    for view, text in (
+        ("browse", "Search games"),
+        ("library", "Search library"),
+        ("media", "Search movies, TV, anime"),
+    ):
+        window.show_view(view)
+        pump(app, 0.05)
+        assert window.search_field.placeholderText() == text, view
+
+
+def test_an_empty_library_has_no_toolbar_band_and_says_what_to_do(window, app):
+    window.show_view("library")
+    pump(app)
+
+    assert window.library._entries == []
+    assert window.library._toolbar.isHidden()
+    assert not window.library.empty.isHidden()
+    assert window.library.empty.title.text() == "No games yet"
+    assert window.library.empty.hint.text() == "Download or add one to see it here."
+
+
+def test_an_embedded_panel_drops_its_own_title(window, app):
+    window.show_place("library", "statistics")
+    pump(app, 0.1)
+
+    panel = window.library.tabs.currentWidget().layout().itemAt(0).widget()
+    headings = [
+        child for child in panel.findChildren(QLabel)
+        if child.objectName() == "detailEyebrow"
+    ]
+    assert headings
+    assert all(heading.isHidden() for heading in headings)
 
 
 def test_the_library_has_a_complete_the_set_tab_with_an_empty_state(window, app):

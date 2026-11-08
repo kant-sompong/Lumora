@@ -178,6 +178,19 @@ def test_favourite_flips_and_the_menu_follows(app):
     widget.close()
 
 
+def test_an_open_tab_is_rebuilt_when_the_library_changes(app):
+    widget, _ = page([game("g1", favorite=True)])
+    widget.show_tab("favourites")
+    first = widget._tab_hosts["favourites"].layout().itemAt(0).widget()
+
+    widget.set_entries([game("g1", favorite=True), game("g2", favorite=True)])
+    second = widget._tab_hosts["favourites"].layout().itemAt(0).widget()
+
+    assert second is not None
+    assert second is not first
+    widget.close()
+
+
 def test_the_library_has_no_tags_tab(app):
     assert "tags" not in nav_layout.tab_keys("library")
     assert [label for _key, label in nav_layout.tabs_for("library")] == [

@@ -962,7 +962,8 @@ class LibraryPage(QWidget):
         self.tabs.currentChanged.connect(self._tab_changed)
         root.addWidget(self.tabs, 1)
 
-        toolbar = QWidget()
+        self._toolbar = QWidget()
+        toolbar = self._toolbar
         bar = QHBoxLayout(toolbar)
         bar.setContentsMargins(24, 16, 24, 10)
         self._bar = bar
@@ -1066,6 +1067,9 @@ class LibraryPage(QWidget):
         for host in getattr(self, "_tab_hosts", {}).values():
             clear_layout(host.layout())
         self.refresh()
+        # A tab that is in front was just emptied above; build it again from the
+        # new list instead of leaving a blank panel on screen.
+        self.refresh_visible_tab()
 
     def set_compact(self, compact: bool) -> None:
         """Shrink padding, row height and tile spacing; off restores the look."""
@@ -1232,17 +1236,21 @@ class LibraryPage(QWidget):
                 self._wire(card, entry)
 
         has = bool(self._shown)
-        self.scroll.setVisible(has)
+        empty_library = not self._entries
+        # With nothing in the library there is nothing to search, sort or
+        # filter, so the toolbar and its stat line step aside instead of leaving
+        # a tall empty band above the message.
+        self._toolbar.setVisible(not empty_library)
+        self.stats.setVisible(not empty_library)
+        self.scroll.setVisible(True)
         self.empty.setVisible(not has)
         if not has:
             if self._entries:
                 self.empty.set_text("Nothing matches these filters",
                                     "Clear or adjust the filters in the Filter menu.")
             else:
-                self.empty.set_text(
-                    "No games yet",
-                    "Download something from Browse, or rescan after copying a game folder.",
-                )
+                self.empty.set_text("No games yet",
+                                    "Download or add one to see it here.")
         card = self._cards.get(self._selected)
         if card is not None:
             card.set_selected(True)  # type: ignore[attr-defined]
@@ -1458,6 +1466,7 @@ class LibraryPage(QWidget):
 
         TagsDialog([entry], self.settings, self).exec()
         self.refresh()
+        self.refresh_visible_tab()
 
     def _add_to_collection(self, entry: LibraryEntry) -> None:
         from . import profiles
@@ -1468,6 +1477,7 @@ class LibraryPage(QWidget):
         dialog = CollectionsDialog(store, self._entries, self)
         dialog.exec()
         self.refresh()
+        self.refresh_visible_tab()
 
     def _toggle_favourite(self, entry: LibraryEntry) -> None:
         if self.store is None:
@@ -1478,6 +1488,7 @@ class LibraryPage(QWidget):
         if refreshed is not None and self.detail.isVisible():
             self.detail.show_entry(refreshed, self._pix.get(entry.identifier))
         self.refresh()
+        self.refresh_visible_tab()
         self.changed.emit()
 
     def _duplicates_of(self, entry: LibraryEntry) -> None:
@@ -1515,13 +1526,34 @@ class LibraryPage(QWidget):
         key = self.tab_key()
         if key != "games":
             self.detail.hide()
-            host = self._tab_hosts.get(key)
-            if host is not None and host.layout().count() == 0:
-                panel = self._build_tab(key)
-                if panel is not None:
-                    host.layout().addWidget(panel)
+            self._rebuild_tab(key)
         else:
             self._render()
+
+    def _rebuild_tab(self, key: str) -> None:
+        """Rebuild one tab's panel, so it always shows the library as it is now."""
+        host = self._tab_hosts.get(key)
+        if host is None:
+            return
+        clear_layout(host.layout())
+        panel = self._build_tab(key)
+        if panel is None:
+            return
+        host.layout().addWidget(panel)
+        self._hide_panel_title(panel)
+
+    def _hide_panel_title(self, panel: QWidget) -> None:
+        """The tab strip already names the panel, so its own heading is dropped."""
+        for child in panel.findChildren(QLabel):
+            if child.objectName() == "detailEyebrow":
+                child.hide()
+                break
+
+    def refresh_visible_tab(self) -> None:
+        """Refresh the open tab after a tag, favourite or collection change."""
+        key = self.tab_key()
+        if key != "games":
+            self._rebuild_tab(key)
 
     def _build_tab(self, key: str) -> QWidget | None:
         """The panel for one library tab, built from the current entries."""
@@ -1529,7 +1561,7 @@ class LibraryPage(QWidget):
         from .collections import COLLECTIONS_FILENAME, CollectionStore
         from .qt_collections import CollectionsDialog
         from .qt_discover import ActivityTimelineDialog, FavouritesDialog
-        from .qt_library_tools import TagsDialog, as_entry
+        from .qt_library_tools import as_entry
         from .qt_recent import RecentlyViewedDialog
         from .qt_stats import StatisticsDialog, build_events
 

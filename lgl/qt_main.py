@@ -434,8 +434,7 @@ class Window(QMainWindow):
             self.search_field.setPlaceholderText(self._browse_placeholder())
 
     def _browse_placeholder(self) -> str:
-        total = getattr(self, "_browse_total", 0)
-        return f"Search {total:,} games" if total else "Search games"
+        return "Search games"
 
     def _sync_search_field(self, key: str) -> None:
         if key == "browse":
@@ -445,7 +444,7 @@ class Window(QMainWindow):
             self.search_field.setPlaceholderText("Search library")
             self.search_field.setEnabled(True)
         elif key == "media":
-            self.search_field.setPlaceholderText("Search movies, TV, anime…")
+            self.search_field.setPlaceholderText("Search movies, TV, anime")
             self.search_field.setEnabled(True)
         else:
             self.search_field.setPlaceholderText("Search")
