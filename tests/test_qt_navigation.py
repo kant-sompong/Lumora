@@ -97,18 +97,12 @@ def test_library_tabs_exist_and_switching_builds_the_panel(window, app):
     assert window.library.detail.isHidden() in (True, False)
 
 
-def test_media_gains_calendar_and_compare_pages(window, app):
-    assert list(window.media._nav)[-2:] == ["calendar", "compare"]
-    assert window.media.surprise_btn.text() == "Surprise me"
-    window.show_place("media", "calendar")
-    pump(app)
-    assert window.media._section == "calendar"
-    assert window.media.stack.currentWidget() is window.media._pages["calendar"]
-    assert window.media.calendar_panel.embedded is True
-    window.show_place("media", "compare")
-    pump(app)
-    assert window.media.stack.currentWidget() is window.media._pages["compare"]
-
+def test_media_has_six_tabs_and_the_dice_lives_in_the_header(window):
+    assert list(window.media._nav) == ["home", "movies", "tv", "anime", "list", "history"]
+    assert "calendar" not in window.media._pages
+    assert "compare" not in window.media._pages
+    assert not hasattr(window.media, "surprise_btn")
+    assert window.surprise_btn.toolTip() == "Surprise me"
 
 def test_the_header_menu_contains_only_the_allowed_entries(window):
     menu = window._build_menu()

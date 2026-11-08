@@ -47,6 +47,8 @@ def test_health_controls_exist(page):
 def test_results_are_listed_fastest_first_with_latency_and_status(page):
     widget, _ = page
     widget._apply_health(RESULTS)
+    assert not widget.health_bar.isVisibleTo(widget)
+    widget._toggle_health_list()
     assert widget.health_list.isVisibleTo(widget)
     assert widget.health_rows.count() == len(RESULTS)
     texts = []

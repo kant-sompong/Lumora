@@ -69,7 +69,6 @@ WATCHLIST_KEY = "movie_watchlist"
 NAV_ITEMS = (
     ("home", "Home"), ("movies", "Movies"), ("tv", "TV Shows"),
     ("anime", "Anime"), ("list", "My List"), ("history", "History"),
-    ("calendar", "Calendar"), ("compare", "Compare seasons"),
 )
 
 
@@ -552,23 +551,22 @@ class MediaPage(QWidget):
             bar.addWidget(btn)
         bar.addStretch(1)
 
-        self.surprise_btn = QPushButton("Surprise me")
-        self.surprise_btn.setObjectName("mediaNav")
-        self.surprise_btn.setCursor(Qt.PointingHandCursor)
-        self.surprise_btn.setToolTip("Open one random game or title")
-        self.surprise_btn.clicked.connect(self.surprise_requested.emit)
-        bar.addWidget(self.surprise_btn)
-
         self.provider_label = label("Provider", "mediaNote")
         bar.addWidget(self.provider_label)
         self.provider_combo = QComboBox()
-        self.provider_combo.setFixedWidth(150)
+        self.provider_combo.setFixedWidth(120)
         self.provider_combo.setCursor(Qt.PointingHandCursor)
         self.provider_combo.setToolTip("Provider used to play movies and TV")
         self.provider_combo.currentIndexChanged.connect(self._provider_picked)
         bar.addWidget(self.provider_combo)
-        self.health_badge = label("", "mediaNote")
-        self.health_badge.setToolTip("Measured response time of the active provider")
+        self.health_badge = QPushButton("")
+        self.health_badge.setObjectName("mediaBadge")
+        self.health_badge.setFlat(True)
+        self.health_badge.setCursor(Qt.PointingHandCursor)
+        self.health_badge.setToolTip(
+            "Provider health · click for Test connection and Use fastest"
+        )
+        self.health_badge.clicked.connect(self._show_badge_menu)
         bar.addWidget(self.health_badge)
         # The AniList lookup is part of the search field now (as on Linux):
         # typing a title searches TMDB, MyAnimeList and AniList at once, so a
@@ -577,7 +575,9 @@ class MediaPage(QWidget):
 
         self.search = QLineEdit()
         self.search.setPlaceholderText("Search movies, TV, anime…")
-        self.search.setFixedWidth(210)
+        self.search.setMinimumWidth(120)
+        self.search.setMaximumWidth(240)
+        self.search.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         self.search.setClearButtonEnabled(True)
         self.search.textChanged.connect(self._on_search_typed)
         self.search.returnPressed.connect(self._run_search)
@@ -622,6 +622,10 @@ class MediaPage(QWidget):
         self.health_rows.setSpacing(2)
         self.health_list.setVisible(False)
         health_outer.addWidget(self.health_list)
+        # The measured list belongs to the page, not to the strip: the strip is
+        # gone and the list opens from the badge menu instead.
+        self.health_list.setParent(self)
+        self.health_bar.setVisible(False)  # the badge in the header replaces the strip
         root.addWidget(self.health_bar)
         self.health_ready.connect(self._apply_health)
         self.health = provider_health.AutoSelect(
@@ -635,8 +639,7 @@ class MediaPage(QWidget):
         self._pages: dict[str, QWidget] = {}
         for key, title in (("home", "Home"), ("movies", "Movies"), ("tv", "TV Shows"),
                            ("anime", "Anime"), ("search", "Search"),
-                           ("list", "My List"), ("history", "History"),
-                           ("calendar", "Calendar"), ("compare", "Compare seasons")):
+                           ("list", "My List"), ("history", "History")):
             page, column = self._page()
             self._pages[key] = page
             self.stack.addWidget(page)
@@ -650,10 +653,6 @@ class MediaPage(QWidget):
                 self._build_search(column)
             elif key == "list":
                 self._build_list(column)
-            elif key == "calendar":
-                self._build_calendar(column)
-            elif key == "compare":
-                self._build_compare(column)
             else:
                 self._build_history(column)
         self._detail_page, detail_column = self._page()
@@ -1844,6 +1843,20 @@ class MediaPage(QWidget):
 
     def _active_provider(self) -> str:
         return self._anime_provider() if self._section == "anime" else self._provider()
+
+    def _show_badge_menu(self) -> None:
+        """Test connection / Use fastest, from the one badge in the header."""
+        from PySide6.QtWidgets import QMenu
+
+        menu = QMenu(self)
+        menu.addAction("Test connection", self.test_connection)
+        menu.addAction("Use fastest", self.use_fastest)
+        menu.addSeparator()
+        menu.addAction("Show measured providers", self._toggle_health_list)
+        menu.exec(self.health_badge.mapToGlobal(self.health_badge.rect().bottomLeft()))
+
+    def _toggle_health_list(self) -> None:
+        self.health_list.setVisible(not self.health_list.isVisible())
 
     def _update_badge(self) -> None:
         key = self._active_provider()

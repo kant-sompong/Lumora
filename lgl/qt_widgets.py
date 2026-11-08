@@ -296,6 +296,50 @@ class IconButton(QAbstractButton):
         )
 
 
+class DiceButton(QAbstractButton):
+    """A painted five-pip dice: Surprise me, without an emoji font."""
+
+    def __init__(self, tip: str = "Surprise me") -> None:
+        super().__init__()
+        self.setObjectName("iconButton")
+        self.setFixedSize(34, 34)
+        self.setCursor(Qt.PointingHandCursor)
+        self.setToolTip(tip)
+        self.setAccessibleName(tip)
+        self._hover = False
+        self.setAttribute(Qt.WA_Hover, True)
+
+    def enterEvent(self, event) -> None:  # noqa: N802
+        self._hover = True
+        self.update()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event) -> None:  # noqa: N802
+        self._hover = False
+        self.update()
+        super().leaveEvent(event)
+
+    def paintEvent(self, _event) -> None:  # noqa: N802
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        if self._hover:
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(alpha_color("text", 0.07))
+            painter.drawRoundedRect(QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5), 8, 8)
+        face = QRectF(7, 7, self.width() - 14, self.height() - 14)
+        painter.setBrush(Qt.NoBrush)
+        painter.setPen(QPen(color("muted"), 1.5))
+        painter.drawRoundedRect(face, 5, 5)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(color("muted"))
+        radius = 1.7
+        for fx, fy in ((0.28, 0.28), (0.72, 0.28), (0.5, 0.5), (0.28, 0.72), (0.72, 0.72)):
+            painter.drawEllipse(
+                QPoint(int(face.left() + face.width() * fx), int(face.top() + face.height() * fy)),
+                int(radius), int(radius),
+            )
+
+
 class RailButton(QWidget):
     """One destination in the far-left rail: icon, label, optional badge."""
 
@@ -1059,6 +1103,7 @@ __all__ = [
     "CheckRow",
     "CoverArt",
     "CoverGrid",
+    "DiceButton",
     "DirectionButton",
     "ElideLabel",
     "EmptyState",

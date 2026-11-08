@@ -76,6 +76,7 @@ from .qt_media import MediaPage
 from .qt_settings import AboutDialog, SettingsDialog
 from .qt_theme import build_stylesheet
 from .qt_widgets import (
+    DiceButton,
     IconButton,
     RailButton,
     Toast,
@@ -292,6 +293,9 @@ class Window(QMainWindow):
         hint.setObjectName("keyHint")
         pill_row.addWidget(hint)
         row.addWidget(pill, 0)
+        self.surprise_btn = DiceButton("Surprise me")
+        self.surprise_btn.clicked.connect(self.pick_random)
+        row.addWidget(self.surprise_btn)
         row.addStretch(1)
 
         self.menu_btn = IconButton("menu", "Menu", 18, 34)
