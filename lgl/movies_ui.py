@@ -1466,7 +1466,7 @@ class MoviesWindow(Gtk.Box):
         header.set_custom_title(nav)
 
         self._search = Gtk.SearchEntry()
-        self._search.set_placeholder_text("Search movies, TV and anime")
+        self._search.set_placeholder_text("Search movies, TV, anime")
         self._search.set_width_chars(18)
         self._search.get_style_context().add_class("movie-search")
         self._search.connect("search-changed", self._on_search_changed)
