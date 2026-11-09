@@ -292,6 +292,10 @@ class CompareCard(QWidget):
                  years: int = 12) -> None:
         super().__init__(parent)
         self.setObjectName("compareCard")
+        # The card is as tall as its lines: on a page that hands out extra
+        # height (the detail panel does) the pickers stay at the top instead of
+        # spreading apart.
+        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
         self._loader = loader
         self._threaded = threaded
         self._cache_path = cache_path
@@ -437,6 +441,7 @@ class CompareCard(QWidget):
             self._column_buttons[key] = more
         self.columns_host.setVisible(False)
         column.addWidget(self.columns_host)
+        column.addStretch(1)
 
         self._fill_choices(years)
         self._set_defaults()
