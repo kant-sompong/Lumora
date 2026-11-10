@@ -8,6 +8,7 @@ any user data.  The one test that needs a display builds only the die button.
 from __future__ import annotations
 
 from types import SimpleNamespace
+from unittest import mock
 
 import pytest
 
@@ -62,7 +63,9 @@ def test_the_bottom_of_the_rail_holds_settings_and_about():
 
 # -- menu -------------------------------------------------------------------
 def test_the_menu_keeps_exactly_the_trimmed_entries():
-    owner = object.__new__(ui.MainWindow)
+    # GTK refuses object.__new__ on its subclasses, so hand the unbound method
+    # a stand-in that still knows which methods MainWindow really has.
+    owner = mock.MagicMock(spec=ui.MainWindow)
     actions = ui.MainWindow._menu_actions(owner)
     assert set(actions) | {"maintenance"} == set(nav_layout.menu_keys())
     for key, callback in actions.items():
@@ -158,7 +161,7 @@ def test_the_die_is_drawn_rather_than_picked_from_an_icon_theme():
 
 @needs_display
 def test_the_die_button_says_what_it_does():
-    owner = object.__new__(ui.MainWindow)
+    owner = mock.MagicMock(spec=ui.MainWindow)
     button = ui.MainWindow._build_dice_button(owner)
     assert button.get_tooltip_text()
     assert button.get_accessible().get_name() == "Surprise me"
