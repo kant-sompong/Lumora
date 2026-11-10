@@ -1,9 +1,21 @@
 # Lumora — what to do next
 
-Last updated: 2026-11-08 (`main` after PR #46). What is finished is in [DONE.md](DONE.md).
+Last updated: 2026-11-10 (`main` after PR #55). What is finished is in [DONE.md](DONE.md).
 Feature checklist: [thing.md](thing.md). Linux = GTK 3 (`lgl/ui.py`), Windows = Qt/PySide6 (`lgl/qt_*.py`), shared logic in `lgl/*.py`.
 
-This file is a hand-over note for a new session (human or AI). Read it, then DONE.md, then start at section 1.
+This file is a hand-over note for a new session (human or AI). Read it, then [DONE.md](DONE.md), then start at section 1.
+
+## Current hand-over (2026-11-10)
+
+- Current `main`: `66a1c1ae3cbd284b1d5e5122d8356f98470128fc` (PR #55).
+- PR #54 added the GTK three-column feed screenshots under `pic/`.
+- The GTK feed column-visibility fix (Agent 1, Slice 1) is already on `main`; see [DONE.md](DONE.md). Do not redo it.
+- Agent 1 is working on **GTK Feed Slice 2** on a separate feature branch. Approved scope: seven poster rows (Continue, Trending, Movies, TV, For You, Hidden Gems, More Like This), plus the three-column block and schedule strip below the existing 430 px hero. Its 32 `feed-*` CSS rules belong in `_CINEMATIC_CSS` in `movies_ui.py`. This work is not yet reviewed, merged, or complete.
+- Agent 2 finished the Qt test-isolation task in PR #55 and is idle. Do not assign it overlapping work without the owner's instruction.
+- Ani.pm playback currently opens a title page rather than an embedded player in the affected path. Developer docs specify an iframe wrapper; implementation is optional and has not started.
+- The owner manually reviews and merges PRs. Do not merge or release as part of a documentation update.
+
+
 
 ## Rules for any session
 - The Linux app is GTK 3 only. Never `gi.require_version("Gtk", "4.0")`, `Gtk.DropDown`, `box.append()`, `set_child()`, `add_css_class()`. (0.6.6 shipped a Tools window written for GTK 4 and it crashed on Linux.)
@@ -27,7 +39,7 @@ Nobody has used either app by hand. In particular:
 - [ ] Artwork backgrounds, quick preview and the Settings switches on a real desktop with a theme (the sandbox has no Adwaita, so switches did not draw).
 - [ ] Both apps: screen-by-screen visual audit and window resizing with a real player.
 
-## 3. The 30 requested features: status on `main` (2026-11-08)
+## 3. The 30 requested features: original implementation status (snapshot 2026-11-08)
 
 All 30 items have a first version in both apps, merged to `main` through PRs up to #43. Tests on `main`: GTK 612 passed / 2 skipped, Qt 644 passed (14 `test_launch` tests excluded; two of them fail only when run as root). GTK was opened on a display in the review sandbox (Xvfb + xcompmgr); **Qt was only rendered offscreen, never on real Windows, and nobody has clicked through either app as a human.** "Done" below means built, tested and looked at in that way, not accepted by the owner.
 
@@ -68,6 +80,13 @@ Windows media player: playback now happens inside the main window (`lgl/qt_playe
 
 ### 3.1 Polish pass (done 2026-11-08, PR #45)
 Hidden-gems thresholds are saved and a failed first load retries; failed loads hide the empty lists; season summary says "Winter 2024"; the Qt Trailer button is in the hero row; a failed trailer lookup shows "Trailer not available"; `profiles.migrate()` removed. Still loose: in the Qt failure states the remaining lines sit far apart (expanding labels), and settings are written twice per Refresh.
+
+### 3.2 Updates after the original 30-feature snapshot (2026-11-10)
+
+- **GTK feed column visibility:** landed on `main` before PR #54. The renderer now reveals only the populated column instead of recursively showing empty siblings. Seven regression cases were added. Agent 1 reported 26 passes in `tests/test_gtk_feed.py`; the wider GTK run had environment limitations recorded in [DONE.md](DONE.md).
+- **Feed screenshots:** PR #54 added four three-column screenshots under `pic/`; these are test/layout evidence, not a completion of the planned Feed Slice 2 redesign.
+- **Qt test isolation:** PR #55 added shared Qt worker-pool fixtures and made profile/header tests deterministic and offline. Agent 2 reported 823 passed, 0 failed, 0 errors across foreground chunks; see [DONE.md](DONE.md) for the exact scope and what was not run.
+- **GTK Feed Slice 2:** in progress on Agent 1's separate branch. Do not tick it complete until its diff, tests and screenshots are reviewed and the owner merges it.
 
 ## 4. Ideas not built
 - Continue Watching shelf on Movies & TV (the data and rules exist in `media_lists.shelf`).

@@ -1,6 +1,35 @@
 # Lumora — what is finished
 
-Last updated: 2026-11-08 (`main` after PR #43). What is still open is in [TODO.md](TODO.md).
+Last updated: 2026-11-10 (`main` after PR #55). What is still open is in [TODO.md](TODO.md).
+
+
+## 2026-11-10 — GTK feed visibility and Qt test isolation
+
+### GTK feed column visibility (Agent 1, Slice 1; on main)
+
+- Fixed the GTK three-column feed renderer so rendering one populated column no longer reveals empty sibling columns.
+- Visibility is reapplied to the affected column and its children after rendering; seven regression tests cover population, updates, clearing, errors, toggling, render order and `set_columns`.
+- Agent 1 reported `tests/test_gtk_feed.py`: **26 passed**. Its wider GTK run reported 169 passed, 1 failed and 1 skipped across the runnable modules; the failure was a missing `cairo` module in `tests/test_gtk_navigation.py`. Four additional GTK modules could not be collected for the same missing dependency. The run excluding four cairo-dependent modules reported 683 passed, 31 skipped and 1 failed.
+- Not run by this documentation update: no tests were executed here. These are the worker's reported results, not an independent rerun.
+
+### PR #54 — feed layout screenshots
+
+- Merged four GTK three-column layout screenshots under `pic/`: populated columns, error-only, one populated and outer columns populated.
+- These screenshots document the Slice 1 column visibility behavior; they do not mean the broader Feed Slice 2 redesign is complete.
+
+### PR #55 — Qt test isolation (Agent 2)
+
+- Merged shared test fixtures in `tests/conftest.py` that widen the Qt global worker pool to at least eight threads and fail a test if worker jobs remain blocked after it finishes.
+- Made the Qt profile dialog tests request their existing `QApplication` fixture.
+- Made Qt media-header tests offline by stubbing TMDB, AniList, release-feed, hidden-gems and provider-health loaders, preventing network jobs from leaking into later tests.
+- Agent 2 reported the full Qt suite in foreground chunks: **823 passed, 0 failed, 0 errors**. Targeted tests: 13 passed; original reproduction: 18 passed.
+- GTK tests were not run for PR #55; the 823-test run was split into foreground chunks rather than one single-process invocation. Windows desktop behavior was not established by this test run.
+- Agent 2's task is complete. No product code or provider-list changes were included.
+
+### Still in progress
+
+- Agent 1's GTK Feed Slice 2 is not included in these completed items. Its approved scope is seven poster rows plus the three-column block and schedule strip below the existing hero, with the 32 `feed-*` rules in `_CINEMATIC_CSS` in `movies_ui.py`. Review and merge are still pending.
+- Ani.pm iframe playback has been investigated but not implemented. The player URL must be loaded inside an iframe; opening it as a top-level WebKit/WebEngine URL redirects to the Ani.pm title page.
 
 ## Background
 - The Linux GTK app is the main one. The owner wanted the Windows app to look and feel the same.
