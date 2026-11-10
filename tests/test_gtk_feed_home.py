@@ -185,22 +185,45 @@ def test_toggling_a_column_does_not_reveal_its_siblings(display):
 
 
 # -- the day strip ----------------------------------------------------------
-def test_the_strip_hides_without_entries_and_shows_them(display):
-    entries = [
-        airing("Frieren", NOW.replace(hour=9)),
-        airing("Dandadan", NOW.replace(hour=13, minute=30)),
-    ]
+def test_the_strip_waits_for_its_first_answer_before_appearing(display):
+    feed = build()
+    feed.set_schedule_loader(lambda: [airing("Frieren", NOW.replace(hour=9))])
+    feed.set_now(NOW)
+    # The page's own show_all() must not reveal an unloaded strip.
+    window = in_window(feed)
+    assert feed.schedule.get_visible() is False
+    assert feed.schedule.rows() == 0
+
+    feed.refresh_schedule()
+    pump()
+    assert feed.schedule.get_visible() is True
+    assert feed.schedule.rows() == 1
+    assert feed.schedule.empty.get_visible() is False
+    window.destroy()
+
+
+def test_a_loaded_empty_week_shows_the_strips_own_line(display):
     state = {"entries": []}
     feed = build()
     feed.set_schedule_loader(lambda: list(state["entries"]))
     feed.set_now(NOW)
     feed.refresh_schedule()
-    assert feed.schedule.get_visible() is False
+    # A completed answer that has nothing to air is a real state, not a
+    # missing one: the strip says so instead of vanishing.
+    assert feed.schedule.get_visible() is True
+    assert feed.schedule.rows() == 0
+    assert feed.schedule.empty.get_visible() is True
+    assert feed.schedule.empty.get_text() == feed.schedule.state.empty_text()
+    assert feed.schedule_error.get_visible() is False
 
-    state["entries"] = entries
+    state["entries"] = [
+        airing("Frieren", NOW.replace(hour=9)),
+        airing("Dandadan", NOW.replace(hour=13, minute=30)),
+    ]
     feed.refresh_schedule()
     assert feed.schedule.get_visible() is True
     assert feed.schedule.rows() == 2
+    assert feed.schedule.empty.get_visible() is False
     assert feed.schedule_error.get_visible() is False
 
 
@@ -250,6 +273,29 @@ def test_clicking_a_card_hands_back_the_item_behind_it(display):
     poster = feed.rows["trending"].posters()[1]
     poster.emit("clicked")
     assert opened == ["item-1"]
+
+
+def test_a_schedule_row_hands_back_the_original_entry(display):
+    opened = []
+    entry = airing("Frieren", NOW.replace(hour=9))
+    feed = build(on_schedule_open=opened.append)
+    feed.set_schedule_loader(lambda: [entry])
+    feed.set_now(NOW)
+    feed.refresh_schedule()
+    row = feed.schedule.rows_box.get_children()[0]
+    row.emit("clicked")
+    assert opened == [entry]
+    assert opened[0] is entry
+
+
+def test_a_schedule_row_without_a_callback_opens_nothing(display):
+    feed = build()
+    feed.set_schedule_loader(lambda: [airing("Frieren", NOW.replace(hour=9))])
+    feed.set_now(NOW)
+    feed.refresh_schedule()
+    row = feed.schedule.rows_box.get_children()[0]
+    row.emit("clicked")  # an optional callback: nothing to call, no error
+    assert feed.schedule.get_visible() is True
 
 
 def test_a_column_row_hands_back_the_whole_entry(display):

@@ -27,6 +27,20 @@ def _clean_text(value: Any, limit: int) -> str:
     return text[:limit]
 
 
+def _poster(value: Any) -> str:
+    """An absolute http(s) poster URL, or empty when the value is not one.
+
+    Older records may spell the field ``poster``, and a poster hosted over
+    plain http is still a poster worth drawing, so both are accepted while a
+    relative path is not: the card loader can only fetch a full URL.
+    """
+    text = " ".join(str(value or "").split())
+    lowered = text.lower()
+    if not lowered.startswith(("http://", "https://")):
+        return ""
+    return text[:_MAX_URL]
+
+
 def _valid_key(value: Any) -> str:
     text = str(value or "").strip()
     kind, _, number = text.partition(":")
@@ -52,15 +66,15 @@ def _entry(raw: Any) -> dict[str, Any] | None:
         watched_at = float(raw.get("watched_at") or 0.0)
     except (TypeError, ValueError):
         watched_at = 0.0
-    poster = str(raw.get("poster_url") or "").strip()
-    if poster and not poster.startswith("https://"):
-        poster = ""
+    # ``poster`` is what records written before the field was named
+    # ``poster_url`` used; reading it keeps those rows drawing their artwork.
+    poster = _poster(raw.get("poster_url") or raw.get("poster"))
     return {
         "key": key,
         "kind": kind,
         "tmdb_id": int(number),
         "title": _clean_text(raw.get("title"), _MAX_TITLE) or key,
-        "poster_url": poster[:_MAX_URL],
+        "poster_url": poster,
         "year": _clean_text(raw.get("year"), 4),
         "watched_at": watched_at,
     }
@@ -99,20 +113,20 @@ def record(
     if not clean:
         return None
     kind, _, number = clean.partition(":")
+    existing = load(settings)
+    previous = next((item for item in existing if item["key"] == clean), None)
     entry = {
         "key": clean,
         "kind": kind,
         "tmdb_id": int(number),
         "title": _clean_text(title, _MAX_TITLE) or clean,
-        "poster_url": (
-            str(poster_url or "").strip()[:_MAX_URL]
-            if str(poster_url or "").strip().startswith("https://")
-            else ""
-        ),
+        # A play that has no poster of its own (an episode row, a search
+        # result) keeps the artwork already stored for that title instead of
+        # replacing it with nothing.
+        "poster_url": _poster(poster_url) or str((previous or {}).get("poster_url") or ""),
         "year": _clean_text(year, 4),
         "watched_at": float(watched_at if watched_at is not None else time.time()),
     }
-    existing = load(settings)
     merged = [entry] + [item for item in existing if item["key"] != clean]
     settings.set(HISTORY_KEY, merged[:MAX_HISTORY])
     return entry
