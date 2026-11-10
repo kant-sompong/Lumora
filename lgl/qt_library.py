@@ -73,7 +73,6 @@ from .qt_widgets import (
     pixmap_from_bytes,
     run_async,
     scroll_page,
-    search_icon,
     space,
 )
 from .util import human_size, is_within
@@ -968,14 +967,9 @@ class LibraryPage(QWidget):
         bar.setContentsMargins(24, 16, 24, 10)
         self._bar = bar
         bar.setSpacing(8)
-        self.search = QLineEdit()
-        self.search.setObjectName("librarySearch")
-        self.search.setPlaceholderText("Search library")
-        self.search.addAction(search_icon(self.palette().color(self.foregroundRole())),
-                              QLineEdit.LeadingPosition)
-        self.search.textChanged.connect(self.refresh)
-        self.search.setClearButtonEnabled(False)
-        bar.addWidget(self.search, 1)
+        # The window's header search filters this page.  A second box here was
+        # the same filter twice, and typing in one left the other stale.
+        self._query = ""
 
         self.view_toggle = ViewToggle("Grid / list")
         self.view_toggle.clicked.connect(self._toggle_view)
@@ -1060,6 +1054,14 @@ class LibraryPage(QWidget):
                 return []
         return []
 
+    def set_query(self, text: str) -> None:
+        """Filter the Games tab from the window's header search box."""
+        text = str(text or "")
+        if text == self._query:
+            return
+        self._query = text
+        self.refresh()
+
     def set_entries(self, entries: Sequence[LibraryEntry]) -> None:
         self._entries = list(entries)
         # The tabs read the library when they are opened, so drop any panel built
@@ -1112,7 +1114,7 @@ class LibraryPage(QWidget):
         run_async(work, done, lambda exc: self._toast(f"Rescan failed: {exc}", error=True))
 
     def refresh(self) -> None:
-        query = self.search.text().strip()
+        query = self._query.strip()
         entries = list(self._entries)
         settings = self.settings
         games_only = settings.library_games_only if settings is not None else True

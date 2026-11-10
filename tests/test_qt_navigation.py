@@ -19,6 +19,7 @@ pytest.importorskip("PySide6.QtWidgets")
 from PySide6.QtWidgets import QApplication, QLabel  # noqa: E402
 
 from lgl import nav_layout, palette as palette_lib, qt_browse, qt_main  # noqa: E402
+from lgl.library_store import LibraryEntry  # noqa: E402
 from lgl.settings import Settings  # noqa: E402
 
 ARTIFACTS = Path(__file__).resolve().parents[1] / "artifacts"
@@ -130,6 +131,20 @@ def test_the_rows_stay_on_screen_when_the_catalogue_list_is_empty(window, app):
     assert not browse.scroll.isHidden()
     for row in (browse.recommended_row, browse.gems_row):
         assert row.isHidden() or row.isVisibleTo(browse)
+
+
+def test_the_header_search_filters_the_library_games(window, app):
+    window.library.set_entries([
+        LibraryEntry(identifier="alpha", title="Alpha", folder="/games/alpha"),
+        LibraryEntry(identifier="beta", title="Beta", folder="/games/beta"),
+    ])
+    window.show_view("library")
+    pump(app, 0.1)
+
+    window.search_field.setText("alpha")
+    pump(app, 0.1)
+
+    assert [entry.identifier for entry in window.library._shown] == ["alpha"]
 
 
 def test_each_page_names_its_own_search(window, app):

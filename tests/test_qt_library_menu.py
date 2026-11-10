@@ -10,7 +10,7 @@ import pytest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 pytest.importorskip("PySide6.QtWidgets")
 
-from PySide6.QtWidgets import QApplication, QPushButton  # noqa: E402
+from PySide6.QtWidgets import QApplication, QLineEdit, QPushButton  # noqa: E402
 
 from lgl import collections, nav_layout, palette as palette_lib, profiles  # noqa: E402
 from lgl import qt_collections, qt_library, qt_library_tools, qt_palette  # noqa: E402
@@ -221,6 +221,27 @@ def test_the_more_menu_has_no_find_duplicates(app):
 
     assert "Find duplicates…" not in texts
     assert "Export library…" in texts
+    widget.close()
+
+
+def test_the_library_has_no_search_box_of_its_own(app):
+    widget, _ = page([game()])
+
+    # One box filters this page: the one in the window header.
+    assert not widget.findChildren(QLineEdit)
+    widget.close()
+
+
+def test_the_page_query_filters_the_games_tab(app):
+    widget, _ = page([game("alpha"), game("beta")])
+
+    widget.set_query("alp")
+
+    assert [entry.identifier for entry in widget._shown] == ["alpha"]
+
+    widget.set_query("")
+
+    assert sorted(entry.identifier for entry in widget._shown) == ["alpha", "beta"]
     widget.close()
 
 

@@ -443,6 +443,11 @@ class Window(QMainWindow):
         elif key == "library":
             self.search_field.setPlaceholderText("Search library")
             self.search_field.setEnabled(True)
+            library = getattr(self, "library", None)
+            if library is not None:
+                # The page has no box of its own, so whatever the header holds
+                # is the query the Games tab filters by.
+                library.set_query(self.search_field.text())
         elif key == "media":
             self.search_field.setPlaceholderText("Search movies, TV, anime")
             self.search_field.setEnabled(True)
@@ -460,7 +465,7 @@ class Window(QMainWindow):
         if current == "browse":
             self.browse.refresh()
         elif current == "library":
-            self.library.search.setText(text)
+            self.library.set_query(text)
         elif current == "media":
             self.media.search.setText(text)
 
