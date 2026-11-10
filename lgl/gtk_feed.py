@@ -432,22 +432,26 @@ class ThreeColumnList(Gtk.Box):
         parts = self.columns.get(key)
         if parts is None:
             return
+        box = parts["box"]
         rows = parts["rows"]
         _clear(rows)
         for item in self.state.rows(key):
             rows.pack_start(self._feed_row(item), False, False, 0)
         has_rows = self.state.row_count(key) > 0
         error = self.state.error_text(key)
+        visible = self.state.visible(key)
         parts["error"].set_text(error)
-        parts["error"].set_visible(bool(error))
         parts["toggle"].set_label(self.state.toggle_label(key))
-        # show_all() first, then the real visibility, or a column that only has
-        # an error line would come back with its empty row box showing.
-        _show_all(self)
+        # Show this column's own tree, never the whole list: show_all() on the
+        # list would reveal empty sibling columns and whatever they last hid.
+        if visible:
+            _show_all(box)
+        # then the real visibility, or a column that only has an error line
+        # would come back with its empty row box showing.
         parts["error"].set_visible(bool(error))
         rows.set_visible(has_rows)
         parts["toggle"].set_visible(self.state.can_expand(key))
-        parts["box"].set_visible(self.state.visible(key))
+        box.set_visible(visible)
         self.set_visible(self.state.any_visible())
 
     def _feed_row(self, item: Any) -> Gtk.Button:
