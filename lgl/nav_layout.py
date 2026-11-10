@@ -30,11 +30,10 @@ TABS: dict[str, tuple[tuple[str, str], ...]] = {
         ("games", "Games"),
         ("favourites", "Favourites"),
         ("collections", "Collections"),
-        ("complete-the-set", "Complete the set"),
-        ("tags", "Tags"),
         ("activity", "Activity"),
         ("statistics", "Statistics"),
         ("recent", "Recently viewed"),
+        ("complete-the-set", "Complete the set"),
     ),
     "media": (
         ("home", "Home"),
@@ -82,7 +81,8 @@ PLACES: dict[str, tuple[str, str | None, str | None]] = {
     "viewed": ("page", "library", "recent"),
     "surprise": ("action", "surprise", None),
     "statistics": ("page", "library", "statistics"),
-    "tags": ("page", "library", "tags"),
+    # Tagging is a right-click action now, so the old menu entry opens a dialog.
+    "tags": ("dialog", "tags", None),
     "details": ("dialog", "metadata", None),
     "bulk": ("page", "library", "games"),
     "duplicates": ("dialog", "duplicates", None),

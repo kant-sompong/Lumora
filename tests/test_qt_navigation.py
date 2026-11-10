@@ -16,7 +16,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 pytest.importorskip("PySide6.QtWidgets")
 
-from PySide6.QtWidgets import QApplication  # noqa: E402
+from PySide6.QtWidgets import QApplication, QLabel  # noqa: E402
 
 from lgl import nav_layout, palette as palette_lib, qt_browse, qt_main  # noqa: E402
 from lgl.settings import Settings  # noqa: E402
@@ -68,30 +68,103 @@ def test_the_palette_has_no_discover_command():
     assert not any(command.group == "Discover" for command in commands)
 
 
+ROWS = [
+    {"key": "a", "title": "Alpha", "genres": ["RPG"], "rating": 9.0, "favorite": True},
+    {"key": "b", "title": "Beta", "genres": ["RPG"], "rating": 8.0, "popularity": 5},
+    {"key": "c", "title": "Gamma", "genres": ["RPG", "Puzzle"], "rating": 4.0,
+     "popularity": 60},
+]
+
+
+def wait_until(app, predicate, timeout: float = 5.0) -> bool:
+    end = time.time() + timeout
+    while time.time() < end:
+        app.processEvents()
+        if predicate():
+            return True
+        time.sleep(0.01)
+    return predicate()
+
+
 def test_browse_has_two_discovery_rows_filled_from_the_library(app):
-    rows = [
-        {"key": "a", "title": "Alpha", "genres": ["RPG"], "rating": 9.0,
-         "favorite": True},
-        {"key": "b", "title": "Beta", "genres": ["RPG"], "rating": 8.0,
-         "popularity": 5},
-        {"key": "c", "title": "Gamma", "genres": ["RPG", "Puzzle"], "rating": 4.0,
-         "popularity": 60},
-    ]
-    page = qt_browse.BrowsePage(rows_provider=lambda: rows, liked_provider=lambda: ["a"])
+    page = qt_browse.BrowsePage(
+        rows_provider=lambda: ROWS, liked_provider=lambda: ["a"],
+    )
     page.set_games([])
 
+    assert wait_until(app, lambda: page.recommended_row.cards())
+    assert wait_until(app, lambda: page.gems_row.cards())
     assert [card["title"] for card in page.recommended_row.cards()] == ["Beta", "Gamma"]
     assert [card["title"] for card in page.gems_row.cards()] == ["Alpha", "Beta"]
     assert not page.recommended_row.isHidden()
     assert not page.gems_row.isHidden()
 
 
-def test_the_discovery_rows_stay_hidden_without_local_data(app):
-    page = qt_browse.BrowsePage()
+def test_the_discovery_rows_hide_themselves_when_there_is_nothing(app):
+    page = qt_browse.BrowsePage(rows_provider=lambda: [], liked_provider=lambda: [])
     page.set_games([])
 
-    assert page.recommended_row.isHidden()
-    assert page.gems_row.isHidden()
+    assert wait_until(app, lambda: page.recommended_row.isHidden())
+    assert wait_until(app, lambda: page.gems_row.isHidden())
+
+
+def test_a_failing_row_provider_shows_why(app):
+    def broken():
+        raise RuntimeError("library unreadable")
+
+    page = qt_browse.BrowsePage(rows_provider=broken)
+    page.set_games([])
+
+    assert wait_until(app, lambda: not page.recommended_row.isHidden())
+    assert wait_until(app, lambda: not page.gems_row.isHidden())
+    assert page.recommended_row.error.text() == "Could not load: library unreadable"
+    assert page.recommended_row.cards() == []
+
+
+def test_the_rows_stay_on_screen_when_the_catalogue_list_is_empty(window, app):
+    window.show_view("browse")
+    pump(app, 0.6)
+
+    browse = window.browse
+    assert browse._shown == []
+    assert not browse.scroll.isHidden()
+    for row in (browse.recommended_row, browse.gems_row):
+        assert row.isHidden() or row.isVisibleTo(browse)
+
+
+def test_each_page_names_its_own_search(window, app):
+    for view, text in (
+        ("browse", "Search games"),
+        ("library", "Search library"),
+        ("media", "Search movies, TV, anime"),
+    ):
+        window.show_view(view)
+        pump(app, 0.05)
+        assert window.search_field.placeholderText() == text, view
+
+
+def test_an_empty_library_has_no_toolbar_band_and_says_what_to_do(window, app):
+    window.show_view("library")
+    pump(app)
+
+    assert window.library._entries == []
+    assert window.library._toolbar.isHidden()
+    assert not window.library.empty.isHidden()
+    assert window.library.empty.title.text() == "No games yet"
+    assert window.library.empty.hint.text() == "Download or add one to see it here."
+
+
+def test_an_embedded_panel_drops_its_own_title(window, app):
+    window.show_place("library", "statistics")
+    pump(app, 0.1)
+
+    panel = window.library.tabs.currentWidget().layout().itemAt(0).widget()
+    headings = [
+        child for child in panel.findChildren(QLabel)
+        if child.objectName() == "detailEyebrow"
+    ]
+    assert headings
+    assert all(heading.isHidden() for heading in headings)
 
 
 def test_the_library_has_a_complete_the_set_tab_with_an_empty_state(window, app):
@@ -109,8 +182,8 @@ def test_the_library_has_a_complete_the_set_tab_with_an_empty_state(window, app)
 
 def test_library_tabs_exist_and_switching_builds_the_panel(window, app):
     assert tab_texts(window.library.tabs) == [
-        "Games", "Favourites", "Collections", "Complete the set", "Tags",
-        "Activity", "Statistics", "Recently viewed",
+        "Games", "Favourites", "Collections", "Activity", "Statistics",
+        "Recently viewed", "Complete the set",
     ]
     window.show_place("library", "statistics")
     pump(app)
