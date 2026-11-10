@@ -941,6 +941,10 @@ class EmptyState(QWidget):
         self.hint.setVisible(bool(hint))
         column.addWidget(self.hint)
         column.addStretch(1)
+        # A page that also holds ranked rows squeezes its children to fit; with
+        # no floor the icon's block was cut off at the bottom (154px for a 169px
+        # hint at 1280x820).  The scroll area grows instead.
+        self.setMinimumHeight(180)
 
     def set_text(self, title: str, hint: str = "") -> None:
         self.title.setText(title)

@@ -147,6 +147,23 @@ def test_the_header_search_filters_the_library_games(window, app):
     assert [entry.identifier for entry in window.library._shown] == ["alpha"]
 
 
+@pytest.mark.parametrize("width", [1000, 1280, 1920])
+def test_the_loading_state_below_the_rows_is_never_clipped(app, width):
+    page = qt_browse.BrowsePage(rows_provider=lambda: ROWS, liked_provider=lambda: ["a"])
+    page.resize(width, 780)
+    page.show()
+    page.set_games([])
+    assert wait_until(app, lambda: page.gems_row.cards())
+    pump(app, 0.2)
+
+    empty = page.empty
+    assert empty.isVisible()
+    assert empty.height() >= empty.sizeHint().height()
+    rows = [row for row in (page.recommended_row, page.gems_row) if row.isVisible()]
+    assert empty.geometry().top() >= max(row.geometry().bottom() for row in rows)
+    assert empty.geometry().bottom() <= page.scroll.widget().height()
+
+
 def test_each_page_names_its_own_search(window, app):
     for view, text in (
         ("browse", "Search games"),
