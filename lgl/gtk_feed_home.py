@@ -66,6 +66,7 @@ class FeedHome(Gtk.Box):
         *,
         on_open: Callable[[Any], None] | None = None,
         on_view_all: Callable[[str], None] | None = None,
+        on_schedule_open: Callable[[Any], None] | None = None,
         image_loader: ImageLoader | None = None,
         threaded: bool = True,
     ) -> None:
@@ -73,6 +74,7 @@ class FeedHome(Gtk.Box):
         self.get_style_context().add_class("feed-home")
         self._on_open = on_open
         self._on_view_all = on_view_all
+        self._on_schedule_open = on_schedule_open
         self._image_loader = image_loader
         self._threaded = threaded
         self._covers: dict[tuple[str, tuple[int, int]], Any] = {}
@@ -103,7 +105,13 @@ class FeedHome(Gtk.Box):
         self.columns = gtk_feed.ThreeColumnList(on_open=self._opened)
         self.pack_start(self.columns, False, False, 0)
 
-        self.schedule = gtk_feed.ScheduleStrip()
+        self.schedule = gtk_feed.ScheduleStrip(on_open=on_schedule_open)
+        # The strip's own empty line ("Nothing airs on …") is true only after a
+        # load has answered; until then it must not appear, not even through the
+        # page's show_all().  It is shown by _apply_schedule once data arrives.
+        self.schedule.set_no_show_all(True)
+        self.schedule.set_visible(False)
+        self.schedule.empty.set_visible(False)
         self.pack_start(self.schedule, False, False, 0)
 
         self.schedule_error = Gtk.Label(label="", xalign=0)
@@ -223,12 +231,14 @@ class FeedHome(Gtk.Box):
             return False
         entries = list(result or ())  # type: ignore[arg-type]
         self.schedule_error.set_visible(False)
-        if not entries:
-            self.schedule.set_visible(False)
-            return False
+        # The load answered, so the strip may appear now: with rows when there
+        # are airings, and with its own "Nothing airs on …" line when the week
+        # really is empty.  The old code hid the strip for an empty answer, so
+        # an empty result and a missing one looked the same.
         self.schedule.set_now(datetime.now())
-        self.schedule.show_all()
         self.schedule.set_entries(entries)
+        self.schedule.set_no_show_all(False)
+        self.schedule.show_all()
         self.schedule.set_visible(True)
         return False
 
