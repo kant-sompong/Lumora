@@ -1173,6 +1173,47 @@ def _interleave(first, second) -> list:
     return mixed
 
 
+_ANILIST_KEY_PREFIXES = ("anilist", "anime", "anipm")
+
+
+def _anilist_id_from_key(key: Any) -> int:
+    """The positive AniList id inside ``anilist:161645``; 0 when unreadable.
+
+    Hidden Gems and the release feed name a title by its key and carry no
+    numeric ``id`` of their own, so the key is the only thing that can say
+    which title a row is.  Anything malformed (a missing number, a zero, a
+    negative, a different prefix) answers 0 instead of being guessed at.
+    """
+    text = str(key or "").strip()
+    prefix, _, number = text.partition(":")
+    if prefix not in _ANILIST_KEY_PREFIXES:
+        return 0
+    try:
+        ident = int(number)
+    except (TypeError, ValueError):
+        return 0
+    return ident if ident > 0 else 0
+
+
+class AniListItem(AnimeItem):
+    """An anime card whose ``id`` is an AniList id, not a MyAnimeList one.
+
+    Hidden Gems, New Added and Just Completed all name titles by their AniList
+    id.  Keeping the shared :class:`AnimeItem` shape (a positive ``id``, title,
+    poster, rating) lets the feed widgets draw them like any other anime, while
+    :meth:`MoviesWindow._open_feed_item` can send them to the AniList-backed
+    details route instead of asking MyAnimeList for an id it never issued.
+    """
+
+    @property
+    def anilist_id(self) -> int:
+        return int(self.id)
+
+    @property
+    def key(self) -> str:
+        return f"anilist:{int(self.id)}"
+
+
 def _configure_button(label: str = "Configure providers") -> Gtk.Button:
     button = Gtk.Button(label=label)
     button.get_style_context().add_class("movie-btn-dark")
@@ -1533,6 +1574,8 @@ class MoviesWindow(Gtk.Box):
         self._anime_token = 0
         self._anime_loaded = False
         self._anime_detail_token = 0
+        self._gems_token = 0
+        self._gems_loaded = False
         self._kind = "movie"
         self._browse_loaded_kind: str | None = None
         self._search_token = 0
@@ -1587,6 +1630,7 @@ class MoviesWindow(Gtk.Box):
         self._stack.add_named(self._build_browse_page(), "browse")
         self._stack.add_named(self._build_search_page(), "search")
         self._stack.add_named(self._build_anime_page(), "anime")
+        self._stack.add_named(self._build_gems_page(), "gems")
         self._stack.add_named(self._build_mylist_page(), "mylist")
         self._stack.add_named(self._build_history_page(), "history")
         self._stack.add_named(self._details_scroll, "details")
@@ -2092,6 +2136,7 @@ class MoviesWindow(Gtk.Box):
         self.feed = gtk_feed_home.FeedHome(
             on_open=self._open_feed_item,
             on_view_all=self._show_feed_more,
+            on_schedule_open=self._open_feed_item,
             image_loader=self._images.load,
         )
         sections.pack_start(self.feed, False, False, 0)
@@ -2104,17 +2149,40 @@ class MoviesWindow(Gtk.Box):
         if isinstance(item, MediaItem):
             self._open_details(item)
             return
+        if isinstance(item, AniListItem):
+            # Hidden Gems and the anime columns: the id came out of an
+            # ``anilist:`` key, so it must never be sent to MyAnimeList.
+            self._open_anilist_details(item.anilist_id, item.title)
+            return
+        if isinstance(item, anipm.AniTitle):
+            self._open_anime_details(item)
+            return
         if isinstance(item, AnimeItem):
             self._open_anime_details(item)
             return
-        if not isinstance(item, dict):
+        key = self._feed_key(item)
+        if not key:
             return
-        key = str(item.get("key") or "")
-        title = str(item.get("title") or "")
-        if key.startswith("anilist:") or key.startswith("anime:"):
-            ident = key.split(":", 1)[1]
-            if ident.isdigit():
-                self._open_anime_details(AnimeItem(id=int(ident), title=title))
+        self._open_feed_key(key, self._feed_title(item))
+
+    @staticmethod
+    def _feed_key(item) -> str:
+        """The key on a feed row: a plain mapping or an object such as Entry."""
+        if isinstance(item, dict):
+            return str(item.get("key") or "").strip()
+        return str(getattr(item, "key", "") or "").strip()
+
+    @staticmethod
+    def _feed_title(item) -> str:
+        if isinstance(item, dict):
+            return str(item.get("title") or "")
+        return str(getattr(item, "title", "") or "")
+
+    def _open_feed_key(self, key: str, title: str = "") -> None:
+        """Follow one feed key: AniList ids to anime, TMDB ids to TMDB."""
+        ident = _anilist_id_from_key(key)
+        if ident:
+            self._open_anilist_details(ident, title)
             return
         parts = key.split(":")
         if (
@@ -2127,6 +2195,18 @@ class MoviesWindow(Gtk.Box):
                 MediaItem(kind=parts[1], tmdb_id=int(parts[2]), title=title)
             )
 
+    def _open_anilist_details(self, anilist_id: int, title: str = "") -> None:
+        """Anime details for an AniList id, never passed off as a MAL id."""
+        try:
+            ident = int(anilist_id or 0)
+        except (TypeError, ValueError):
+            ident = 0
+        if ident <= 0:
+            return
+        self._open_anime_details(
+            anipm.AniTitle(anilist_id=ident, title=str(title or ""))
+        )
+
     def _show_feed_more(self, key: str) -> None:
         """Where each row's View All leads."""
         if key == "continue":
@@ -2134,7 +2214,7 @@ class MoviesWindow(Gtk.Box):
         elif key == "tv":
             self._open_browse("tv")
         elif key == "hidden_gems":
-            self._activate_nav("anime")
+            self._open_gems()
         else:
             self._open_browse("movie")
 
@@ -2147,6 +2227,14 @@ class MoviesWindow(Gtk.Box):
         if row is not None and row.loader() is not None:
             row.refresh()
 
+    def _excluded_titles(self) -> set[str]:
+        """Keys of the titles the user already keeps, so gems can skip them."""
+        keys = set(self._watchlist())
+        keys |= {
+            str(entry.get("key")) for entry in media_history.recent(self._settings, 50)
+        }
+        return keys
+
     def _install_feed_loaders(self) -> None:
         """The feed's own sections, plus the three lists and the schedule."""
         from . import discovery, hidden_gems, release_feed
@@ -2154,10 +2242,7 @@ class MoviesWindow(Gtk.Box):
         feed = self.feed
 
         def saved() -> set[str]:
-            return set(self._watchlist()) | {
-                str(entry.get("key"))
-                for entry in media_history.recent(self._settings, 50)
-            }
+            return self._excluded_titles()
 
         def continue_watching() -> list[dict[str, Any]]:
             cards = []
@@ -2220,14 +2305,17 @@ class MoviesWindow(Gtk.Box):
                 raise RuntimeError(result.error)
             cards = []
             for entry in result.entries:
-                ident = int(entry.get("id") or 0)
+                # Gems carry only ``key`` (``anilist:161645``), never an ``id``.
+                ident = _anilist_id_from_key(entry.get("key"))
+                if not ident:
+                    continue
                 score = entry.get("score")
                 rating = None
                 try:
                     rating = float(score) / 10 if score is not None else None
                 except (TypeError, ValueError):
                     rating = None
-                item = AnimeItem(
+                item = AniListItem(
                     id=ident,
                     title=str(entry.get("title") or "Untitled"),
                     poster_url=str(entry.get("cover_image") or entry.get("image") or ""),
@@ -2280,7 +2368,7 @@ class MoviesWindow(Gtk.Box):
                     ),
                     "key": f"anime:{row.get('id')}",
                 }
-                for row in (rows or [])[:5]
+                for row in (rows or [])
             ]
 
         def schedule() -> list[object]:
@@ -2509,6 +2597,9 @@ class MoviesWindow(Gtk.Box):
                 self._load_home,
             )
         self._render_home_hero(None, notice="Connect TMDB to see what is trending.")
+        # TMDB is only half of this page: Hidden Gems, New Added, Just Completed
+        # and the schedule come from AniList and must still load without a key.
+        self.feed.refresh()
         return False
 
     def _set_home_notice(self, title, body, action_label=None, action=None) -> None:
@@ -2970,6 +3061,132 @@ class MoviesWindow(Gtk.Box):
         self._anime_flow.set_no_show_all(False)
         self._anime_flow.show_all()
 
+    # -- hidden gems (AniList) ----------------------------------------------
+
+    def _build_gems_page(self) -> Gtk.Widget:
+        scroller = self._scroller()
+        inner = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        inner.set_margin_start(32)
+        inner.set_margin_end(32)
+        inner.set_margin_top(24)
+        inner.set_margin_bottom(24)
+        scroller.add(inner)
+
+        header = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        header.pack_start(self._page_title("Hidden gems"), False, False, 0)
+        self._gems_spinner = Gtk.Spinner()
+        self._gems_spinner.set_no_show_all(True)
+        header.pack_end(self._gems_spinner, False, False, 0)
+        refresh = self._icon_button(
+            "view-refresh-symbolic", "Reload hidden gems", self._reload_gems
+        )
+        header.pack_end(refresh, False, False, 0)
+        inner.pack_start(header, False, False, 0)
+
+        sub = Gtk.Label(
+            label="AniList anime with a high score and few viewers, best rated "
+            "first. Scores and popularity come from AniList, so browsing this "
+            "page needs no MyAnimeList Client ID.",
+            xalign=0,
+        )
+        sub.set_line_wrap(True)
+        sub.get_style_context().add_class("movie-status")
+        inner.pack_start(sub, False, False, 4)
+
+        self._gems_status = Gtk.Label(label="", xalign=0)
+        self._gems_status.set_line_wrap(True)
+        self._gems_status.get_style_context().add_class("movie-status")
+        inner.pack_start(self._gems_status, False, False, 4)
+
+        self._gems_flow = self._flowbox()
+        self._gems_flow.set_no_show_all(True)
+        inner.pack_start(self._gems_flow, True, True, 0)
+        return scroller
+
+    def _open_gems(self) -> None:
+        """The AniList Hidden Gems collection, with no MyAnimeList requirement."""
+        self._stack.set_visible_child_name("gems")
+        self._set_active_nav("gems")
+        self._update_back()
+        if not self._gems_loaded:
+            self._load_gems()
+
+    def _reload_gems(self) -> None:
+        self._gems_loaded = False
+        self._load_gems()
+
+    def _load_gems(self) -> None:
+        from . import hidden_gems
+
+        self._gems_token += 1
+        token = self._gems_token
+        self._spin(self._gems_spinner, True)
+        self._gems_status.set_text("Loading hidden gems from AniList…")
+        excluded = self._excluded_titles()
+
+        def work() -> None:
+            result = hidden_gems.load_gems(excluded=excluded)
+            GLib.idle_add(self._apply_gems, token, result)
+
+        threading.Thread(target=work, daemon=True, name="lgl-gems").start()
+
+    def _apply_gems(self, token: int, result) -> bool:
+        if token != self._gems_token:
+            return False
+        self._spin(self._gems_spinner, False)
+        entries = list(getattr(result, "entries", []) or [])
+        items = [item for item in (self._gem_title(entry) for entry in entries) if item]
+        if items:
+            self._gems_loaded = True
+            note = getattr(result, "note", None)
+            self._gems_status.set_text(note() if callable(note) else "")
+            self._show_gems(items)
+            return False
+        self._gems_loaded = False
+        text = str(getattr(result, "error_text", "") or "")
+        if not text:
+            note = getattr(result, "note", None)
+            text = note() if callable(note) else ""
+        self._gems_status.set_text(text or "No hidden gems right now.")
+        self._clear_flow(self._gems_flow)
+        self._gems_flow.hide()
+        return False
+
+    @staticmethod
+    def _gem_title(entry):
+        """One gem as an AniPm title: its key carries the AniList id."""
+        if not isinstance(entry, dict):
+            return None
+        ident = _anilist_id_from_key(entry.get("key"))
+        if not ident:
+            return None
+        rating = None
+        try:
+            if entry.get("score") is not None:
+                rating = round(float(entry["score"]) / 10, 1)
+        except (TypeError, ValueError):
+            rating = None
+        try:
+            episodes = int(entry.get("episodes") or 0)
+        except (TypeError, ValueError):
+            episodes = 0
+        return anipm.AniTitle(
+            anilist_id=ident,
+            title=str(entry.get("title") or "Untitled"),
+            format=str(entry.get("format") or ""),
+            score=rating,
+            status=str(entry.get("status") or ""),
+            episodes=max(0, episodes),
+        )
+
+    def _show_gems(self, items) -> None:
+        for child in self._gems_flow.get_children():
+            self._gems_flow.remove(child)
+        for item in items:
+            self._gems_flow.add(AniPmTile(item, self._images, self._open_anime_details))
+        self._gems_flow.set_no_show_all(False)
+        self._gems_flow.show_all()
+
     # -- anime details ------------------------------------------------------
 
     def _open_anime_details(self, item) -> None:
@@ -3123,6 +3340,17 @@ class MoviesWindow(Gtk.Box):
         note.get_style_context().add_class("movie-status")
         body.pack_start(note, False, False, 0)
 
+        # Filled in while the details load, and the one place a MAL failure or
+        # a missing Client ID is explained instead of leaving a blank page.
+        status = Gtk.Label(label="", xalign=0)
+        status.set_line_wrap(True)
+        status.set_selectable(True)
+        status.set_max_width_chars(100)
+        status.get_style_context().add_class("movie-status")
+        status.set_no_show_all(True)
+        body.pack_start(status, False, False, 0)
+        self._anime_detail_status = status
+
         overview = Gtk.Label(label=getattr(item, "synopsis", "") or "")
         overview.set_xalign(0)
         overview.set_line_wrap(True)
@@ -3133,7 +3361,9 @@ class MoviesWindow(Gtk.Box):
         page.pack_start(body, False, False, 0)
 
         state = self._anime_detail_state
-        state.update({"title": title, "meta": meta, "overview": overview})
+        state.update(
+            {"title": title, "meta": meta, "overview": overview, "status": status}
+        )
         if isinstance(item, anipm.AniTitle):
             self._build_ani_episode_section(body, item)
         self._load_detail_image(getattr(item, "poster_url", ""), backdrop, self._anime_detail_token)
@@ -3165,14 +3395,52 @@ class MoviesWindow(Gtk.Box):
             ).start()
             return
 
+        try:
+            ident = int(getattr(item, "id", 0) or 0)
+        except (TypeError, ValueError):
+            ident = 0
+        if ident <= 0:
+            self._anime_details_error(
+                token, ValueError("this title has no usable anime id")
+            )
+            return
+        self._set_anime_detail_status("Loading details from MyAnimeList…")
+
         def work() -> None:
             try:
-                details = self._mal_client.details(item.id)
-            except MalError:
+                details = self._mal_client.details(ident)
+            except (MalError, ValueError) as error:
+                GLib.idle_add(self._anime_details_error, token, error)
                 return
             GLib.idle_add(self._apply_anime_details, token, details)
 
         threading.Thread(target=work, daemon=True, name="lgl-mal-details").start()
+
+    def _set_anime_detail_status(self, text: str) -> None:
+        """The one line under an anime page's note: loading, or what failed."""
+        label = getattr(self, "_anime_detail_status", None)
+        if label is None:
+            return
+        label.set_text(str(text or ""))
+        label.set_visible(bool(text))
+
+    def _anime_details_error(self, token: int, error: object) -> bool:
+        """Explain a MAL failure on the page itself; never raise on a worker."""
+        if token != self._anime_detail_token:
+            return False
+        kind = getattr(error, "kind", "")
+        if kind == "missing-key":
+            text = (
+                "MyAnimeList is not configured, so its synopsis, rating and "
+                "episodes cannot be shown. Add a MyAnimeList Client ID in "
+                "Settings → Providers to see them here."
+            )
+        elif isinstance(error, ValueError):
+            text = f"Could not open this anime: {error}."
+        else:
+            text = f"Could not load anime details from MyAnimeList: {error}"
+        self._set_anime_detail_status(text)
+        return False
 
     def _build_ani_episode_section(self, body: Gtk.Box, item) -> None:
         """The episode list for an ani.pm title, filled once data arrives."""
@@ -3343,6 +3611,7 @@ class MoviesWindow(Gtk.Box):
     def _apply_anime_details(self, token: int, details: AnimeDetails) -> bool:
         if token != self._anime_detail_token:
             return False
+        self._set_anime_detail_status("")
         state = getattr(self, "_anime_detail_state", {})
         title = state.get("title")
         if title is not None and details.title:

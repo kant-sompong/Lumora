@@ -406,13 +406,15 @@ def test_a_feed_entry_without_a_key_opens_nothing(media_window):
 
 
 def test_view_all_leads_to_the_matching_place(media_window):
-    nav, browse = [], []
+    nav, browse, gems = [], [], []
     media_window._activate_nav = nav.append
     media_window._open_browse = browse.append
+    media_window._open_gems = lambda: gems.append(True)
     for key in ("continue", "trending", "movies", "tv", "hidden_gems"):
         media_window._show_feed_more(key)
-    assert nav == ["history", "anime"]
+    assert nav == ["history"]
     assert browse == ["movie", "movie", "tv"]
+    assert gems == [True]
 
 
 def test_the_window_installs_loaders_and_fills_its_rows(media_window):
