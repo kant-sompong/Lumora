@@ -430,7 +430,7 @@ class CompareCard(QWidget):
             more.setObjectName("compareMore")
             more.setCursor(Qt.PointingHandCursor)
             more.setVisible(False)
-            more.clicked.connect(lambda _=False, k=key: self.show_all(k))
+            more.clicked.connect(lambda _=False, k=key: self.toggle_column(k))
             box.addWidget(more)
             box.addStretch(1)
             frame.setVisible(False)
@@ -654,15 +654,23 @@ class CompareCard(QWidget):
             row.clicked.connect(self.item_clicked.emit)
             layout.addWidget(row)
         button = self._column_buttons[key]
-        button.setText(f"Show all {len(entries)}")
-        button.setVisible(len(entries) > self.LIMIT and not self._expanded[key])
+        expanded = self._expanded[key]
+        # Once a column is open the same button folds it back, so a long list
+        # never traps the page at fourteen rows.
+        button.setText("Show fewer" if expanded else f"Show all {len(entries)}")
+        button.setVisible(len(entries) > self.LIMIT)
         self._column_frames[key].setVisible(bool(entries))
+
+    def toggle_column(self, key: str) -> None:
+        """Expand one column in place, or fold it back to five rows."""
+        self._expanded[key] = not self._expanded[key]
+        if self._result is not None:
+            self._fill_column(key, self._result)
 
     def show_all(self, key: str) -> None:
         """Expand one column in place."""
-        self._expanded[key] = True
-        if self._result is not None:
-            self._fill_column(key, self._result)
+        if not self._expanded[key]:
+            self.toggle_column(key)
 
     def rows(self, key: str) -> int:
         return self._column_rows[key].count()

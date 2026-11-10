@@ -148,7 +148,15 @@ def test_a_column_shows_five_rows_and_expands_in_place(app):
     more.click()
 
     assert widget.rows("only_first") == 14
-    assert not more.isVisibleTo(widget)
+    # Expanded, the same button folds the column back instead of vanishing.
+    assert more.isVisibleTo(widget)
+    assert more.text() == "Show fewer"
+
+    more.click()
+
+    assert widget.rows("only_first") == 5
+    assert more.isVisibleTo(widget)
+    assert more.text() == "Show all 14"
 
 
 def test_a_row_opens_the_title(app):
