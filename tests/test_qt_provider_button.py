@@ -12,7 +12,7 @@ pytest.importorskip("PySide6.QtWidgets")
 
 from PySide6.QtWidgets import QApplication, QComboBox  # noqa: E402
 
-from lgl import qt_media, streaming  # noqa: E402
+from lgl import hidden_gems, mal, qt_media, release_feed, streaming, tmdb  # noqa: E402
 
 
 class Store(dict):
@@ -41,6 +41,25 @@ RESULTS = [
 @pytest.fixture(scope="module")
 def app():
     return QApplication.instance() or QApplication([])
+
+
+@pytest.fixture(autouse=True)
+def offline(monkeypatch):
+    """Building a MediaPage reloads the real shelves on the Qt pool.
+
+    The header is what these tests measure, so every section loader and the
+    startup provider ping answer locally: no TMDB, AniList or provider request
+    may reach the pool and block the next test's work.
+    """
+    monkeypatch.setattr(tmdb, "load_api_key", lambda *args, **kwargs: "")
+    monkeypatch.setattr(mal, "load_client_id", lambda *args, **kwargs: None)
+    monkeypatch.setattr(release_feed, "load_feed",
+                        lambda *args, **kwargs: release_feed.FeedResult())
+    monkeypatch.setattr(hidden_gems, "load_gems",
+                        lambda *args, **kwargs: hidden_gems.GemsResult())
+    monkeypatch.setattr(hidden_gems, "load_anime_lists", lambda *args, **kwargs: {})
+    monkeypatch.setattr(qt_media.provider_health.AutoSelect, "start",
+                        lambda self, force=False: False)
 
 
 def page(tmp_path):
