@@ -14,8 +14,8 @@ import urllib.request
 from pathlib import Path
 from typing import Callable, Sequence
 
-from PySide6.QtCore import QRectF, QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QIcon, QPainter, QPixmap
+from PySide6.QtCore import QSize, Qt, QTimer, Signal
+from PySide6.QtGui import QIcon, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
     QButtonGroup,
@@ -54,31 +54,23 @@ from .qt_archive import (
     tile_meta,
 )
 from .qt_feed import PosterRow
-from .qt_icons import icon, paint_icon
 from .qt_widgets import (
     CheckRow,
     CoverArt,
-    CoverGrid,
     DirectionButton,
     ElideLabel,
     EmptyState,
     FlowLayout,
     IconButton,
     SortPill,
-    THEME_STATE,
     Toast,
     ViewToggle,
-    alpha_color,
     cached_image_bytes,
     clear_layout,
-    color,
-    divider,
     label,
     pixmap_from_bytes,
     run_async,
     scroll_page,
-    search_icon,
-    space,
 )
 from .qt_downloads import FilePickDialog
 from .settings import ARCHIVE_SORT_KEYS

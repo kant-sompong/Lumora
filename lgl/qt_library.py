@@ -8,11 +8,8 @@ actions.
 
 from __future__ import annotations
 
-import os
-import subprocess
-import time
 from pathlib import Path
-from typing import Callable, Sequence
+from typing import Sequence
 
 from PySide6.QtCore import QEvent, Qt, QTimer, Signal
 from PySide6.QtGui import QImage, QPainter, QPixmap
@@ -29,10 +26,8 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QListWidget,
     QMessageBox,
-    QProgressDialog,
     QPushButton,
     QRadioButton,
-    QScrollArea,
     QSizePolicy,
     QTabWidget,
     QVBoxLayout,
@@ -48,17 +43,15 @@ from . import (
     recently_viewed,
     view_prefs,
 )
-from .archive import ArchiveClient, ArchiveItem
+from .archive import ArchiveClient
 from .launch import launch as launch_program
 from .launch import plan_launch
-from .library import MANIFEST_NAME, scan_game_folder
+from .library import MANIFEST_NAME
 from .util import LaunchError
-from .library_store import LibraryEntry, LibraryStore, SORT_DEFAULT_DESCENDING, STATUSES
-from .qt_icons import icon, paint_icon
+from .library_store import LibraryEntry, LibraryStore, SORT_DEFAULT_DESCENDING
 from .qt_quick_preview import QuickPreview
 from .qt_widgets import (
     CoverArt,
-    CoverGrid,
     DirectionButton,
     ElideLabel,
     EmptyState,
@@ -67,15 +60,13 @@ from .qt_widgets import (
     SortPill,
     Toast,
     ViewToggle,
-    cached_image_bytes,
     clear_layout,
     label,
     pixmap_from_bytes,
     run_async,
     scroll_page,
-    space,
 )
-from .util import human_size, is_within
+from .util import human_size
 
 #: Sort choices in the order the GTK view offers them.
 LIBRARY_SORTS = (

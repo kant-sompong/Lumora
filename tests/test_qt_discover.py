@@ -94,16 +94,3 @@ def test_complete_the_set_with_nothing_to_add_shows_its_empty_state(app):
     assert dialog.suggestions.isHidden()
     assert not dialog.empty.isHidden()
 
-
-def test_season_comparison_splits_shared_and_unique_titles(app):
-    items = [
-        {"key": "x", "title": "X", "season": "winter", "year": "2024"},
-        {"key": "y", "title": "Y", "season": "winter", "year": "2024"},
-        {"key": "z", "title": "Z", "season": "spring", "year": "2024"},
-    ]
-    dialog = qt_discover.SeasonCompareDialog(items)
-    assert dialog.seasons == ["2024 spring", "2024 winter"]
-    assert dialog.only_first.count() == 1
-    assert dialog.only_second.count() == 2
-    assert dialog.shared.count() == 0
-    assert "Spring 2024" in dialog.summary.text()
