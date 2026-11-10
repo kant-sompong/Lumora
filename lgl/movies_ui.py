@@ -39,6 +39,7 @@ from gi.repository import (  # noqa: E402
 )
 
 from . import artwork_background, platform_support, recently_viewed  # noqa: E402
+from . import gtk_feed_home  # noqa: E402
 from . import (  # noqa: E402
     anipm,
     framextv,
@@ -451,6 +452,202 @@ button.movie-arrow:disabled {
 
 .movie-window separator {
   background-color: rgba(255, 255, 255, 0.07);
+}
+
+/* -- media home feed ---------------------------------------------------- */
+/* lgl.gtk_feed names these; the colours stay here, with the window. */
+
+.movie-window .feed-row,
+.movie-window .feed-columns,
+.movie-window .feed-schedule {
+  background-color: transparent;
+}
+
+.movie-window .feed-title {
+  color: #f5f6f7;
+  font-size: 0.96em;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+}
+.movie-window .feed-count {
+  background-color: rgba(255, 255, 255, 0.08);
+  color: #c7ccd3;
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-size: 0.72em;
+  font-weight: 700;
+}
+.movie-window .feed-note,
+.movie-window .feed-placeholder,
+.movie-window .feed-empty {
+  color: #8b949e;
+  font-size: 0.82em;
+}
+.movie-window .feed-error {
+  color: #e0a3a3;
+  font-size: 0.82em;
+}
+
+.movie-window .feed-strip {
+  background-color: transparent;
+  padding: 2px 0;
+}
+.movie-window .feed-scroll,
+.movie-window .feed-scroll viewport {
+  background-color: transparent;
+  border: none;
+}
+
+button.feed-arrow {
+  background-color: rgba(10, 11, 13, 0.72);
+  background-image: none;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-image: none;
+  box-shadow: none;
+  color: #ffffff;
+  border-radius: 999px;
+  padding: 0;
+  min-width: 28px;
+  min-height: 28px;
+}
+button.feed-arrow:hover {
+  background-color: rgba(255, 255, 255, 0.16);
+  color: #ffffff;
+}
+
+button.feed-card {
+  background-color: transparent;
+  background-image: none;
+  border: 1px solid transparent;
+  border-image: none;
+  box-shadow: none;
+  border-radius: 8px;
+  padding: 4px;
+  min-width: 0;
+  min-height: 0;
+}
+button.feed-card:hover {
+  background-color: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.10);
+}
+.movie-window .feed-poster {
+  background-color: #15181d;
+  border-radius: 6px;
+}
+.movie-window .feed-card-title {
+  color: #f5f6f7;
+  font-size: 0.88em;
+  font-weight: 600;
+}
+.movie-window .feed-card-meta {
+  color: #8b949e;
+  font-size: 0.78em;
+}
+
+.movie-window .feed-column-title {
+  color: #f5f6f7;
+  font-size: 0.74em;
+  font-weight: 700;
+  letter-spacing: 0.9px;
+}
+.movie-window .feed-column-error {
+  color: #e0a3a3;
+  font-size: 0.78em;
+}
+button.feed-column-row {
+  background-color: transparent;
+  background-image: none;
+  border: 1px solid transparent;
+  border-image: none;
+  box-shadow: none;
+  border-radius: 7px;
+  padding: 3px 5px;
+  min-height: 0;
+}
+button.feed-column-row:hover {
+  background-color: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+.movie-window .feed-column-row .poster-frame {
+  background-color: #15181d;
+  border-radius: 4px;
+}
+.movie-window .feed-column-row-title {
+  color: #e8eaed;
+  font-size: 0.88em;
+  font-weight: 600;
+}
+.movie-window .feed-column-row-meta {
+  color: #8b949e;
+  font-size: 0.78em;
+}
+button.feed-column-more {
+  background-color: transparent;
+  background-image: none;
+  border: none;
+  box-shadow: none;
+  color: #b9c0ca;
+  padding: 2px 0;
+  min-height: 0;
+  font-weight: 600;
+  font-size: 0.84em;
+}
+button.feed-column-more:hover { color: #ffffff; }
+
+.movie-window .feed-now {
+  color: #8b949e;
+  font-size: 0.8em;
+}
+.movie-window .feed-days {
+  background-color: transparent;
+}
+button.feed-day {
+  background-color: rgba(255, 255, 255, 0.04);
+  background-image: none;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  border-image: none;
+  box-shadow: none;
+  color: #c7ccd3;
+  border-radius: 8px;
+  padding: 5px 8px;
+  min-height: 0;
+  font-size: 0.84em;
+}
+button.feed-day:hover { background-color: rgba(255, 255, 255, 0.09); }
+button.feed-day:checked,
+button.feed-day.chip-on {
+  background-color: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.22);
+  color: #ffffff;
+}
+button.feed-day.feed-today { color: #ffffff; font-weight: 700; }
+
+button.feed-schedule-row {
+  background-color: transparent;
+  background-image: none;
+  border: 1px solid transparent;
+  border-image: none;
+  box-shadow: none;
+  border-radius: 7px;
+  padding: 4px 6px;
+  min-height: 0;
+}
+button.feed-schedule-row:hover {
+  background-color: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+.movie-window .feed-schedule-time {
+  color: #8b949e;
+  font-size: 0.8em;
+}
+.movie-window .feed-schedule-title {
+  color: #e8eaed;
+  font-size: 0.9em;
+}
+.movie-window .feed-schedule-episode,
+.movie-window .feed-schedule-meta {
+  color: #8b949e;
+  font-size: 0.78em;
 }
 """
 
@@ -1363,6 +1560,8 @@ class MoviesWindow(Gtk.Box):
         self._player_fullscreen = False
         self._active_section = "home"
         self._health_results: list[dict[str, Any]] = []
+        #: Last trending TMDB titles, the pool For you / More like this rank.
+        self._feed_pool: list[MediaItem] = []
         self._health = provider_health.AutoSelect(
             self._settings, on_results=self._health_received, token="gtk-window"
         )
@@ -1407,7 +1606,8 @@ class MoviesWindow(Gtk.Box):
         self._set_active_nav("home")
         self._update_back()
         self.show_all()
-        self._render_continue()
+        self._install_feed_loaders()
+        self._refresh_continue()
         self._render_history()
         self._render_mylist_empty()
         self.connect("destroy", lambda *_a: self.stop_playback())
@@ -1624,7 +1824,7 @@ class MoviesWindow(Gtk.Box):
         self._stack.set_visible_child_name("home")
         self._set_active_nav("home")
         self._update_back()
-        self._render_continue()
+        self._refresh_continue()
         if self._home_failed:
             self._load_home()
 
@@ -1733,7 +1933,7 @@ class MoviesWindow(Gtk.Box):
         self._set_active_nav(self._nav_key_for_page(target))
         self._update_back()
         if target == "home":
-            self._render_continue()
+            self._refresh_continue()
 
     # -- shared widgets -----------------------------------------------------
 
@@ -1882,87 +2082,227 @@ class MoviesWindow(Gtk.Box):
         self._home_notice_box.set_no_show_all(True)
         sections.pack_start(self._home_notice_box, False, False, 0)
 
-        self._continue_section = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
-        self._continue_section.set_no_show_all(True)
-        sections.pack_start(self._continue_section, False, False, 0)
+        self._home_spinner = Gtk.Spinner()
+        self._home_spinner.set_no_show_all(True)
+        self._home_spinner.set_halign(Gtk.Align.START)
+        sections.pack_start(self._home_spinner, False, False, 0)
 
-        (
-            self._trending_section,
-            self._trending_cards,
-            self._trending_scroller,
-            self._trending_count,
-            self._home_spinner,
-        ) = self._carousel_section(
-            "Trending Now",
-            "This week on TMDB",
-            "View All",
-            lambda: self._open_browse("movie"),
+        # The feed takes the rest of the page: seven poster rows, the three
+        # lists and the day strip, each loaded by its own worker.
+        self.feed = gtk_feed_home.FeedHome(
+            on_open=self._open_feed_item,
+            on_view_all=self._show_feed_more,
+            image_loader=self._images.load,
         )
-        sections.pack_start(self._trending_section, False, False, 0)
+        sections.pack_start(self.feed, False, False, 0)
         self._render_home_hero(None)
         return scroller
 
-    def _carousel_section(
-        self, title: str, subtitle: str, link_label: str, link_callback
-    ):
-        section = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
-        head = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=9)
-        heading = Gtk.Label(label=title, xalign=0)
-        heading.get_style_context().add_class("movie-section-title")
-        head.pack_start(heading, False, False, 0)
-        count = Gtk.Label(label="")
-        count.set_no_show_all(True)
-        count.get_style_context().add_class("movie-section-count")
-        head.pack_start(count, False, False, 0)
-        sub = Gtk.Label(label=subtitle, xalign=0)
-        sub.get_style_context().add_class("movie-section-sub")
-        head.pack_start(sub, False, False, 0)
-        spacer = Gtk.Box()
-        head.pack_start(spacer, True, True, 0)
-        spinner = Gtk.Spinner()
-        spinner.set_no_show_all(True)
-        head.pack_end(spinner, False, False, 0)
-        link = Gtk.Button(label=link_label)
-        link.set_relief(Gtk.ReliefStyle.NONE)
-        link.get_style_context().add_class("movie-link")
-        link.connect("clicked", lambda *_a: link_callback())
-        head.pack_end(link, False, False, 0)
-        section.pack_start(head, False, False, 0)
-
-        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-        left = self._icon_button(
-            "go-previous-symbolic", "Scroll left", lambda: self._scroll_carousel(scroller, -1)
-        )
-        left.set_valign(Gtk.Align.CENTER)
-        right = self._icon_button(
-            "go-next-symbolic", "Scroll right", lambda: self._scroll_carousel(scroller, 1)
-        )
-        right.set_valign(Gtk.Align.CENTER)
-        scroller = Gtk.ScrolledWindow()
-        scroller.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.NEVER)
-        scroller.set_kinetic_scrolling(True)
-        scroller.set_overlay_scrolling(False)
-        scroller.get_style_context().add_class("movie-scroll")
-        scroller.set_size_request(-1, CARD_SIZE[1] + 72)
-        cards = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=14)
-        cards.set_margin_start(2)
-        cards.set_margin_end(2)
-        scroller.add(cards)
-        row.pack_start(left, False, False, 0)
-        row.pack_start(scroller, True, True, 0)
-        row.pack_start(right, False, False, 0)
-        section.pack_start(row, False, False, 0)
-        return section, cards, scroller, count, spinner
-
-    def _scroll_carousel(self, scroller: Gtk.ScrolledWindow, direction: int) -> None:
-        adjustment = scroller.get_hadjustment()
-        if adjustment is None:
+    # -- home feed ----------------------------------------------------------
+    def _open_feed_item(self, item) -> None:
+        """A poster card opens its title; a column or schedule row opens by key."""
+        if isinstance(item, MediaItem):
+            self._open_details(item)
             return
-        page = adjustment.get_page_size()
-        step = max(240.0, page * 0.8)
-        upper = max(adjustment.get_lower(), adjustment.get_upper() - page)
-        value = min(max(adjustment.get_value() + direction * step, adjustment.get_lower()), upper)
-        adjustment.set_value(value)
+        if isinstance(item, AnimeItem):
+            self._open_anime_details(item)
+            return
+        if not isinstance(item, dict):
+            return
+        key = str(item.get("key") or "")
+        title = str(item.get("title") or "")
+        if key.startswith("anilist:") or key.startswith("anime:"):
+            ident = key.split(":", 1)[1]
+            if ident.isdigit():
+                self._open_anime_details(AnimeItem(id=int(ident), title=title))
+            return
+        parts = key.split(":")
+        if (
+            len(parts) == 3
+            and parts[0] == "tmdb"
+            and parts[1] in ("movie", "tv")
+            and parts[2].isdigit()
+        ):
+            self._open_details(
+                MediaItem(kind=parts[1], tmdb_id=int(parts[2]), title=title)
+            )
+
+    def _show_feed_more(self, key: str) -> None:
+        """Where each row's View All leads."""
+        if key == "continue":
+            self._activate_nav("history")
+        elif key == "tv":
+            self._open_browse("tv")
+        elif key == "hidden_gems":
+            self._activate_nav("anime")
+        else:
+            self._open_browse("movie")
+
+    def _refresh_continue(self) -> None:
+        """Reload just the Continue Watching row, e.g. after a play."""
+        feed = getattr(self, "feed", None)
+        if feed is None:
+            return
+        row = feed.row("continue")
+        if row is not None and row.loader() is not None:
+            row.refresh()
+
+    def _install_feed_loaders(self) -> None:
+        """The feed's own sections, plus the three lists and the schedule."""
+        from . import discovery, hidden_gems, release_feed
+
+        feed = self.feed
+
+        def saved() -> set[str]:
+            return set(self._watchlist()) | {
+                str(entry.get("key"))
+                for entry in media_history.recent(self._settings, 50)
+            }
+
+        def continue_watching() -> list[dict[str, Any]]:
+            cards = []
+            for entry in media_history.recent(self._settings, 14):
+                item = MediaItem(
+                    kind=entry["kind"],
+                    tmdb_id=entry["tmdb_id"],
+                    title=entry["title"],
+                    year=entry["year"],
+                    poster_url=entry["poster_url"],
+                )
+                cards.append(gtk_feed_home.card_for(item, "Recently watched"))
+            return cards
+
+        def pool() -> list[dict[str, Any]]:
+            return [
+                {
+                    "key": item.key,
+                    "title": item.title,
+                    "kind": item.kind,
+                    # TMDB shelf items carry no genres; the kind is the one
+                    # shared label the similarity logic can use offline.
+                    "genres": [item.kind],
+                }
+                for item in list(self._feed_pool)
+            ]
+
+        def to_cards(rows) -> list[dict[str, Any]]:
+            known = {item.key: item for item in list(self._feed_pool)}
+            cards = []
+            for row in rows:
+                if not isinstance(row, dict):
+                    continue
+                item = known.get(str(row.get("key") or ""))
+                if item is not None:
+                    cards.append(gtk_feed_home.card_for(item, _kind_noun(item.kind)))
+            return cards
+
+        def for_you() -> list[dict[str, Any]]:
+            liked = saved()
+            if not liked:
+                return [
+                    gtk_feed_home.card_for(item, _kind_noun(item.kind))
+                    for item in list(self._feed_pool)[:18]
+                ]
+            return to_cards(discovery.recommend(pool(), liked))
+
+        def more_like() -> list[dict[str, Any]]:
+            seeds = [
+                str(entry.get("key"))
+                for entry in media_history.recent(self._settings, 50)
+            ] + list(self._watchlist())
+            if not seeds or not self._feed_pool:
+                return []
+            return to_cards(discovery.similar(pool(), seeds[0]))
+
+        def hidden() -> list[dict[str, Any]]:
+            result = hidden_gems.load_gems(excluded=saved())
+            if not result.entries and result.error:
+                raise RuntimeError(result.error)
+            cards = []
+            for entry in result.entries:
+                ident = int(entry.get("id") or 0)
+                score = entry.get("score")
+                rating = None
+                try:
+                    rating = float(score) / 10 if score is not None else None
+                except (TypeError, ValueError):
+                    rating = None
+                item = AnimeItem(
+                    id=ident,
+                    title=str(entry.get("title") or "Untitled"),
+                    poster_url=str(entry.get("cover_image") or entry.get("image") or ""),
+                    rating=rating,
+                )
+                meta = f"Anime · {_rating_text(rating)}" if rating else "Anime"
+                cards.append(gtk_feed_home.card_for(item, meta))
+            return cards
+
+        def feed_result():
+            getter = release_feed.tmdb_getter(self._settings)
+            return release_feed.load_feed(
+                release_feed.default_cache_path(), tmdb_get=getter
+            )
+
+        def new_release() -> list[dict[str, Any]]:
+            now = time.time()
+            aired = [
+                entry
+                for entry in feed_result().entries
+                if entry.air_at is not None and entry.air_at <= now
+            ]
+            aired.sort(key=lambda entry: entry.air_at or 0.0, reverse=True)
+            return [
+                {
+                    "title": entry.title,
+                    "meta": f"{entry.source} · "
+                    f"{time.strftime('%d %b', time.localtime(entry.air_at or 0))}",
+                    "key": entry.key,
+                }
+                for entry in aired[:5]
+            ]
+
+        def anime_lists():
+            return hidden_gems.load_anime_lists()
+
+        def anime_rows(key: str) -> list[dict[str, Any]]:
+            block = anime_lists()
+            rows = block.get(key) if isinstance(block, dict) else None
+            return [
+                {
+                    "title": str(row.get("title") or "Untitled"),
+                    "meta": " · ".join(
+                        part
+                        for part in (
+                            str(row.get("format") or ""),
+                            str(row.get("end_date") or ""),
+                        )
+                        if part
+                    ),
+                    "key": f"anime:{row.get('id')}",
+                }
+                for row in (rows or [])[:5]
+            ]
+
+        def schedule() -> list[object]:
+            result = feed_result()
+            if not result.entries and result.errors:
+                raise RuntimeError("\n".join(result.errors))
+            return list(result.entries)
+
+        feed.set_loaders(
+            {
+                "continue": continue_watching,
+                "for_you": for_you,
+                "hidden_gems": hidden,
+                "more_like": more_like,
+            }
+        )
+        feed.set_column_loaders(
+            new_release=new_release,
+            new_added=lambda: anime_rows("new_added"),
+            just_completed=lambda: anime_rows("just_completed"),
+        )
+        feed.set_schedule_loader(schedule)
 
     def _render_home_hero(self, item: MediaItem | None, notice: str | None = None) -> None:
         if self._hero_content is not None:
@@ -2090,70 +2430,6 @@ class MoviesWindow(Gtk.Box):
         else:
             self._play(item)
 
-    def _render_continue(self) -> None:
-        section = self._continue_section
-        for child in section.get_children():
-            section.remove(child)
-        entries = media_history.recent(self._settings, 14)
-        if not entries:
-            section.hide()
-            return
-        head = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=9)
-        heading = Gtk.Label(label="Continue Watching", xalign=0)
-        heading.get_style_context().add_class("movie-section-title")
-        head.pack_start(heading, False, False, 0)
-        sub = Gtk.Label(label="Recently watched", xalign=0)
-        sub.get_style_context().add_class("movie-section-sub")
-        head.pack_start(sub, False, False, 0)
-        spacer = Gtk.Box()
-        head.pack_start(spacer, True, True, 0)
-        link = Gtk.Button(label="History")
-        link.set_relief(Gtk.ReliefStyle.NONE)
-        link.get_style_context().add_class("movie-link")
-        link.connect("clicked", lambda *_a: self._activate_nav("history"))
-        head.pack_end(link, False, False, 0)
-        section.pack_start(head, False, False, 0)
-
-        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-        scroller = Gtk.ScrolledWindow()
-        scroller.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.NEVER)
-        scroller.get_style_context().add_class("movie-scroll")
-        scroller.set_size_request(-1, CARD_SIZE[1] + 72)
-        cards = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=14)
-        cards.set_margin_start(2)
-        cards.set_margin_end(2)
-        for entry in entries:
-            item = MediaItem(
-                kind=entry["kind"],
-                tmdb_id=entry["tmdb_id"],
-                title=entry["title"],
-                year=entry["year"],
-                poster_url=entry["poster_url"],
-            )
-            cards.pack_start(
-                MediaCard(
-                    item,
-                    self._images,
-                    self._open_details,
-                    meta_text="Recently watched",
-                    show_rating=False,
-                ),
-                False,
-                False,
-                0,
-            )
-        scroller.add(cards)
-        row.pack_start(self._icon_button("go-previous-symbolic", "Scroll left",
-                                         lambda: self._scroll_carousel(scroller, -1)),
-                       False, False, 0)
-        row.pack_start(scroller, True, True, 0)
-        row.pack_start(self._icon_button("go-next-symbolic", "Scroll right",
-                                         lambda: self._scroll_carousel(scroller, 1)),
-                       False, False, 0)
-        section.pack_start(row, False, False, 0)
-        section.set_no_show_all(False)
-        section.show_all()
-
     def _load_home(self) -> None:
         self._home_token += 1
         token = self._home_token
@@ -2167,6 +2443,10 @@ class MoviesWindow(Gtk.Box):
                     results[kind] = self._client.trending(kind)
                 except TmdbError as error:
                     errors[kind] = error
+                try:
+                    results[f"popular_{kind}"] = self._client.popular(kind)
+                except TmdbError as error:
+                    errors[f"popular_{kind}"] = error
             GLib.idle_add(self._apply_home, token, results, errors)
 
         threading.Thread(target=work, daemon=True, name="lgl-home").start()
@@ -2175,18 +2455,36 @@ class MoviesWindow(Gtk.Box):
         if token != self._home_token:
             return False
         self._spin(self._home_spinner, False)
-        self._render_continue()
         items = _interleave(results.get("movie", []), results.get("tv", []))
+        popular_movies = results.get("popular_movie", [])
+        popular_tv = results.get("popular_tv", [])
         missing = any(getattr(error, "kind", "") == "missing-key" for error in errors.values())
-        if items:
+        if items or popular_movies or popular_tv:
             self._home_failed = False
             self._home_notice_box.hide()
-            self._render_home_hero(items[0])
-            self._fill_trending(items)
-            self._trending_section.show_all()
+            if items:
+                self._render_home_hero(items[0])
+            self._feed_pool = list(items)
+            self.feed.apply(
+                "trending",
+                [gtk_feed_home.card_for(item, _kind_noun(item.kind)) for item in items],
+            )
+            self.feed.apply(
+                "movies",
+                [
+                    gtk_feed_home.card_for(item, _kind_noun(item.kind))
+                    for item in popular_movies
+                ],
+            )
+            self.feed.apply(
+                "tv",
+                [gtk_feed_home.card_for(item, _kind_noun(item.kind)) for item in popular_tv],
+            )
+            self.feed.refresh()
             return False
         self._home_failed = True
-        self._trending_section.hide()
+        for key in ("trending", "movies", "tv"):
+            self.feed.apply(key, [])
         if missing:
             message = "Add a TMDB API key to browse movies and TV."
             self._set_home_notice(
@@ -2221,26 +2519,6 @@ class MoviesWindow(Gtk.Box):
         )
         self._home_notice_box.set_no_show_all(False)
         self._home_notice_box.show_all()
-
-    def _fill_trending(self, items) -> None:
-        cards = self._trending_cards
-        for child in cards.get_children():
-            cards.remove(child)
-        for item in items[:20]:
-            cards.pack_start(
-                MediaCard(
-                    item,
-                    self._images,
-                    self._open_details,
-                    meta_text=_kind_noun(item.kind),
-                ),
-                False,
-                False,
-                0,
-            )
-        cards.show_all()
-        self._trending_count.set_text(str(len(items)))
-        self._trending_count.show()
 
     @staticmethod
     def _spin(spinner: Gtk.Spinner, busy: bool) -> None:
@@ -3575,7 +3853,7 @@ class MoviesWindow(Gtk.Box):
             return
         media_history.clear(self._settings)
         self._render_history()
-        self._render_continue()
+        self._refresh_continue()
 
     # -- details ------------------------------------------------------------
 
@@ -4089,7 +4367,7 @@ class MoviesWindow(Gtk.Box):
             )
         except Exception:  # noqa: BLE001 - history must never block playback
             return
-        self._render_continue()
+        self._refresh_continue()
 
     def _play(self, item: MediaItem) -> None:
         if item.kind == "tv":
