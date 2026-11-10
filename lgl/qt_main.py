@@ -13,15 +13,13 @@ Only the platform-neutral core is used for data (``ArchiveClient``,
 from __future__ import annotations
 
 import sys
-from dataclasses import replace
 from pathlib import Path
 from typing import Any, Sequence
 
-from PySide6.QtCore import QEasingCurve, QEvent, QObject, QPropertyAnimation, Qt, QTimer
-from PySide6.QtGui import QAction, QKeySequence, QShortcut
+from PySide6.QtCore import QEasingCurve, QPropertyAnimation, Qt, QTimer
+from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
-    QDialog,
     QFrame,
     QGraphicsOpacityEffect,
     QHBoxLayout,
@@ -30,7 +28,6 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMainWindow,
     QMenu,
-    QPushButton,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
@@ -54,9 +51,7 @@ from .qt_discover import (
     FavouritesDialog,
 )
 from .qt_library_tools import (
-    BulkEditDialog,
     DuplicatesDialog,
-    MetadataEditorDialog,
     TagsDialog,
     as_entry,
 )
@@ -79,7 +74,6 @@ from .qt_widgets import (
     IconButton,
     RailButton,
     Toast,
-    clear_layout,
     color,
     run_async,
     set_theme,
@@ -640,12 +634,6 @@ class Window(QMainWindow):
 
         show_calendar(self.settings, self)
 
-    def show_season_compare(self) -> None:
-        """Compare two anime seasons: what is new, what carried over."""
-        from .qt_season import show_season_compare
-
-        show_season_compare(self)
-
     # places -----------------------------------------------------------------
     def show_place(self, page: str, tab: str = "") -> None:
         """Go to a page and, when given, bring one of its tabs to the front."""
@@ -754,79 +742,6 @@ class Window(QMainWindow):
 
     def show_tags(self) -> None:
         TagsDialog(list(self.library._entries), self._settings, self).exec()  # noqa: SLF001
-
-    def show_metadata_editor(self) -> None:
-        """Correct the selected title's name, description, year or poster."""
-        entries = list(self.library._entries)  # noqa: SLF001
-        if not entries:
-            self.toast.show_message("The library is empty.", error=True)
-            return
-        selected = getattr(self.library, "_selected", "")
-        entry = next((item for item in entries if item.identifier == selected), entries[0])
-        dialog = MetadataEditorDialog(entry, self)
-        if dialog.exec() != QDialog.DialogCode.Accepted or not dialog.changed():
-            return
-        edited = dialog.edited()
-        updated = replace(
-            entry,
-            title=str(edited.get("title") or entry.title),
-            description=str(edited.get("description") or ""),
-            year=str(edited.get("year") or ""),
-            cover_path=str(edited.get("poster") or entry.cover_path),
-        )
-        store = self.library.store
-        if store is None:
-            self.library.set_entries(
-                [updated if item.identifier == entry.identifier else item for item in entries]
-            )
-        else:
-            store.upsert(updated)
-            store.save()
-            self.library.set_entries(store.entries())
-        self.toast.show_message(f"Saved {updated.title!r}.")
-
-    def show_bulk_edit(self) -> None:
-        """Set one field on the selected title."""
-        entries = list(self.library._entries)  # noqa: SLF001
-        selected = getattr(self.library, "_selected", "")
-        if not entries:
-            self.toast.show_message("The library is empty.", error=True)
-            return
-        if not selected:
-            self.toast.show_message("Select a title first.", error=True)
-            return
-        dialog = BulkEditDialog(entries, [selected], self)
-        if dialog.exec() != QDialog.DialogCode.Accepted:
-            return
-        rows, changed = dialog.result_entries()
-        if not changed:
-            return
-        by_key = {row["key"]: row for row in rows}
-        replacements = []
-        for item in entries:
-            row = by_key.get(item.identifier)
-            if row is None:
-                continue
-            edits: dict[str, object] = {}
-            if str(row.get("title") or "") != item.title:
-                edits["title"] = str(row.get("title") or "")
-            if str(row.get("description") or "") != item.description:
-                edits["description"] = str(row.get("description") or "")
-            if str(row.get("year") or "") != item.year:
-                edits["year"] = str(row.get("year") or "")
-            if str(row.get("poster") or "") != item.cover_path:
-                edits["cover_path"] = str(row.get("poster") or "")
-            if edits:
-                replacements.append(replace(item, **edits))
-        if not replacements:
-            return
-        store = self.library.store
-        if store is not None:
-            for item in replacements:
-                store.upsert(item)
-            store.save()
-            self.library.set_entries(store.entries())
-        self.toast.show_message(f"Updated {len(replacements)} title(s).")
 
     def show_duplicates(self) -> None:
         DuplicatesDialog(self._library_rows(), self).exec()

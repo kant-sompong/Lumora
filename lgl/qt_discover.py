@@ -23,7 +23,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from . import anime_calendar, discovery, season_compare, stats
+from . import anime_calendar, discovery, stats
 from .qt_hidden import HiddenGemsPanel
 
 
@@ -258,82 +258,6 @@ class ActivityTimelineDialog(QDialog):
             layout.addLayout(buttons)
 
 
-class SeasonCompareDialog(QDialog):
-    """What two anime seasons have in common and what each has alone."""
-
-    def __init__(
-        self,
-        items: Sequence[Mapping[str, Any]],
-        parent: QWidget | None = None,
-        *,
-        embedded: bool = False,
-    ) -> None:
-        super().__init__(parent)
-        self.embedded = embedded
-        if embedded:
-            self.setWindowFlags(Qt.Widget)
-        self.setWindowTitle("Compare seasons")
-        self.resize(560, 480)
-        self.items = [dict(item) for item in items]
-        self.seasons = season_compare.seasons(self.items)
-
-        layout = QVBoxLayout(self)
-        heading = QLabel("COMPARE SEASONS", self)
-        heading.setObjectName("detailEyebrow")
-        layout.addWidget(heading)
-
-        pickers = QHBoxLayout()
-        self.first = QComboBox(self)
-        self.second = QComboBox(self)
-        for name in self.seasons:
-            self.first.addItem(name)
-            self.second.addItem(name)
-        if len(self.seasons) > 1:
-            self.second.setCurrentIndex(1)
-        self.first.currentIndexChanged.connect(self.refresh)
-        self.second.currentIndexChanged.connect(self.refresh)
-        pickers.addWidget(self.first, 1)
-        pickers.addWidget(QLabel("vs", self))
-        pickers.addWidget(self.second, 1)
-        layout.addLayout(pickers)
-
-        self.tabs = QTabWidget(self)
-        self.shared = QListWidget(self)
-        self.only_first = QListWidget(self)
-        self.only_second = QListWidget(self)
-        self.tabs.addTab(self.shared, "In both")
-        self.tabs.addTab(self.only_first, "Only first")
-        self.tabs.addTab(self.only_second, "Only second")
-        layout.addWidget(self.tabs, 1)
-
-        self.summary = QLabel("", self)
-        self.summary.setObjectName("detailNote")
-        self.summary.setWordWrap(True)
-        layout.addWidget(self.summary)
-
-        if not self.embedded:
-            buttons = QHBoxLayout()
-            buttons.addStretch(1)
-            close = QPushButton("Close", self)
-            close.clicked.connect(self.accept)
-            buttons.addWidget(close)
-            layout.addLayout(buttons)
-
-        self.refresh()
-
-    def refresh(self) -> None:
-        first = str(self.first.currentText() or "")
-        second = str(self.second.currentText() or "")
-        result = season_compare.compare(self.items, first, second)
-        _fill(self.shared, result["shared"])
-        _fill(self.only_first, result["only_first"])
-        _fill(self.only_second, result["only_second"])
-        self.tabs.setTabText(0, f"In both ({len(result['shared'])})")
-        self.tabs.setTabText(1, f"Only {first or 'first'} ({len(result['only_first'])})")
-        self.tabs.setTabText(2, f"Only {second or 'second'} ({len(result['only_second'])})")
-        self.summary.setText(season_compare.summary(result))
-
-
 class DiscoverPage(QWidget):
     """The Discover page: a Surprise me button above the five discovery tabs."""
 
@@ -409,5 +333,4 @@ __all__ = [
     "DiscoverDialog",
     "DiscoverPage",
     "FavouritesDialog",
-    "SeasonCompareDialog",
 ]

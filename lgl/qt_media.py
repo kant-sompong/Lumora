@@ -23,7 +23,6 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QPushButton,
-    QScrollArea,
     QSizePolicy,
     QStackedWidget,
     QVBoxLayout,
@@ -42,7 +41,7 @@ from . import (
     view_prefs,
 )
 from . import recently_viewed
-from .qt_icons import icon, paint_icon
+from .qt_icons import icon
 from .qt_library import ArtworkBackdrop
 from .qt_player import EmbeddedPlayer, make_player
 from .qt_widgets import (
@@ -330,8 +329,6 @@ class HeroPanel(HeroBanner):
 
     def __init__(self) -> None:
         super().__init__(430)
-        from PySide6.QtWidgets import QSpacerItem
-
         column = QVBoxLayout(self)
         column.setContentsMargins(64, 64, 64, 28)
         column.setSpacing(8)

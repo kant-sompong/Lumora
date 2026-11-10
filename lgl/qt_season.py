@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -243,12 +242,4 @@ class SeasonCompareDialog(QDialog):
         self.detail.setText(season_data.entry_details(entry) if entry else HINT)
 
 
-def show_season_compare(parent: QWidget | None = None) -> SeasonCompareDialog:
-    """Open the comparison from the app menu."""
-    dialog = SeasonCompareDialog(parent)
-    dialog.compare()
-    dialog.exec()
-    return dialog
-
-
-__all__ = ["ENTRY_ROLE", "HINT", "SECTIONS", "SeasonCompareDialog", "show_season_compare"]
+__all__ = ["ENTRY_ROLE", "HINT", "SECTIONS", "SeasonCompareDialog"]

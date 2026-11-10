@@ -13,9 +13,7 @@ the picker, because a batch is not a place to guess which game a name means.
 
 from __future__ import annotations
 
-from typing import Sequence
 
-from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QDialog,
     QHBoxLayout,

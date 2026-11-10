@@ -37,14 +37,12 @@ from PySide6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QSizePolicy,
-    QToolButton,
     QVBoxLayout,
     QWidget,
 )
 
 from . import theme
-from .qt_icons import icon, icon_pixmap, paint_icon
-from .qt_theme import alpha
+from .qt_icons import icon, paint_icon
 
 #: Theme values custom-painted widgets need before QSS can reach them.
 THEME_STATE: dict[str, object] = {

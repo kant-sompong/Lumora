@@ -1,4 +1,4 @@
-"""Discover, favourites, activity and season comparison windows."""
+"""Discover, favourites, activity and collection gap windows."""
 
 import os
 
@@ -74,16 +74,3 @@ def test_activity_is_newest_first(app):
     assert dialog.list.item(0).text().endswith("Newer")
     assert dialog.list.count() == 2
 
-
-def test_season_comparison_splits_shared_and_unique_titles(app):
-    items = [
-        {"key": "x", "title": "X", "season": "winter", "year": "2024"},
-        {"key": "y", "title": "Y", "season": "winter", "year": "2024"},
-        {"key": "z", "title": "Z", "season": "spring", "year": "2024"},
-    ]
-    dialog = qt_discover.SeasonCompareDialog(items)
-    assert dialog.seasons == ["2024 spring", "2024 winter"]
-    assert dialog.only_first.count() == 1
-    assert dialog.only_second.count() == 2
-    assert dialog.shared.count() == 0
-    assert "Spring 2024" in dialog.summary.text()
