@@ -46,6 +46,7 @@ from gi.repository import (  # noqa: E402
 )
 
 from . import browse_filters
+from . import nav_layout  # noqa: E402
 from . import profiles
 from . import recently_viewed
 from . import APP_ID, APP_NAME, __version__, platform_support  # noqa: E402
@@ -182,6 +183,92 @@ def _error_text(exc: BaseException) -> str:
     if text:
         return text
     return "Something went wrong. Please try again."
+
+
+#: Icons for the rail, keyed by the :mod:`lgl.nav_layout` page key.
+_RAIL_ICONS = {
+    "browse": "view-grid-symbolic",
+    "library": "applications-games-symbolic",
+    "downloads": "folder-download-symbolic",
+}
+
+#: Icons for the two rail buttons pinned to the bottom.
+_RAIL_BOTTOM_ICONS = {
+    "settings": "emblem-system-symbolic",
+    "about": "help-about-symbolic",
+}
+
+#: Stack child the rail opens for each nav_layout page key.
+_STACK_FOR_PAGE = {
+    "browse": "archive",
+    "library": "library",
+    "media": "media",
+    "downloads": "downloads",
+}
+
+#: Rail tooltips, so each destination says where it goes.
+_RAIL_TOOLTIPS = {
+    "browse": "Browse the collection (Ctrl+1)",
+    "library": "Your downloaded games (Ctrl+2)",
+    "media": "Movies & TV",
+    "downloads": "Show the download queue (Ctrl+D)",
+    "settings": "Settings (Ctrl+,)",
+    "about": "About this application",
+}
+
+#: The header search says what the visible page searches.
+_SEARCH_PLACEHOLDERS = {
+    "archive": "Search games",
+    "library": "Search library",
+    "media": "Search movies, TV, anime",
+    "downloads": "Search downloads",
+}
+
+
+def rail_entries() -> list[tuple[str, str, str, str]]:
+    """``(stack, icon, label, tooltip)`` per rail destination, in order."""
+    entries: list[tuple[str, str, str, str]] = []
+    for key, label in nav_layout.RAIL:
+        stack = _STACK_FOR_PAGE.get(key, key)
+        entries.append((
+            stack,
+            _RAIL_ICONS.get(key) or _media_icon(),
+            label,
+            _RAIL_TOOLTIPS.get(key, label),
+        ))
+    return entries
+
+
+def search_placeholder(view: str | None) -> str:
+    """What the header search says while ``view`` is up."""
+    return _SEARCH_PLACEHOLDERS.get(str(view or "archive"), "Search games")
+
+
+def _draw_dice(area: Gtk.DrawingArea, cr) -> bool:
+    """Paint a die - rounded square, five pips - with no icon theme or emoji."""
+    width = max(1, area.get_allocated_width())
+    height = max(1, area.get_allocated_height())
+    scale = min(width, height) / 18.0
+    context = area.get_style_context()
+    colour = context.get_color(context.get_state())
+    cr.save()
+    cr.translate((width - 18.0 * scale) / 2.0, (height - 18.0 * scale) / 2.0)
+    cr.set_source_rgba(colour.red, colour.green, colour.blue, colour.alpha)
+    cr.set_line_width(1.5 * scale)
+    radius = 3.2 * scale
+    left, top, size = 1.2 * scale, 1.2 * scale, 15.6 * scale
+    cr.new_sub_path()
+    cr.arc(left + size - radius, top + radius, radius, -math.pi / 2, 0)
+    cr.arc(left + size - radius, top + size - radius, radius, 0, math.pi / 2)
+    cr.arc(left + radius, top + size - radius, radius, math.pi / 2, math.pi)
+    cr.arc(left + radius, top + radius, radius, math.pi, 3 * math.pi / 2)
+    cr.close_path()
+    cr.stroke()
+    for cx, cy in ((5.0, 5.0), (13.0, 5.0), (9.0, 9.0), (5.0, 13.0), (13.0, 13.0)):
+        cr.arc(cx * scale, cy * scale, 1.35 * scale, 0, 2 * math.pi)
+        cr.fill()
+    cr.restore()
+    return False
 
 
 def _flat_button(icon_name: str, tooltip: str) -> Gtk.Button:
@@ -6490,6 +6577,8 @@ class MainWindow(Gtk.ApplicationWindow):
         self._forward_btn.set_tooltip_text("Forward")
         nav.pack_start(self._forward_btn, False, False, 0)
         header.pack_start(nav)
+        # One button, on every page: a drawn die picks a random title.
+        header.pack_start(self._build_dice_button())
 
         pill = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         pill.get_style_context().add_class("search-pill")
@@ -6572,11 +6661,8 @@ class MainWindow(Gtk.ApplicationWindow):
             item.connect("activate", lambda *_: callback())
             menu.append(item)
 
-        add_item("Website Sources…", self.show_website_sources)
-        add_item("Kryoto Catalog…", self.show_kryoto_catalog)
-        add_item("Show Download Queue", lambda: self.set_downloads_visible(True))
-
-        # Maintenance submenu
+        # The header menu holds only what :mod:`lgl.nav_layout` allows: every
+        # other destination is a page, a tab, a dialog or the palette.
         maintenance = Gtk.Menu()
         self._artwork_sync_item = Gtk.MenuItem(label="Sync artwork for collection")
         self._artwork_sync_item.set_tooltip_text(
@@ -6602,27 +6688,15 @@ class MainWindow(Gtk.ApplicationWindow):
         maintenance.append(self._artwork_retry_item)
         maintenance_item = Gtk.MenuItem(label="Maintenance")
         maintenance_item.set_submenu(maintenance)
-        menu.append(maintenance_item)
 
-        menu.append(Gtk.SeparatorMenuItem())
-        add_item("Command palette…", self.show_palette)
-        add_item("Release calendar…", self.show_calendar)
-        add_item("Compare seasons…", self.show_season_compare)
-        add_item("Discover…", lambda: __import__("lgl.gtk_discover", fromlist=["show_discover"]).show_discover(self, self.settings))
-        add_item("Tags…", lambda: __import__("lgl.gtk_library_tools", fromlist=["show_tags"]).show_tags(self, self.settings))
-        add_item("Find duplicates…", lambda: __import__("lgl.gtk_library_tools", fromlist=["show_duplicates"]).show_duplicates(self))
-        add_item("Edit details…", lambda: __import__("lgl.gtk_library_tools", fromlist=["show_edit_details"]).show_edit_details(self))
-        add_item("Favourites…", lambda: __import__("lgl.gtk_activity", fromlist=["show_favourites"]).show_favourites(self))
-        add_item("Activity…", lambda: __import__("lgl.gtk_activity", fromlist=["show_activity"]).show_activity(self))
-        add_item("Recently viewed…", self.show_recent)
-        add_item("Keyboard shortcuts…", self.show_shortcuts)
-        add_item("Profiles…", self.show_profiles)
-        add_item("Collections…", lambda: __import__("lgl.gtk_collections", fromlist=["show_collections"]).show_collections(self))
-        add_item("Tools…", self.show_tools)
-        add_item("Surprise me…", lambda: __import__("lgl.gtk_surprise", fromlist=["surprise"]).surprise(self))
-        add_item("Statistics…", lambda: __import__("lgl.gtk_stats", fromlist=["show_statistics"]).show_statistics(self))
-        add_item("Settings…", lambda: self.show_settings())
-        add_item("About Lumora", self.show_about)
+        actions = self._menu_actions()
+        for key, label in nav_layout.MENU:
+            if key == "maintenance":
+                menu.append(maintenance_item)
+                continue
+            callback = actions.get(key)
+            if callback is not None:
+                add_item(label, callback)
         menu.show_all()
 
         button = Gtk.MenuButton()
@@ -6633,46 +6707,108 @@ class MainWindow(Gtk.ApplicationWindow):
         button.set_valign(Gtk.Align.CENTER)
         return button
 
+    def _build_dice_button(self) -> Gtk.Button:
+        """A drawn die, so no icon theme or emoji font is needed for it."""
+        button = Gtk.Button()
+        button.get_style_context().add_class("dice-button")
+        button.set_relief(Gtk.ReliefStyle.NONE)
+        button.set_tooltip_text("Surprise me - open a random title")
+        button.get_accessible().set_name("Surprise me")
+        area = Gtk.DrawingArea()
+        area.set_size_request(18, 18)
+        area.connect("draw", _draw_dice)
+        button.add(area)
+        button.set_valign(Gtk.Align.CENTER)
+        button.connect("clicked", lambda *_: self.surprise_me())
+        return button
+
+    def surprise_me(self) -> object:
+        """Pick one title from what is already on screen and open it."""
+        from . import gtk_surprise
+
+        return gtk_surprise.surprise(self)
+
+    def show_place(self, page: str, tab: str = "") -> None:
+        """Open a :mod:`lgl.nav_layout` place: a page, and one of its tabs."""
+        page = str(page or "").strip()
+        tab = str(tab or "").strip()
+        stack_name = _STACK_FOR_PAGE.get(page, page)
+        if stack_name not in _SEARCH_PLACEHOLDERS:
+            return
+        self._apply_view(stack_name)
+        if not tab:
+            return
+        owner_page = page if page in ("library", "media") else stack_name
+        opener = self._tab_openers(self).get((owner_page, tab))
+        if opener is not None:
+            opener()
+
+    @staticmethod
+    def _tab_openers(owner: object) -> dict[tuple[str, str], Callable[[], None]]:
+        """Where a palette tab command lands, per page and tab key."""
+        from . import (gtk_activity, gtk_collections, gtk_discover,
+                       gtk_library_tools, gtk_stats)
+
+        return {
+            ("library", "games"): lambda: owner._apply_view("library"),
+            ("library", "favourites"): lambda: gtk_activity.show_favourites(owner),
+            ("library", "collections"): lambda: gtk_collections.show_collections(owner),
+            ("library", "activity"): lambda: gtk_activity.show_activity(owner),
+            ("library", "statistics"): lambda: gtk_stats.show_statistics(owner),
+            ("library", "recent"): lambda: owner.show_recent(),
+            ("library", "tags"): lambda: gtk_library_tools.show_tags(
+                owner, owner.settings),
+            ("library", "complete-the-set"): lambda: gtk_discover.show_discover(
+                owner, owner.settings),
+            ("media", "calendar"): lambda: owner.show_calendar(),
+            ("media", "compare"): lambda: owner.show_season_compare(),
+        }
+
+    def _menu_actions(self) -> dict[str, Callable[[], None]]:
+        """What each kept header-menu entry runs, keyed by its nav_layout key."""
+        return {
+            "palette": self.show_palette,
+            "profiles": self.show_profiles,
+            "shortcuts": self.show_shortcuts,
+            "tools": self.show_tools,
+            "sources": self.show_website_sources,
+            "kryoto": self.show_kryoto_catalog,
+            "queue": lambda: self.set_downloads_visible(True),
+            "settings": lambda: self.show_settings(),
+            "about": self.show_about,
+        }
+
     def _build_rail(self) -> Gtk.Widget:
-        """The icon rail on the far left: the app's four destinations."""
+        """The icon rail on the far left, in :mod:`lgl.nav_layout` order."""
         rail = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
         rail.get_style_context().add_class("app-rail")
         rail.set_size_request(68, -1)
 
         self._rail_buttons: dict[str, Gtk.Button] = {}
-        for key, icon, label, tooltip in (
-            ("archive", "view-grid-symbolic", "Browse",
-             "Browse the collection (Ctrl+1)"),
-            ("library", "applications-games-symbolic", "Library",
-             "Your downloaded games (Ctrl+2)"),
-            ("downloads", "folder-download-symbolic", "Downloads",
-             "Show the download queue (Ctrl+D)"),
-        ):
-            rail.pack_start(
-                self._rail_button(key, icon, label, tooltip), False, False, 0
+        for stack_name, icon, label, tooltip in rail_entries():
+            callback = None
+            if stack_name == "media":
+                callback = lambda: self._apply_view("media")
+            button = self._rail_button(
+                stack_name, icon, label, tooltip, callback=callback
             )
-        # Media is now a real destination in the main stack, like the others.
-        self._media_button = self._rail_button(
-            "media", _media_icon(), "Media", "Movies & TV",
-            callback=lambda: self._apply_view("media"), register=True,
-        )
-        rail.pack_start(self._media_button, False, False, 0)
+            if stack_name == "media":
+                self._media_button = button
+            rail.pack_start(button, False, False, 0)
         rail.pack_start(Gtk.Box(), True, True, 0)
 
-        rail.pack_start(
-            self._rail_button(
-                "settings", "emblem-system-symbolic", "Settings",
-                "Settings (Ctrl+,)", callback=lambda: self.show_settings(),
-                register=False,
-            ), False, False, 0
-        )
-        rail.pack_start(
-            self._rail_button(
-                "about", "help-about-symbolic", "About",
-                "About this application", callback=lambda: self.show_about(),
-                register=False,
-            ), False, False, 0
-        )
+        for key, label in nav_layout.RAIL_BOTTOM:
+            if key == "settings":
+                callback = lambda: self.show_settings()
+            else:
+                callback = lambda: self.show_about()
+            rail.pack_start(
+                self._rail_button(
+                    key, _RAIL_BOTTOM_ICONS.get(key, "help-about-symbolic"),
+                    label, _RAIL_TOOLTIPS.get(key, label),
+                    callback=callback, register=False,
+                ), False, False, 0
+            )
         self._sync_rail()
         return rail
 
@@ -7831,6 +7967,7 @@ class MainWindow(Gtk.ApplicationWindow):
                 pass
         # Only Browse searches the collection; the other pages keep their own.
         apply_search_visibility(self._search_pill, name)
+        self._search.set_placeholder_text(search_placeholder(name))
         # Movies & TV has its own Back button, so the game history arrows
         # would only sit there confusingly (they cannot affect playback).
         nav = getattr(self, "_history_nav", None)

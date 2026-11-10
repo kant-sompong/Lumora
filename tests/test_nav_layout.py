@@ -13,23 +13,21 @@ OLD_ENTRIES = (
 )
 
 
-def test_the_rail_puts_discover_between_library_and_media():
-    assert nav_layout.rail_keys() == (
-        "browse", "library", "discover", "media", "downloads",
-    )
+def test_the_rail_lists_four_pages_without_discover():
+    assert nav_layout.rail_keys() == ("browse", "library", "media", "downloads")
     assert nav_layout.RAIL_BOTTOM == (("settings", "Settings"), ("about", "About"))
 
 
-def test_discover_has_the_five_tabs_in_order():
-    assert [label for _key, label in nav_layout.tabs_for("discover")] == [
-        "For you", "Hidden gems", "More like this", "Complete the set", "Anime gems",
-    ]
+def test_discover_is_not_a_page_of_its_own_any_more():
+    assert "discover" not in nav_layout.page_keys()
+    assert nav_layout.tabs_for("discover") == ()
+    assert nav_layout.place("discover") == ("page", "browse", None)
 
 
-def test_library_has_seven_tabs_starting_with_the_grid():
+def test_library_has_seven_tabs_without_tags():
     assert [label for _key, label in nav_layout.tabs_for("library")] == [
-        "Games", "Favourites", "Collections", "Tags", "Activity",
-        "Statistics", "Recently viewed",
+        "Games", "Favourites", "Collections", "Activity", "Statistics",
+        "Recently viewed", "Complete the set",
     ]
 
 
@@ -77,11 +75,11 @@ def test_no_two_old_entries_land_on_the_same_tab():
 
 def test_entries_on_lists_what_a_page_absorbed():
     assert nav_layout.entries_on("library") == [
-        "activity", "bulk", "collections", "favourites", "statistics", "tags", "viewed",
+        "activity", "bulk", "collections", "favourites", "statistics", "viewed",
     ]
     assert nav_layout.entries_on("media") == ["calendar", "seasons"]
-    assert nav_layout.entries_on("discover") == ["discover"]
-    assert nav_layout.entries_on("library", "tags") == ["tags"]
+    assert nav_layout.entries_on("browse") == ["discover"]
+    assert nav_layout.place("tags") == ("dialog", "tags", None)
 
 
 def test_menu_for_keeps_the_menus_order():

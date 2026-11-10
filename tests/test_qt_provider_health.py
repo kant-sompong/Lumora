@@ -47,6 +47,8 @@ def test_health_controls_exist(page):
 def test_results_are_listed_fastest_first_with_latency_and_status(page):
     widget, _ = page
     widget._apply_health(RESULTS)
+    assert not widget.health_bar.isVisibleTo(widget)
+    widget._toggle_health_list()
     assert widget.health_list.isVisibleTo(widget)
     assert widget.health_rows.count() == len(RESULTS)
     texts = []
@@ -82,7 +84,7 @@ def test_use_fastest_selects_the_quickest_reachable(page):
     widget._apply_health(RESULTS)
     widget.fastest_btn.click()
     assert settings.get("streaming_provider") == "vidy"
-    assert widget.provider_combo.currentData() == "vidy"
+    assert widget._provider() == "vidy"
     assert "Vidy" in widget.health_note.text()
 
 
@@ -122,8 +124,7 @@ def test_anime_use_fastest_ignores_providers_without_an_anime_route(page):
 def test_manual_pick_switches_automatic_selection_off(page):
     widget, settings = page
     widget.show_section("home")
-    index = widget.provider_combo.findData("moonflix")
-    widget.provider_combo.setCurrentIndex(index)
+    widget._choose_provider("moonflix")
     assert settings.get("provider_auto_select") is False
     assert widget.health.manual is True
     assert widget.health_note.text() == ph.MANUAL_MESSAGE
@@ -133,7 +134,7 @@ def test_automatic_selection_respects_playback(page):
     widget, settings = page
     widget.show_section("home")
     settings.set("streaming_provider", "toflix")
-    widget._fill_provider_combo("home")
+    widget._fill_provider_menu("home")
     widget.stack.setCurrentWidget(widget.player)
     widget._apply_health(RESULTS)
     assert settings.get("streaming_provider") == "toflix"
@@ -143,7 +144,7 @@ def test_automatic_selection_applies_when_idle(page):
     widget, settings = page
     widget.show_section("home")
     settings.set("streaming_provider", "toflix")
-    widget._fill_provider_combo("home")
+    widget._fill_provider_menu("home")
     widget._apply_health(RESULTS)
     assert settings.get("streaming_provider") == "vidy"
 

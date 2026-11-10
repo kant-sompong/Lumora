@@ -9,7 +9,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -23,7 +23,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from . import anime_calendar, discovery, season_compare, stats
+from . import anime_calendar, discovery, stats
 from .qt_hidden import HiddenGemsPanel
 
 
@@ -258,12 +258,17 @@ class ActivityTimelineDialog(QDialog):
             layout.addLayout(buttons)
 
 
-class SeasonCompareDialog(QDialog):
-    """What two anime seasons have in common and what each has alone."""
+class CompleteTheSetDialog(QDialog):
+    """Collection gaps: titles that would fill genres the library covers.
+
+    ``items`` is the pool to suggest from (the loaded catalogue, not the
+    library) and ``owned`` the library keys, which are never suggested back.
+    """
 
     def __init__(
         self,
         items: Sequence[Mapping[str, Any]],
+        owned: Sequence[str] = (),
         parent: QWidget | None = None,
         *,
         embedded: bool = False,
@@ -272,142 +277,41 @@ class SeasonCompareDialog(QDialog):
         self.embedded = embedded
         if embedded:
             self.setWindowFlags(Qt.Widget)
-        self.setWindowTitle("Compare seasons")
-        self.resize(560, 480)
+        self.setWindowTitle("Complete the set")
+        self.resize(640, 520)
         self.items = [dict(item) for item in items]
-        self.seasons = season_compare.seasons(self.items)
+        self.owned = [str(key) for key in owned]
 
         layout = QVBoxLayout(self)
-        heading = QLabel("COMPARE SEASONS", self)
+        heading = QLabel("COMPLETE THE SET", self)
         heading.setObjectName("detailEyebrow")
         layout.addWidget(heading)
-
-        pickers = QHBoxLayout()
-        self.first = QComboBox(self)
-        self.second = QComboBox(self)
-        for name in self.seasons:
-            self.first.addItem(name)
-            self.second.addItem(name)
-        if len(self.seasons) > 1:
-            self.second.setCurrentIndex(1)
-        self.first.currentIndexChanged.connect(self.refresh)
-        self.second.currentIndexChanged.connect(self.refresh)
-        pickers.addWidget(self.first, 1)
-        pickers.addWidget(QLabel("vs", self))
-        pickers.addWidget(self.second, 1)
-        layout.addLayout(pickers)
-
-        self.tabs = QTabWidget(self)
-        self.shared = QListWidget(self)
-        self.only_first = QListWidget(self)
-        self.only_second = QListWidget(self)
-        self.tabs.addTab(self.shared, "In both")
-        self.tabs.addTab(self.only_first, "Only first")
-        self.tabs.addTab(self.only_second, "Only second")
-        layout.addWidget(self.tabs, 1)
-
-        self.summary = QLabel("", self)
-        self.summary.setObjectName("detailNote")
-        self.summary.setWordWrap(True)
-        layout.addWidget(self.summary)
-
-        if not self.embedded:
-            buttons = QHBoxLayout()
-            buttons.addStretch(1)
-            close = QPushButton("Close", self)
-            close.clicked.connect(self.accept)
-            buttons.addWidget(close)
-            layout.addLayout(buttons)
-
+        self.note = _empty_note(
+            "Games that fill genres your collection already covers, taken from "
+            "the catalogue loaded on this computer.", self,
+        )
+        layout.addWidget(self.note)
+        self.suggestions = QListWidget(self)
+        layout.addWidget(self.suggestions, 1)
+        self.empty = _empty_note(
+            "No games to suggest yet. Add a few games with genres to the library "
+            "and load the collection, and the gaps it could fill appear here.", self,
+        )
+        layout.addWidget(self.empty)
         self.refresh()
 
     def refresh(self) -> None:
-        first = str(self.first.currentText() or "")
-        second = str(self.second.currentText() or "")
-        result = season_compare.compare(self.items, first, second)
-        _fill(self.shared, result["shared"])
-        _fill(self.only_first, result["only_first"])
-        _fill(self.only_second, result["only_second"])
-        self.tabs.setTabText(0, f"In both ({len(result['shared'])})")
-        self.tabs.setTabText(1, f"Only {first or 'first'} ({len(result['only_first'])})")
-        self.tabs.setTabText(2, f"Only {second or 'second'} ({len(result['only_second'])})")
-        self.summary.setText(season_compare.summary(result))
-
-
-class DiscoverPage(QWidget):
-    """The Discover page: a Surprise me button above the five discovery tabs."""
-
-    surprise_requested = Signal()
-
-    def __init__(
-        self,
-        items: Sequence[Mapping[str, Any]],
-        liked: Sequence[str] = (),
-        owned: Sequence[str] = (),
-        settings: Any = None,
-        parent: QWidget | None = None,
-    ) -> None:
-        super().__init__(parent)
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
-
-        header = QHBoxLayout()
-        header.setContentsMargins(24, 16, 24, 8)
-        heading = QLabel("DISCOVER", self)
-        heading.setObjectName("detailEyebrow")
-        header.addWidget(heading)
-        header.addStretch(1)
-        self.surprise_btn = QPushButton("Surprise me", self)
-        self.surprise_btn.setCursor(Qt.PointingHandCursor)
-        self.surprise_btn.setToolTip("Open one random game or title")
-        self.surprise_btn.clicked.connect(self.surprise_requested.emit)
-        header.addWidget(self.surprise_btn)
-        layout.addLayout(header)
-
-        self.panel = DiscoverDialog(
-            items, liked, owned, self, settings=settings, embedded=True
-        )
-        layout.addWidget(self.panel, 1)
-        self.tabs = self.panel.tabs
-
-    def show_tab(self, tab: str) -> None:
-        """Bring one of the five tabs to the front."""
-        from . import nav_layout
-
-        keys = nav_layout.tab_keys("discover")
-        if tab in keys:
-            self.tabs.setCurrentIndex(keys.index(tab))
-
-    def set_items(
-        self,
-        items: Sequence[Mapping[str, Any]],
-        liked: Sequence[str] = (),
-        owned: Sequence[str] = (),
-    ) -> None:
-        """Re-run every ranking over a new library."""
-        panel = self.panel
-        panel.items = [dict(item) for item in items]
-        panel.liked = [str(key) for key in liked]
-        panel.owned = [str(key) for key in owned]
-        _fill(panel.recommendations, discovery.recommend(panel.items, panel.liked))
-        _fill(panel.gems, discovery.hidden_gems(panel.items))
-        _fill(panel.suggestions, discovery.suggestions(panel.items, panel.owned))
-        seed = panel.seed
-        seed.blockSignals(True)
-        seed.clear()
-        for item in panel.items:
-            seed.addItem(
-                str(item.get("title") or item.get("key") or "Untitled"), item.get("key")
-            )
-        seed.blockSignals(False)
-        panel.refresh_similar()
+        """Re-run the gap ranking over the pool this dialog was built with."""
+        found = discovery.suggestions(self.items, self.owned)
+        _fill(self.suggestions, found)
+        self.note.setVisible(bool(found))
+        self.suggestions.setVisible(bool(found))
+        self.empty.setVisible(not found)
 
 
 __all__ = [
     "ActivityTimelineDialog",
+    "CompleteTheSetDialog",
     "DiscoverDialog",
-    "DiscoverPage",
     "FavouritesDialog",
-    "SeasonCompareDialog",
 ]

@@ -143,6 +143,12 @@ class PaletteWindow(Gtk.Window):
         action = palette_lib.action_for(command) or ""
         owner = self._owner
         self.destroy()
+        if action.startswith("tab:"):
+            page, _sep, tab = action[4:].partition("/")
+            show_place = getattr(owner, "show_place", None)
+            if callable(show_place):
+                show_place(page, tab)
+            return
         if action in _PAGE_KEYS:
             apply_view = getattr(owner, "_apply_view", None)
             if callable(apply_view):

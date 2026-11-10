@@ -17,18 +17,18 @@ MAX_RESULTS = 12
 PAGES: tuple[tuple[str, str], ...] = (
     ("archive", "Browse"),
     ("library", "Library"),
-    ("discover", "Discover"),
     ("downloads", "Downloads"),
     ("media", "Movies & TV"),
 )
 
 #: Tabs that used to be a separate menu entry: key, title, group, page, tab.
 TAB_TARGETS: tuple[tuple[str, str, str, str, str], ...] = (
-    ("tab.discover.for-you", "Recommendations", "Discover", "discover", "for-you"),
-    ("tab.discover.hidden-gems", "Hidden gems", "Discover", "discover", "hidden-gems"),
     ("tab.library.favourites", "Favourites", "Library", "library", "favourites"),
     ("tab.library.collections", "Collections", "Library", "library", "collections"),
-    ("tab.library.tags", "Tags", "Library", "library", "tags"),
+    (
+        "tab.library.complete-the-set", "Complete the set", "Library",
+        "library", "complete-the-set",
+    ),
     ("tab.library.activity", "Activity", "Library", "library", "activity"),
     ("tab.library.statistics", "Statistics", "Library", "library", "statistics"),
     ("tab.library.recent", "Recently viewed", "Library", "library", "recent"),
@@ -76,6 +76,8 @@ def commands(*, with_settings: bool = True) -> list[Command]:
             for page, label in SETTINGS_PAGES
         ]
     items += [
+        Command("tags.edit", "Edit tags", "Library", hint="Add or remove tags on a title",
+                action="tags.edit"),
         Command("tools.open", "Open tools", "Tools", hint="Providers, updates, plugins"),
         Command("search.focus", "Search the collection", "Tools", hint="Ctrl+K"),
         Command("updates.check", "Check for updates", "Tools"),

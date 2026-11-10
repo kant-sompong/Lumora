@@ -14,7 +14,6 @@ from collections.abc import Iterable
 RAIL: tuple[tuple[str, str], ...] = (
     ("browse", "Browse"),
     ("library", "Library"),
-    ("discover", "Discover"),
     ("media", "Media"),
     ("downloads", "Downloads"),
 )
@@ -27,21 +26,14 @@ RAIL_BOTTOM: tuple[tuple[str, str], ...] = (
 
 #: Tabs across the top of each page, in order.
 TABS: dict[str, tuple[tuple[str, str], ...]] = {
-    "discover": (
-        ("for-you", "For you"),
-        ("hidden-gems", "Hidden gems"),
-        ("more-like-this", "More like this"),
-        ("complete-the-set", "Complete the set"),
-        ("anime-gems", "Anime gems"),
-    ),
     "library": (
         ("games", "Games"),
         ("favourites", "Favourites"),
         ("collections", "Collections"),
-        ("tags", "Tags"),
         ("activity", "Activity"),
         ("statistics", "Statistics"),
         ("recent", "Recently viewed"),
+        ("complete-the-set", "Complete the set"),
     ),
     "media": (
         ("home", "Home"),
@@ -89,11 +81,14 @@ PLACES: dict[str, tuple[str, str | None, str | None]] = {
     "viewed": ("page", "library", "recent"),
     "surprise": ("action", "surprise", None),
     "statistics": ("page", "library", "statistics"),
-    "tags": ("page", "library", "tags"),
+    # Tagging is a right-click action now, so the old menu entry opens a dialog.
+    "tags": ("dialog", "tags", None),
     "details": ("dialog", "metadata", None),
     "bulk": ("page", "library", "games"),
     "duplicates": ("dialog", "duplicates", None),
-    "discover": ("page", "discover", "for-you"),
+    # Discover is not a page any more: its two ranked rows are on Browse and
+    # the collection gaps are a Library tab.
+    "discover": ("page", "browse", None),
     "favourites": ("page", "library", "favourites"),
     "activity": ("page", "library", "activity"),
     "collections": ("page", "library", "collections"),

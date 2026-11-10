@@ -9,11 +9,12 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
+from math import ceil
 from pathlib import Path
 from typing import Callable, Iterable, Sequence
 
-from PySide6.QtCore import QRectF, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QPainter, QPixmap
+from PySide6.QtCore import QRectF, QSize, Qt, QTimer, Signal
+from PySide6.QtGui import QColor, QFontMetricsF, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -23,7 +24,6 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QPushButton,
-    QScrollArea,
     QSizePolicy,
     QStackedWidget,
     QVBoxLayout,
@@ -42,7 +42,8 @@ from . import (
     view_prefs,
 )
 from . import recently_viewed
-from .qt_icons import icon, paint_icon
+from .qt_icons import icon
+from .qt_feed import PosterRow, ScheduleStrip, ThreeColumnList
 from .qt_library import ArtworkBackdrop
 from .qt_player import EmbeddedPlayer, make_player
 from .qt_widgets import (
@@ -68,7 +69,6 @@ WATCHLIST_KEY = "movie_watchlist"
 NAV_ITEMS = (
     ("home", "Home"), ("movies", "Movies"), ("tv", "TV Shows"),
     ("anime", "Anime"), ("list", "My List"), ("history", "History"),
-    ("calendar", "Calendar"), ("compare", "Compare seasons"),
 )
 
 
@@ -330,7 +330,6 @@ class HeroPanel(HeroBanner):
 
     def __init__(self) -> None:
         super().__init__(430)
-        from PySide6.QtWidgets import QSpacerItem
 
         column = QVBoxLayout(self)
         column.setContentsMargins(64, 64, 64, 28)
@@ -551,32 +550,22 @@ class MediaPage(QWidget):
             bar.addWidget(btn)
         bar.addStretch(1)
 
-        self.surprise_btn = QPushButton("Surprise me")
-        self.surprise_btn.setObjectName("mediaNav")
-        self.surprise_btn.setCursor(Qt.PointingHandCursor)
-        self.surprise_btn.setToolTip("Open one random game or title")
-        self.surprise_btn.clicked.connect(self.surprise_requested.emit)
-        bar.addWidget(self.surprise_btn)
-
-        self.provider_label = label("Provider", "mediaNote")
-        bar.addWidget(self.provider_label)
-        self.provider_combo = QComboBox()
-        self.provider_combo.setFixedWidth(150)
-        self.provider_combo.setCursor(Qt.PointingHandCursor)
-        self.provider_combo.setToolTip("Provider used to play movies and TV")
-        self.provider_combo.currentIndexChanged.connect(self._provider_picked)
-        bar.addWidget(self.provider_combo)
-        self.health_badge = label("", "mediaNote")
-        self.health_badge.setToolTip("Measured response time of the active provider")
-        bar.addWidget(self.health_badge)
+        # One button: the current provider and its ping.  The menu behind it
+        # lists Auto, every provider of the active list, and Test connections.
+        self.provider_button = ProviderButton(self)
+        self.provider_button.clicked.connect(self._show_provider_menu)
+        bar.addWidget(self.provider_button)
+        self.health_badge = self.provider_button  # kept name: same single button
         # The AniList lookup is part of the search field now (as on Linux):
         # typing a title searches TMDB, MyAnimeList and AniList at once, so a
         # second "Lookup…" box beside it only asked for the same title twice.
-        self._fill_provider_combo("home")
+        self._fill_provider_menu("home")
 
         self.search = QLineEdit()
-        self.search.setPlaceholderText("Search movies, TV, anime…")
-        self.search.setFixedWidth(210)
+        self.search.setPlaceholderText("Search Movies & TV")
+        self.search.setMinimumWidth(150)
+        self.search.setMaximumWidth(240)
+        self.search.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         self.search.setClearButtonEnabled(True)
         self.search.textChanged.connect(self._on_search_typed)
         self.search.returnPressed.connect(self._run_search)
@@ -621,6 +610,10 @@ class MediaPage(QWidget):
         self.health_rows.setSpacing(2)
         self.health_list.setVisible(False)
         health_outer.addWidget(self.health_list)
+        # The measured list belongs to the page, not to the strip: the strip is
+        # gone and the list opens from the badge menu instead.
+        self.health_list.setParent(self)
+        self.health_bar.setVisible(False)  # the badge in the header replaces the strip
         root.addWidget(self.health_bar)
         self.health_ready.connect(self._apply_health)
         self.health = provider_health.AutoSelect(
@@ -634,8 +627,7 @@ class MediaPage(QWidget):
         self._pages: dict[str, QWidget] = {}
         for key, title in (("home", "Home"), ("movies", "Movies"), ("tv", "TV Shows"),
                            ("anime", "Anime"), ("search", "Search"),
-                           ("list", "My List"), ("history", "History"),
-                           ("calendar", "Calendar"), ("compare", "Compare seasons")):
+                           ("list", "My List"), ("history", "History")):
             page, column = self._page()
             self._pages[key] = page
             self.stack.addWidget(page)
@@ -649,10 +641,6 @@ class MediaPage(QWidget):
                 self._build_search(column)
             elif key == "list":
                 self._build_list(column)
-            elif key == "calendar":
-                self._build_calendar(column)
-            elif key == "compare":
-                self._build_compare(column)
             else:
                 self._build_history(column)
         self._detail_page, detail_column = self._page()
@@ -720,26 +708,283 @@ class MediaPage(QWidget):
         self.hero.list_clicked.connect(self._toggle_current_list)
         self.hero.setVisible(False)
 
-        self._home_carousels: dict[str, Carousel] = {}
-        for key, title, note in (
-            ("continue", "Continue Watching", "Recently watched"),
-            ("trending", "Trending Now", "This week on TMDB"),
-            ("movies", "Movies", "Popular on TMDB"),
-            ("tv", "TV Shows", "Popular on TMDB"),
-        ):
-            carousel = Carousel(title, note=note, show_all=key in ("trending", "movies", "tv"))
-            carousel.item_clicked.connect(self.open_card)
-            if key == "trending":
-                carousel.all_clicked.connect(lambda: self.show_section("movies"))
-            elif key == "movies":
-                carousel.all_clicked.connect(lambda: self.show_section("movies"))
-            elif key == "tv":
-                carousel.all_clicked.connect(lambda: self.show_section("tv"))
-            carousel.setVisible(False)
-            column.addWidget(carousel)
-            self._home_carousels[key] = carousel
+        # The home page is one long scroll of poster rows, the way a streaming
+        # site reads.  Every row owns its own loader, so a slow or failed
+        # section never holds up the page or the rows after it.
+        self._home_rows: dict[str, PosterRow] = {}
+        self.home_loaders: dict[str, Callable[[], object]] = {}
+        sections = (
+            ("continue", "Continue Watching", "Pick up where you left off", None, False),
+            ("trending", "Trending Now", "This week on TMDB", "movies", True),
+            ("movies", "Movies", "Popular on TMDB", "movies", True),
+            ("tv", "TV Shows", "Popular on TMDB", "tv", True),
+            ("for_you", "For you", "From what you watch and save", None, False),
+            # Hidden gems and Anime gems read the same AniList list, so they are
+            # merged into this one row instead of showing the same titles twice.
+            ("hidden_gems", "Hidden gems",
+             "Anime · high scores, few viewers (Anime gems)", "anime", True),
+            ("more_like", "More like this", "Because of what you watched last", None, False),
+        )
+        for key, title, note, target, show_all in sections:
+            row = PosterRow(
+                title, note,
+                poster_factory=lambda card: PosterCard(card, 150),
+                poster_width=150,
+                view_all=show_all,
+            )
+            row.item_clicked.connect(self.open_card)
+            if target:
+                row.view_all_clicked.connect(
+                    lambda _checked=False, section=target: self.show_section(section)
+                )
+            row.setVisible(False)
+            column.addWidget(row)
+            self._home_rows[key] = row
+        self._home_carousels = self._home_rows  # kept: history and posters read it
+
+        # Section 7: three vertical lists, five small rows each.
+        self.three_columns = ThreeColumnList()
+        column.addWidget(self.three_columns)
+        self.column_loaders: dict[str, Callable[[], object]] = {}
+        self.columns_placeholder = label("", "mediaNote")
+        self.columns_placeholder.setVisible(False)
+        column.addWidget(self.columns_placeholder)
+
+        # Section 8: the day strip and the airing list for the chosen day.
+        self.schedule = ScheduleStrip()
+        column.addWidget(self.schedule)
+        self.schedule_error = label("", "mediaNote", wrap=True)
+        self.schedule_error.setVisible(False)
+        column.addWidget(self.schedule_error)
+        self.schedule_loader: Callable[[], object] | None = None
+        self.schedule.setVisible(False)
+
+        # Section 9: the compact season comparison card.
+        self.compare_card = QFrame()
+        self.compare_card.setObjectName("feedColumn")
+        compare_column = QVBoxLayout(self.compare_card)
+        compare_column.setContentsMargins(16, 12, 16, 12)
+        compare_column.setSpacing(8)
+        try:
+            from .qt_season import CompareCard
+
+            self.compare_panel = CompareCard(self)
+            self.compare_panel.item_clicked.connect(self._open_compare_entry)
+            compare_column.addWidget(self.compare_panel)
+        except Exception:  # noqa: BLE001 - never take the whole page down
+            self.compare_panel = None
+            compare_column.addWidget(label("Season comparison is unavailable.", "mediaNote"))
+        column.addWidget(self.compare_card)
 
         column.addStretch(1)
+
+    # sections 7-9 ----------------------------------------------------------
+    def set_column_loaders(self, loaders: dict[str, Callable[[], object]] | None = None,
+                           **extra: Callable[[], object]) -> None:
+        merged = dict(loaders or {})
+        merged.update(extra)
+        for key, loader in merged.items():
+            if key in self.three_columns.columns and callable(loader):
+                self.column_loaders[key] = loader
+
+    def refresh_columns(self) -> None:
+        """Load the three lists together, one worker, one error line per column."""
+        if not self.column_loaders:
+            return
+        loaders = dict(self.column_loaders)
+
+        def work() -> dict[str, object]:
+            found: dict[str, object] = {}
+            for key, loader in loaders.items():
+                try:
+                    found[key] = loader()
+                except Exception as exc:  # noqa: BLE001 - becomes the column line
+                    found[key] = exc
+            return found
+
+        def done(result: object) -> None:
+            data = result if isinstance(result, dict) else {}
+            for key, value in data.items():
+                if isinstance(value, Exception):
+                    self.three_columns.set_error(key, value)
+                else:
+                    self.three_columns.set_items(key, value)  # type: ignore[arg-type]
+            self.columns_placeholder.setVisible(False)
+
+        self.columns_placeholder.setText("Loading…")
+        self.columns_placeholder.setVisible(True)
+        run_async(work, done, lambda exc: self._columns_failed(exc))
+
+    def _columns_failed(self, exc: object) -> None:
+        self.columns_placeholder.setVisible(False)
+        for key in self.column_loaders:
+            self.three_columns.set_error(key, exc)
+
+    def set_schedule_loader(self, loader: Callable[[], object] | None) -> None:
+        self.schedule_loader = loader
+
+    def refresh_schedule(self) -> None:
+        if self.schedule_loader is None:
+            return
+        loader = self.schedule_loader
+        self.schedule.setVisible(False)
+        self.schedule_error.setVisible(False)
+
+        def done(result: object) -> None:
+            entries = [entry for entry in (result or [])]  # type: ignore[union-attr]
+            if not entries:
+                self.schedule.setVisible(False)
+                return
+            self.schedule.set_entries(entries)
+            self.schedule.setVisible(True)
+
+        def failed(exc: object) -> None:
+            self.schedule.setVisible(False)
+            self.schedule_error.setText(f"Could not load: {exc}")
+            self.schedule_error.setVisible(True)
+
+        run_async(lambda: loader(), done, failed)
+
+    def _install_default_block_loaders(self) -> None:
+        """New Release / New Added / Just Completed and the schedule."""
+        from . import hidden_gems, release_feed
+
+        def feed():
+            getter = None
+            if self.settings is not None:
+                getter = release_feed.tmdb_getter(self.settings)
+            return release_feed.load_feed(release_feed.default_cache_path(), tmdb_get=getter)
+
+        def new_release() -> list[dict[str, object]]:
+            now = time.time()
+            aired = [
+                entry for entry in feed().entries
+                if entry.air_at is not None and entry.air_at <= now
+            ]
+            aired.sort(key=lambda entry: entry.air_at or 0.0, reverse=True)
+            return [
+                {
+                    "title": entry.title,
+                    "meta": f"{entry.source} · {time.strftime('%d %b', time.localtime(entry.air_at or 0))}",
+                    "key": entry.key,
+                }
+                for entry in aired[:5]
+            ]
+
+        def lists() -> dict[str, object]:
+            return hidden_gems.load_anime_lists()
+
+        def list_rows(key: str) -> list[dict[str, object]]:
+            block = lists()
+            rows = block.get(key) if isinstance(block, dict) else None
+            return [
+                {
+                    "title": str(row.get("title") or "Untitled"),
+                    "meta": " · ".join(
+                        part for part in (
+                            str(row.get("format") or ""),
+                            str(row.get("end_date") or ""),
+                        ) if part
+                    ),
+                    "key": f"anime:{row.get('id')}",
+                }
+                for row in (rows or [])[:5]
+            ]
+
+        def schedule() -> list[object]:
+            result = feed()
+            if not result.entries and result.errors:
+                raise RuntimeError("\n".join(result.errors))
+            return list(result.entries)
+
+        self.set_column_loaders({
+            "new_release": new_release,
+            "new_added": lambda: list_rows("new_added"),
+            "just_completed": lambda: list_rows("just_completed"),
+        })
+        self.set_schedule_loader(schedule)
+
+    def set_home_loaders(self, loaders: dict[str, Callable[[], object]] | None = None,
+                         **extra: Callable[[], object]) -> None:
+        """Inject a loader per home section (tests use this instead of the network)."""
+        merged = dict(loaders or {})
+        merged.update(extra)
+        for key, loader in merged.items():
+            row = self._home_rows.get(key)
+            if row is not None and callable(loader):
+                self.home_loaders[key] = loader
+                row.set_loader(loader)
+
+    def refresh_home(self) -> None:
+        """Start every section that has a loader; each one hides itself on empty."""
+        for row in self._home_rows.values():
+            if row.loader() is not None:
+                row.refresh()
+
+    @staticmethod
+    def _card_from_gem(entry: object) -> Card:
+        """A hidden-gems entry as a poster card (AniList ids stand in for MAL ids)."""
+        data = entry if isinstance(entry, dict) else {}
+        ident = int(data.get("id") or 0)
+        score = data.get("score")
+        try:
+            rating = float(score) / 10 if score is not None else None
+        except (TypeError, ValueError):
+            rating = None
+        return Card(
+            key=f"anime:{ident}",
+            title=str(data.get("title") or "Untitled"),
+            kind="anime",
+            mal_id=ident,
+            rating=rating,
+        )
+
+    def _install_default_home_loaders(self) -> None:
+        """For you / Hidden gems / More like this, from the loaded TMDB pool."""
+        from . import discovery, hidden_gems
+
+        saved = set(self._watchlist()) | {
+            str(entry.get("key")) for entry in self._history()
+        }
+
+        def pool() -> list[dict[str, object]]:
+            return [
+                {
+                    "key": card.key,
+                    "title": card.title,
+                    "kind": card.kind,
+                    # TMDB shelf items carry no genres; the kind is the one
+                    # shared label the similarity logic can use offline.
+                    "genres": [card.kind],
+                }
+                for card in self._tmdb_items
+            ]
+
+        def to_cards(items: list[object]) -> list[Card]:
+            cards = [self.card(str(item.get("key"))) for item in items if isinstance(item, dict)]
+            return [card for card in cards if card is not None]
+
+        def for_you() -> list[Card]:
+            if not saved:
+                return [
+                    card for card in self._tmdb_items
+                    if card.key not in {entry.get("key") for entry in self._history()}
+                ][:18]
+            return to_cards(discovery.recommend(pool(), saved))
+
+        def more_like() -> list[Card]:
+            seeds = [str(entry.get("key")) for entry in self._history()] + list(self._watchlist())
+            if not seeds:
+                return []
+            return to_cards(discovery.similar(pool(), seeds[0]))
+
+        def gems() -> list[Card]:
+            result = hidden_gems.load_gems(excluded=saved)
+            if not result.entries and result.error:
+                raise RuntimeError(result.error)
+            return [self._card_from_gem(entry) for entry in result.entries]
+
+        self.set_home_loaders(for_you=for_you, hidden_gems=gems, more_like=more_like)
 
     # movies / tv -----------------------------------------------------------
     def _build_grid_page(self, column: QVBoxLayout, key: str) -> None:
@@ -910,9 +1155,10 @@ class MediaPage(QWidget):
 
     def _build_compare(self, column: QVBoxLayout) -> None:
         """Two anime seasons side by side; it fetches only when Compare runs."""
-        from .qt_season import SeasonCompareDialog
+        from .qt_season import CompareCard
 
-        self.compare_panel = SeasonCompareDialog(self, threaded=False)
+        self.compare_panel = CompareCard(self)
+        self.compare_panel.item_clicked.connect(self._open_compare_entry)
         column.addWidget(self.compare_panel, 1)
 
     # navigation ------------------------------------------------------------
@@ -927,8 +1173,7 @@ class MediaPage(QWidget):
             self._player_return = None
         self._section = key
         self._artwork.clear()
-        if hasattr(self, "provider_combo"):
-            self._fill_provider_combo(key)
+        self._fill_provider_menu(key)
         for name, button in self._nav.items():
             button.setChecked(name == key)
         page = self._pages.get(key)
@@ -969,6 +1214,11 @@ class MediaPage(QWidget):
             self._load_home(tmdb_client)
         if mal_client.configured:
             self._load_anime(mal_client)
+        self._install_default_home_loaders()
+        self.refresh_home()
+        self._install_default_block_loaders()
+        self.refresh_columns()
+        self.refresh_schedule()
 
     def _load_home(self, client: object) -> None:
         def work() -> dict[str, object]:
@@ -1004,6 +1254,7 @@ class MediaPage(QWidget):
             self._pages_bits["tv"][1].set_cards(shows)
             self._render_history()
             self._load_posters()
+            self.refresh_home()
 
         run_async(work, done, lambda exc: self._note_error(exc))
 
@@ -1254,6 +1505,16 @@ class MediaPage(QWidget):
         self._load_posters()
 
     # detail / playback -----------------------------------------------------
+    def _open_compare_entry(self, entry: object) -> None:
+        """A compared title opens its own detail page."""
+        if not isinstance(entry, dict):
+            return
+        key = str(entry.get("key") or "").strip()
+        if not key:
+            return
+        title = str(entry.get("title") or "").strip() or "Untitled"
+        self.open_card(Card(key=key, title=title, kind="anime"))
+
     def open_card(self, card: object) -> None:
         if not isinstance(card, Card):
             return
@@ -1469,33 +1730,20 @@ class MediaPage(QWidget):
         self.stack.setCurrentWidget(page)
 
     # provider picker -------------------------------------------------------
-    def _fill_provider_combo(self, section: str) -> None:
-        """Movies use the streaming providers; Anime uses the anime ones."""
-        anime = section == "anime"
-        keys = streaming.ANIME_PROVIDERS if anime else streaming.PROVIDERS
-        current = self._anime_provider() if anime else self._provider()
-        self.provider_combo.blockSignals(True)
-        self.provider_combo.clear()
-        for key in keys:
-            self.provider_combo.addItem(streaming.LABELS.get(key, key), key)
-        self.provider_combo.setCurrentIndex(
-            max(0, self.provider_combo.findData(current))
-        )
-        self.provider_combo.blockSignals(False)
-        self.provider_label.setText("Anime provider" if anime else "Provider")
-        self.provider_combo.setToolTip(
-            "Provider used to play anime" if anime
-            else "Provider used to play movies and TV"
-        )
-        if hasattr(self, "health_badge"):
-            self._update_badge()
+    def _fill_provider_menu(self, section: str) -> None:
+        """Name kept for the callers: it now updates the one provider button."""
+        current = self._anime_provider() if section == "anime" else self._provider()
+        button = getattr(self, "provider_button", None)
+        if button is not None:
+            button.setToolTip(
+                "Provider used to play anime · click to change" if section == "anime"
+                else "Provider used to play movies and TV · click to change"
+            )
+        self._update_badge()
 
-    def _provider_picked(self, _index: int) -> None:
-        """Persist the pick so the next Watch Now uses it straight away."""
-        if self.settings is None:
-            return
-        key = self.provider_combo.currentData()
-        if not key:
+    def _choose_provider(self, key: str) -> None:
+        """Persist a provider picked from the menu, exactly as the combo did."""
+        if self.settings is None or not key:
             return
         if self._section == "anime":
             self.settings.set("anime_streaming_provider", key)
@@ -1509,6 +1757,12 @@ class MediaPage(QWidget):
             self._update_badge()
 
     # provider health -------------------------------------------------------
+    def _menu_providers(self) -> tuple[str, ...]:
+        """Every provider the menu offers: the same list the old combo had."""
+        if self._section == "anime":
+            return tuple(streaming.ANIME_PROVIDERS)
+        return tuple(streaming.PROVIDERS)
+
     def _section_providers(self) -> tuple[str, ...]:
         if self._section == "anime":
             return tuple(
@@ -1529,6 +1783,8 @@ class MediaPage(QWidget):
 
     def test_connection(self) -> None:
         """Ask every provider how fast it answers (three attempts each)."""
+        self._measuring = True
+        self._update_badge()
         self.health_note.setText("Testing providers…")
         if not self.health.start(force=True):
             self.health_note.setText("A health check is already running.")
@@ -1537,6 +1793,7 @@ class MediaPage(QWidget):
         self.test_connection()
 
     def _apply_health(self, results: object) -> None:
+        self._measuring = False
         items = [item for item in (results or []) if isinstance(item, dict)]
         self.health_results = provider_health.sort_results(items)
         self._render_health_rows()
@@ -1571,7 +1828,7 @@ class MediaPage(QWidget):
             line.addWidget(ms)
             line.addWidget(status, 1)
             self.health_rows.addWidget(row)
-        self.health_list.setVisible(bool(self.health_results))
+        self.health_list.setVisible(getattr(self, "_health_list_open", False))
         if self.health_results:
             reachable = sum(1 for entry in self.health_results if entry.get("ok"))
             self.health_note.setText(
@@ -1581,13 +1838,87 @@ class MediaPage(QWidget):
     def _active_provider(self) -> str:
         return self._anime_provider() if self._section == "anime" else self._provider()
 
+    def _provider_row_text(self, key: str) -> str:
+        """``Name  ·  180 ms`` / ``offline`` / ``not tested`` for one menu row."""
+        name = streaming.LABELS.get(key, key)
+        entry = next(
+            (item for item in getattr(self, "health_results", [])
+             if item.get("provider") == key),
+            None,
+        )
+        if entry is None:
+            return f"{name}  ·  not tested"
+        if not entry.get("ok"):
+            return f"{name}  ·  offline"
+        ms = entry.get("ms")
+        return f"{name}  ·  {ms} ms" if isinstance(ms, int) else f"{name}  ·  not tested"
+
+    def _provider_menu(self) -> object:
+        """Auto, one row per provider of this section, then Test connections."""
+        from PySide6.QtWidgets import QMenu
+
+        menu = QMenu(self)
+        fastest = (
+            provider_health.fastest(self.health_results, self._section_providers())
+            if self.health_results else None
+        )
+        auto_text = "Auto (fastest)"
+        if fastest:
+            auto_text = f"Auto (fastest: {streaming.LABELS.get(fastest, fastest)})"
+        auto = menu.addAction(auto_text)
+        auto.setCheckable(True)
+        auto.setChecked(self.health.enabled())
+        auto.triggered.connect(lambda _checked=False: self._toggle_auto())
+        menu.addSeparator()
+        current = self._active_provider()
+        for key in self._menu_providers():
+            action = menu.addAction(self._provider_row_text(key))
+            action.setCheckable(True)
+            action.setChecked(key == current)
+            action.triggered.connect(lambda _checked=False, name=key: self._choose_provider(name))
+        menu.addSeparator()
+        test = menu.addAction("Test connections now")
+        test.triggered.connect(self.test_connection)
+        return menu
+
+    def _toggle_auto(self) -> None:
+        if self.settings is None:
+            return
+        self.settings.set(provider_health.AUTO_KEY, not self.health.enabled())
+        health = getattr(self, "health", None)
+        if health is not None:
+            health.mark_manual() if not health.enabled() else None
+        self._update_badge()
+
+    def _show_provider_menu(self) -> None:
+        menu = self._provider_menu()
+        menu.exec(self.provider_button.mapToGlobal(self.provider_button.rect().bottomLeft()))
+
+    _show_badge_menu = _show_provider_menu
+
+    def _toggle_health_list(self) -> None:
+        self._health_list_open = not getattr(self, "_health_list_open", False)
+        self.health_list.setVisible(self._health_list_open and bool(self.health_results))
+
     def _update_badge(self) -> None:
         key = self._active_provider()
-        for entry in getattr(self, "health_results", []):
-            if entry.get("provider") == key:
-                self.health_badge.setText(provider_health.describe(entry))
-                return
-        self.health_badge.setText("")
+        name = streaming.LABELS.get(key, key)
+        entry = next(
+            (item for item in getattr(self, "health_results", [])
+             if item.get("provider") == key),
+            None,
+        )
+        button = getattr(self, "provider_button", None)
+        if button is None:
+            return
+        if getattr(self, "_measuring", False) and entry is None:
+            button.set_state(name, "pending")
+        elif entry is None:
+            button.set_state(name, "unknown")
+        elif not entry.get("ok"):
+            button.set_state(name, "offline")
+        else:
+            button.set_state(name, "ok", entry.get("ms"))
 
     def _auto_select(self) -> None:
         """Apply the fastest provider when automatic selection allows it."""
@@ -1612,7 +1943,7 @@ class MediaPage(QWidget):
                 else "streaming_provider"
             )
             self.settings.set(field_name, key)
-        self._fill_provider_combo(self._section)
+        self._fill_provider_menu(self._section)
         self._update_badge()
 
     def use_fastest(self) -> None:
@@ -1753,6 +2084,146 @@ class MediaPage(QWidget):
         card = getattr(self, "_detail_card", None)
         if card is not None and card.tmdb_id:
             platform_support.open_url(f"https://www.themoviedb.org/{card.kind}/{card.tmdb_id}")
+
+
+class ProviderButton(QPushButton):
+    """Current provider and its ping, with a painted dot; click opens the menu."""
+
+    COLOURS = {"ok": "#4caf72", "slow": "#e0a458", "offline": "#8a8f98",
+               "unknown": "#8a8f98", "pending": "#e0a458"}
+    #: Painted dot, the gap after it, and the right padding.
+    DOT_LEFT = 11
+    DOT_SIZE = 6
+    GAP = 7
+    PAD = 8
+    #: Every suffix a connection test can put on screen.  ``sizeHint`` keeps
+    #: room for the widest of them, so the header does not resize mid-test.
+    STATE_SUFFIXES = (" · not tested", ": offline", " · …", " · 0000 ms")
+    #: Sub-pixel slack between measuring a width and painting into it.
+    SLACK = 1
+    #: The name is never squeezed below this, even in a tight header.
+    MIN_NAME_ROOM = 20
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("mediaBadge")
+        self.setFlat(True)
+        self.setCursor(Qt.PointingHandCursor)
+        self.setToolTip("Provider · click to change or test connections")
+        self._name = ""
+        self._suffix = ""
+        self._tone = "unknown"
+        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+
+    def set_state(self, name: str, status: str = "unknown", ms: object = None) -> None:
+        self._name = str(name or "Provider")
+        if status == "ok":
+            number = int(ms or 0)
+            self._suffix = f" · {number} ms"
+            self._tone = "ok" if number < 300 else ("slow" if number <= 800 else "offline")
+        elif status == "offline":
+            self._suffix = ": offline"
+            self._tone = "offline"
+        elif status == "pending":
+            self._suffix = " · …"
+            self._tone = "pending"
+        else:
+            self._suffix = " · not tested"
+            self._tone = "unknown"
+        super().setText(self._full_text())
+        self.updateGeometry()
+
+    def _full_text(self) -> str:
+        return f"{self._name}{self._suffix}"
+
+    def _metrics(self) -> QFontMetricsF:
+        """The font ``paintEvent`` draws with.
+
+        The theme sets the family and size through the application stylesheet,
+        so the widget only holds its final font after it has been polished.
+        """
+        self.ensurePolished()
+        return QFontMetricsF(self.font())
+
+    def _text_left(self) -> int:
+        return self.DOT_LEFT + self.DOT_SIZE + self.GAP
+
+    def _states(self) -> tuple[str, ...]:
+        """The suffix on screen, plus every one a connection test can swap in."""
+        return tuple(dict.fromkeys((self._suffix, *self.STATE_SUFFIXES)))
+
+    def _name_room(self, width: int) -> int:
+        """Pixels left for the name in a button ``width`` wide.
+
+        ``paintEvent`` elides the name to exactly this, so measuring and
+        painting cannot drift apart.
+        """
+        metrics = self._metrics()
+        used = self._text_left() + ceil(metrics.horizontalAdvance(self._suffix)) + self.PAD
+        return max(self.MIN_NAME_ROOM, int(width) - used)
+
+    def _needed_width(self, suffix: str) -> int:
+        """Width for the dot, the whole name, this suffix and the padding."""
+        metrics = self._metrics()
+        total = max(
+            metrics.horizontalAdvance(self._name) + metrics.horizontalAdvance(suffix),
+            metrics.horizontalAdvance(self._name + suffix),
+        )
+        return self._text_left() + ceil(total) + self.PAD + self.SLACK
+
+    def _ping_width(self) -> int:
+        """The dot and the ping: the name is elided, this never is."""
+        return (
+            self._text_left() + ceil(self._metrics().horizontalAdvance(self._suffix))
+            + self.PAD
+        )
+
+    def _content_width(self) -> int:
+        """Room for the whole name in the widest state, so a ping cannot resize it."""
+        return max(self._needed_width(suffix) for suffix in self._states())
+
+    def _drawn_name(self, width: int) -> str:
+        """The name as painted in a button ``width`` wide, elided if it must be."""
+        return self._metrics().elidedText(self._name, Qt.ElideRight, self._name_room(width))
+
+    def displayed_text(self) -> str:
+        """Exactly the string ``paintEvent`` draws, elided name included."""
+        return self._drawn_name(self.width()) + self._suffix
+
+    def sizeHint(self) -> QSize:  # noqa: N802 - Qt API
+        """Ask for the full text in any state; the header only elides on squeeze."""
+        hint = super().sizeHint()
+        return QSize(max(self._ping_width(), self._content_width()), hint.height())
+
+    def minimumSizeHint(self) -> QSize:  # noqa: N802 - Qt API
+        return QSize(self._ping_width(), super().minimumSizeHint().height())
+
+    def paintEvent(self, event) -> None:  # noqa: N802 - Qt API
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setPen(QPen(QColor(255, 255, 255, 26), 1))
+        painter.setBrush(QColor(255, 255, 255, 8) if self.underMouse() else Qt.NoBrush)
+        painter.drawRoundedRect(QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5), 7, 7)
+        dot = QRectF(self.DOT_LEFT, self.height() / 2 - self.DOT_SIZE / 2,
+                     self.DOT_SIZE, self.DOT_SIZE)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QColor(self.COLOURS.get(self._tone, "#8a8f98")))
+        painter.drawEllipse(dot)
+        painter.setFont(self.font())
+        text_left = self._text_left()
+        painter.setPen(QColor(self.palette().color(self.foregroundRole())))
+        painter.drawText(
+            QRectF(text_left, 0, self.width() - text_left - self.PAD, self.height()),
+            Qt.AlignLeft | Qt.AlignVCenter, self.displayed_text(),
+        )
+
+    def enterEvent(self, event) -> None:  # noqa: N802
+        self.update()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event) -> None:  # noqa: N802
+        self.update()
+        super().leaveEvent(event)
 
 
 class _Dot(QWidget):
