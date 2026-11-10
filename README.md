@@ -20,18 +20,6 @@
 | :---: | :---: | :---: |
 | ![Library with a selected game](docs/screens/qt-library-selection.png) | ![Download queue](docs/screens/qt-downloads.png) | ![Media home](docs/screens/media-home.png) |
 
-## Features
-
-- **Browse and filter** — the whole archive.org collection with search, genre/size/year/licence/format filters, lazy artwork, a cover grid or compact list, and a details panel with the file list
-- **Downloads that finish** — a queue that survives restarts, segmented transfers with resume, disk-space preflight, atomic renames and bounded retries; magnets through the built-in BitTorrent engine or `aria2c`
-- **A library you own** — folder scan into `library.json`, favourites, metadata with provenance, checksum verification, duplicate finder, export/import
-- **Reviewed launch** — you pick the executable, the path must stay inside your download folder, and elevated launches are refused
-- **Movies &amp; TV** — TMDB metadata, anime discovery via MyAnimeList/AniList and ani.pm, episode selection, provider selection and in-app playback for supported providers
-- **Discovery and home screens** — recommendations, random discovery, hidden gems, recently viewed history, custom shelves and a release calendar
-- **Personal library tools** — collections, tags, duplicate detection, bulk edits, metadata editing, statistics, activity history and profile separation
-- **A configurable interface** — command palette, keyboard shortcuts, compact mode, accent colours, artwork backgrounds and adjustable home layouts
-- **Website catalogues** — import Kryoto, RAWG, archive.org or any JSON/HTML catalogue page into the same library
-
 ## Install
 
 ### Windows
