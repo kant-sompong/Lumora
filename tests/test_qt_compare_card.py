@@ -10,7 +10,7 @@ import pytest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 pytest.importorskip("PySide6.QtWidgets")
 
-from PySide6.QtWidgets import QApplication, QBoxLayout  # noqa: E402
+from PySide6.QtWidgets import QApplication, QBoxLayout, QLabel  # noqa: E402
 
 from lgl import qt_media, qt_season, season_data  # noqa: E402
 
@@ -236,6 +236,26 @@ def test_the_columns_stack_when_the_card_is_narrow(app):
     widget.resize(600, 700)
     pump(app)
     assert widget._columns_row.direction() == QBoxLayout.TopToBottom
+
+
+def test_the_menu_dialog_hosts_the_card(app):
+    dialog = qt_season.CompareCardDialog(threaded=False,
+                                         loader=lambda *a: result(new=2))
+    dialog.show()
+    pump(app)
+
+    assert isinstance(dialog.card, qt_season.CompareCard)
+    assert dialog.windowTitle() == "Compare seasons"
+    # The old window is not built inside the menu's dialog any more.
+    assert not dialog.findChildren(qt_season.SeasonCompareDialog)
+
+    dialog.compare()
+    pump(app)
+
+    assert dialog.card.summary.isVisibleTo(dialog)
+    texts = [label.text() for label in dialog.findChildren(QLabel)]
+    assert "Nothing to compare" not in texts
+    dialog.close()
 
 
 def test_media_home_hosts_the_new_card_below_the_schedule(app, tmp_path):

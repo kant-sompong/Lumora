@@ -679,9 +679,42 @@ class CompareCard(QWidget):
             self._columns_row.setDirection(wanted)
 
 
-def show_season_compare(parent: QWidget | None = None) -> SeasonCompareDialog:
-    """Open the comparison from the app menu."""
-    dialog = SeasonCompareDialog(parent)
+class CompareCardDialog(QDialog):
+    """The menu's Compare seasons window: a small frame around :class:`CompareCard`.
+
+    The old :class:`SeasonCompareDialog` drew its own pickers, summary and three
+    lists; the app now opens the same compact card the Media page shows, so the
+    two ways of comparing cannot drift apart.
+    """
+
+    def __init__(self, parent: QWidget | None = None, *, loader: Any = None,
+                 threaded: bool = True, cache_path: Any = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Compare seasons")
+        self.resize(920, 620)
+        column = QVBoxLayout(self)
+        column.setContentsMargins(18, 16, 18, 14)
+        column.setSpacing(10)
+        self.card = CompareCard(
+            self, loader=loader, threaded=threaded, cache_path=cache_path
+        )
+        column.addWidget(self.card, 1)
+        footer = QHBoxLayout()
+        footer.addStretch(1)
+        self.close_btn = QPushButton("Close", self)
+        self.close_btn.clicked.connect(self.reject)
+        footer.addWidget(self.close_btn)
+        column.addLayout(footer)
+
+    def compare(self) -> None:
+        """Load the default pair, exactly as Compare does on the card."""
+        self.card.compare()
+
+
+def show_season_compare(parent: QWidget | None = None, *, loader: Any = None,
+                        threaded: bool = True) -> CompareCardDialog:
+    """Open the comparison from the app menu, on the compact card."""
+    dialog = CompareCardDialog(parent, loader=loader, threaded=threaded)
     dialog.compare()
     dialog.exec()
     return dialog
@@ -693,6 +726,7 @@ __all__ = [
     "HINT",
     "SECTIONS",
     "CompareCard",
+    "CompareCardDialog",
     "SeasonCompareDialog",
     "show_season_compare",
 ]
