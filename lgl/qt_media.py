@@ -24,7 +24,6 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QPushButton,
-    QScrollArea,
     QSizePolicy,
     QStackedWidget,
     QVBoxLayout,
@@ -43,7 +42,7 @@ from . import (
     view_prefs,
 )
 from . import recently_viewed
-from .qt_icons import icon, paint_icon
+from .qt_icons import icon
 from .qt_feed import PosterRow, ScheduleStrip, ThreeColumnList
 from .qt_library import ArtworkBackdrop
 from .qt_player import EmbeddedPlayer, make_player
@@ -331,7 +330,6 @@ class HeroPanel(HeroBanner):
 
     def __init__(self) -> None:
         super().__init__(430)
-        from PySide6.QtWidgets import QSpacerItem
 
         column = QVBoxLayout(self)
         column.setContentsMargins(64, 64, 64, 28)
@@ -761,17 +759,17 @@ class MediaPage(QWidget):
         self.schedule_loader: Callable[[], object] | None = None
         self.schedule.setVisible(False)
 
-        # Section 9: the existing season comparison, embedded as a card.
+        # Section 9: the compact season comparison card.
         self.compare_card = QFrame()
         self.compare_card.setObjectName("feedColumn")
         compare_column = QVBoxLayout(self.compare_card)
         compare_column.setContentsMargins(16, 12, 16, 12)
         compare_column.setSpacing(8)
-        compare_column.addWidget(SectionTitle("Compare seasons"))
         try:
-            from .qt_season import SeasonCompareDialog
+            from .qt_season import CompareCard
 
-            self.compare_panel = SeasonCompareDialog(self, threaded=False, embedded=True)
+            self.compare_panel = CompareCard(self)
+            self.compare_panel.item_clicked.connect(self._open_compare_entry)
             compare_column.addWidget(self.compare_panel)
         except Exception:  # noqa: BLE001 - never take the whole page down
             self.compare_panel = None
@@ -1157,9 +1155,10 @@ class MediaPage(QWidget):
 
     def _build_compare(self, column: QVBoxLayout) -> None:
         """Two anime seasons side by side; it fetches only when Compare runs."""
-        from .qt_season import SeasonCompareDialog
+        from .qt_season import CompareCard
 
-        self.compare_panel = SeasonCompareDialog(self, threaded=False, embedded=True)
+        self.compare_panel = CompareCard(self)
+        self.compare_panel.item_clicked.connect(self._open_compare_entry)
         column.addWidget(self.compare_panel, 1)
 
     # navigation ------------------------------------------------------------
@@ -1506,6 +1505,16 @@ class MediaPage(QWidget):
         self._load_posters()
 
     # detail / playback -----------------------------------------------------
+    def _open_compare_entry(self, entry: object) -> None:
+        """A compared title opens its own detail page."""
+        if not isinstance(entry, dict):
+            return
+        key = str(entry.get("key") or "").strip()
+        if not key:
+            return
+        title = str(entry.get("title") or "").strip() or "Untitled"
+        self.open_card(Card(key=key, title=title, kind="anime"))
+
     def open_card(self, card: object) -> None:
         if not isinstance(card, Card):
             return

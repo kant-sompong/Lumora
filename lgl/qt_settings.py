@@ -9,7 +9,6 @@ changes, exactly like the Linux build.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Callable, Sequence
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
@@ -36,7 +35,7 @@ from . import (
     __version__, mal, platform_support, provider_health, streaming, theme, tmdb,
     view_prefs,
 )
-from .qt_widgets import Toast, label, run_async
+from .qt_widgets import label, run_async
 from .settings import Settings
 from .sources import RawgSource
 

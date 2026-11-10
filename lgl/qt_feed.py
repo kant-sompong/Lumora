@@ -114,6 +114,9 @@ class PosterRow(QWidget):
         self._loader: Loader | None = None
         self._token = 0
         self._cards: list[Any] = []
+        # One card tall and no taller: a row that grows with the page leaves a
+        # band of empty space under short strips and pushes what follows down.
+        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
 
         column = QVBoxLayout(self)
         column.setContentsMargins(0, 0, 0, 0)
@@ -145,7 +148,7 @@ class PosterRow(QWidget):
             lambda: self.strip.scroll_by(-max(1, int(self.strip.width() * 0.8)))
         )
         strip_row.addWidget(self.left, 0, Qt.AlignVCenter)
-        self.strip = ScrollRow(int(poster_width * 1.5) + 52, spacing=16)
+        self.strip = ScrollRow(int(round(poster_width * 1.5)) + 46, spacing=16)
         strip_row.addWidget(self.strip, 1)
         self.right = _Arrow("chevron-right")
         self.right.clicked.connect(
@@ -176,11 +179,23 @@ class PosterRow(QWidget):
             else:
                 widget.mouseReleaseEvent = _click_handler(widget, self, card)
             self.strip.add(widget)
+        self._fit_to_cards()
         self.heading.count.setText(str(len(self._cards)))
         self._host.setVisible(bool(self._cards))
         self.error.setVisible(False)
         self.placeholder.setVisible(False)
         self.setVisible(bool(self._cards))
+
+    def _fit_to_cards(self) -> None:
+        """Make the strip exactly as tall as one poster card.
+
+        The guessed ``poster_width * 1.5 + 52`` was taller than the card it
+        held, so every row carried a band of empty space under it.
+        """
+        heights = [widget.sizeHint().height() for widget in self.posters()
+                   if widget.sizeHint().height() > 0]
+        if heights:
+            self.strip.setFixedHeight(max(heights))
 
     def set_loading(self, text: str = "Loading…") -> None:
         self.placeholder.setText(text)

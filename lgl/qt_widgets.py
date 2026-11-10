@@ -37,14 +37,12 @@ from PySide6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QSizePolicy,
-    QToolButton,
     QVBoxLayout,
     QWidget,
 )
 
 from . import theme
-from .qt_icons import icon, icon_pixmap, paint_icon
-from .qt_theme import alpha
+from .qt_icons import icon, paint_icon
 
 #: Theme values custom-painted widgets need before QSS can reach them.
 THEME_STATE: dict[str, object] = {
@@ -941,6 +939,10 @@ class EmptyState(QWidget):
         self.hint.setVisible(bool(hint))
         column.addWidget(self.hint)
         column.addStretch(1)
+        # A page that also holds ranked rows squeezes its children to fit; with
+        # no floor the icon's block was cut off at the bottom (154px for a 169px
+        # hint at 1280x820).  The scroll area grows instead.
+        self.setMinimumHeight(180)
 
     def set_text(self, title: str, hint: str = "") -> None:
         self.title.setText(title)

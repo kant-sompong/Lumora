@@ -14,8 +14,8 @@ import urllib.request
 from pathlib import Path
 from typing import Callable, Sequence
 
-from PySide6.QtCore import QRectF, QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QIcon, QPainter, QPixmap
+from PySide6.QtCore import QSize, Qt, QTimer, Signal
+from PySide6.QtGui import QIcon, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
     QButtonGroup,
@@ -54,31 +54,23 @@ from .qt_archive import (
     tile_meta,
 )
 from .qt_feed import PosterRow
-from .qt_icons import icon, paint_icon
 from .qt_widgets import (
     CheckRow,
     CoverArt,
-    CoverGrid,
     DirectionButton,
     ElideLabel,
     EmptyState,
     FlowLayout,
     IconButton,
     SortPill,
-    THEME_STATE,
     Toast,
     ViewToggle,
-    alpha_color,
     cached_image_bytes,
     clear_layout,
-    color,
-    divider,
     label,
     pixmap_from_bytes,
     run_async,
     scroll_page,
-    search_icon,
-    space,
 )
 from .qt_downloads import FilePickDialog
 from .settings import ARCHIVE_SORT_KEYS
@@ -1048,6 +1040,11 @@ class BrowsePage(QWidget):
         self.gems_row.setObjectName("browseHiddenGemsRow")
         self.gems_row.item_clicked.connect(self.item_requested.emit)
         column.addWidget(self.gems_row)
+        # Ranked off the UI thread; a row hides itself when there is nothing to
+        # show and says "Could not load: …" when the rows cannot be read.
+        if rows_provider is not None:
+            self.recommended_row.set_loader(self.load_recommended)
+            self.gems_row.set_loader(self.load_gems)
         column.addWidget(self.shelves_host)
         column.addWidget(self.grid_host)
         self.list_host = QWidget()
@@ -1344,7 +1341,10 @@ class BrowsePage(QWidget):
             self._cards[game.identifier] = card
 
         has = bool(visible)
-        self.scroll.setVisible(has)
+        # The ranked rows share this scroll, so an empty catalogue list must not
+        # hide the scroll and take them down with it; the empty state sits below
+        # them instead.
+        self.scroll.setVisible(True)
         self.empty.setVisible(not has)
         if not has:
             if self._games:
@@ -1375,19 +1375,28 @@ class BrowsePage(QWidget):
             self._render()
 
     def refresh_rows(self) -> None:
-        """Fill the two discovery rows from local rows; hide them when empty."""
+        """Re-rank the two discovery rows; they never block the page."""
+        self.recommended_row.refresh()
+        self.gems_row.refresh()
+
+    def _local_rows(self) -> list[dict]:
+        """The rows the strips rank, read from the provider on the worker thread."""
         provider = self._rows_provider
-        rows: list[dict] = []
-        if provider is not None:
-            try:
-                rows = [dict(row) for row in (provider() or []) if isinstance(row, dict)]
-            except Exception:  # noqa: BLE001 - a broken row must not break Browse
-                rows = []
-        liked = list(self._liked_provider() or []) if self._liked_provider else []
+        if provider is None:
+            return []
+        rows = [dict(row) for row in (provider() or []) if isinstance(row, dict)]
         for row in rows:
             row["meta"] = str(row.get("meta") or self._row_meta(row))
-        self.recommended_row.set_cards(discovery.recommend(rows, liked))
-        self.gems_row.set_cards(discovery.hidden_gems(rows))
+        return rows
+
+    def load_recommended(self) -> list[dict]:
+        """Titles closest to what the library already likes."""
+        liked = list(self._liked_provider() or []) if self._liked_provider else []
+        return discovery.recommend(self._local_rows(), liked)
+
+    def load_gems(self) -> list[dict]:
+        """Well rated but not widely known."""
+        return discovery.hidden_gems(self._local_rows())
 
     @staticmethod
     def _row_meta(row: dict) -> str:
