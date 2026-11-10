@@ -1,7 +1,7 @@
 <h1 align="center">Lumora</h1>
 
 <p align="center">
-  <strong>A desktop game library for the Internet Archive's Linux game collection — browse, download, organise and play — with a Movies&nbsp;&amp;&nbsp;TV section for everything else.</strong><br>
+  <strong>A desktop game library and media player — browse, download, organise and play Internet Archive games, then discover and watch Movies&nbsp;&amp;&nbsp;TV in the same app.</strong><br>
   One shared Python core, two native frontends: GTK&nbsp;3 on Linux, Qt&nbsp;6 on Windows.
 </p>
 
@@ -26,7 +26,10 @@
 - **Downloads that finish** — a queue that survives restarts, segmented transfers with resume, disk-space preflight, atomic renames and bounded retries; magnets through the built-in BitTorrent engine or `aria2c`
 - **A library you own** — folder scan into `library.json`, favourites, metadata with provenance, checksum verification, duplicate finder, export/import
 - **Reviewed launch** — you pick the executable, the path must stay inside your download folder, and elevated launches are refused
-- **Movies &amp; TV** — TMDB metadata, anime via MyAnimeList/ani.pm, episode selector, provider picker and embedded playback
+- **Movies &amp; TV** — TMDB metadata, anime discovery via MyAnimeList/AniList and ani.pm, episode selection, provider selection and in-app playback for supported providers
+- **Discovery and home screens** — recommendations, random discovery, hidden gems, recently viewed history, custom shelves and a release calendar
+- **Personal library tools** — collections, tags, duplicate detection, bulk edits, metadata editing, statistics, activity history and profile separation
+- **A configurable interface** — command palette, keyboard shortcuts, compact mode, accent colours, artwork backgrounds and adjustable home layouts
 - **Website catalogues** — import Kryoto, RAWG, archive.org or any JSON/HTML catalogue page into the same library
 
 ## Install
@@ -66,6 +69,7 @@ Needs Python 3.10+ and GTK 3; WebKit2GTK and the GStreamer plugins are optional 
 - [Reference](docs/REFERENCE.md) — requirements, API keys, streaming providers, keyboard shortcuts, where data is stored, troubleshooting
 - [Developing](docs/DEVELOPING.md) — architecture, building from source, CI, tests
 - [Roadmap](docs/ROADMAP.md) — known gaps
+- [What’s next](docs/TODO.md) and [completed work](docs/DONE.md) — current project hand-over and verification notes
 
 ## License
 
