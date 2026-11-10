@@ -18,7 +18,7 @@ def app():
     return QApplication.instance() or QApplication([])
 
 
-def test_creating_switching_and_renaming(tmp_path):
+def test_creating_switching_and_renaming(app, tmp_path):
     store = Profiles(tmp_path / "profiles.json")
     dialog = qt_profiles.ProfilesDialog(store)
     assert dialog.list.count() == 1
@@ -33,7 +33,7 @@ def test_creating_switching_and_renaming(tmp_path):
     assert store.active().name == "Work"
 
 
-def test_the_last_profile_cannot_be_deleted(tmp_path):
+def test_the_last_profile_cannot_be_deleted(app, tmp_path):
     store = Profiles(tmp_path / "profiles.json")
     dialog = qt_profiles.ProfilesDialog(store)
     assert dialog.delete() is False
