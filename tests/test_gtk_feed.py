@@ -216,6 +216,100 @@ def test_a_column_error_names_the_reason_and_hides_its_rows(display):
     assert columns.columns["just_completed"]["rows"].get_visible() is False
 
 
+def column_shown(columns, key) -> bool:
+    return columns.columns[key]["box"].get_visible()
+
+
+def test_a_column_with_items_leaves_empty_siblings_hidden(display):
+    columns = gtk_feed.ThreeColumnList()
+    columns.set_items("new_release", cards(3))
+    assert column_shown(columns, "new_release") is True
+    assert column_shown(columns, "new_added") is False
+    assert column_shown(columns, "just_completed") is False
+    assert columns.columns["new_added"]["rows"].get_visible() is False
+    assert columns.columns["just_completed"]["rows"].get_visible() is False
+
+
+def test_updating_one_column_does_not_reveal_an_empty_one(display):
+    columns = gtk_feed.ThreeColumnList()
+    columns.set_items("new_added", cards(2))
+    columns.set_items("new_release", cards(4))
+    columns.set_items("new_added", cards(1))
+    assert column_shown(columns, "new_release") is True
+    assert column_shown(columns, "new_added") is True
+    assert column_shown(columns, "just_completed") is False
+    assert columns.columns["just_completed"]["rows"].get_visible() is False
+    assert columns.columns["just_completed"]["error"].get_visible() is False
+
+
+def test_a_cleared_column_stays_hidden_when_a_sibling_renders(display):
+    columns = gtk_feed.ThreeColumnList()
+    columns.set_items("new_added", cards(3))
+    columns.set_items("new_added", [])
+    columns.set_items("new_release", cards(2))
+    assert column_shown(columns, "new_added") is False
+    assert columns.columns["new_added"]["rows"].get_visible() is False
+    assert column_shown(columns, "new_release") is True
+
+
+def test_an_error_leaves_empty_siblings_hidden(display):
+    columns = gtk_feed.ThreeColumnList()
+    columns.set_error("new_added", "timeout")
+    assert column_shown(columns, "new_added") is True
+    assert column_shown(columns, "new_release") is False
+    assert column_shown(columns, "just_completed") is False
+    assert columns.columns["new_release"]["rows"].get_visible() is False
+    assert columns.columns["just_completed"]["rows"].get_visible() is False
+
+
+def test_toggling_one_column_leaves_its_siblings_alone(display):
+    columns = gtk_feed.ThreeColumnList()
+    columns.set_items("new_release", cards(8))
+    columns.toggle("new_release")
+    assert columns.rows("new_release") == 8
+    assert column_shown(columns, "new_added") is False
+    assert column_shown(columns, "just_completed") is False
+
+    columns.toggle("new_release")
+    assert columns.rows("new_release") == 5
+    assert column_shown(columns, "new_release") is True
+    assert column_shown(columns, "new_added") is False
+    assert column_shown(columns, "just_completed") is False
+
+
+def test_rendering_columns_in_either_order_gives_the_same_visibility(display):
+    expected = {"new_release": True, "new_added": False, "just_completed": True}
+
+    forward = gtk_feed.ThreeColumnList()
+    forward.set_items("new_release", cards(2))
+    forward.set_items("just_completed", cards(2))
+    backward = gtk_feed.ThreeColumnList()
+    backward.set_items("just_completed", cards(2))
+    backward.set_items("new_release", cards(2))
+
+    for columns in (forward, backward):
+        for key in expected:
+            assert column_shown(columns, key) is expected[key]
+        assert columns.columns["new_added"]["rows"].get_visible() is False
+
+
+def test_set_columns_marks_only_populated_columns_visible(display):
+    columns = gtk_feed.ThreeColumnList()
+    columns.set_columns(new_release=cards(1), just_completed=cards(3))
+    assert column_shown(columns, "new_release") is True
+    assert column_shown(columns, "new_added") is False
+    assert column_shown(columns, "just_completed") is True
+    assert columns.rows("new_release") == 1
+    assert columns.rows("new_added") == 0
+    assert columns.rows("just_completed") == 3
+    assert columns.columns["new_added"]["rows"].get_visible() is False
+
+    columns.set_columns(new_release=[], new_added=[], just_completed=[])
+    assert columns.get_visible() is False
+    for key in ("new_release", "new_added", "just_completed"):
+        assert column_shown(columns, key) is False
+
+
 # -- schedule ---------------------------------------------------------------
 def airing(title: str, when: datetime, episode: object = 1) -> dict:
     return {"title": title, "air_at": when.timestamp(), "episode": episode}
