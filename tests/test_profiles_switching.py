@@ -179,11 +179,18 @@ def test_a_running_app_keeps_its_profile_until_restart(folders):
     assert profiles.active_data_dir() == data
 
 
-def test_qt_header_names_the_profile_and_a_switch_asks_for_restart(folders):
+def test_qt_header_names_the_profile_and_a_switch_asks_for_restart(folders, monkeypatch):
     pytest.importorskip("PySide6.QtWidgets")
     from PySide6.QtWidgets import QApplication
 
     from lgl import qt_main, qt_profiles
+
+    # Browse's discovery rows ask the media provider for cards, and then load
+    # their posters, on the shared worker pool.  This test is about the header,
+    # so answer them locally: with a real provider a slow runner left five jobs
+    # in flight past the drain window and failed the test at teardown.
+    monkeypatch.setattr(qt_main.Window, "_discover_rows", lambda self: [])
+    monkeypatch.setattr(qt_main.Window, "_liked_keys", lambda self: [])
 
     app = QApplication.instance() or QApplication([])
     store = profiles.load()
