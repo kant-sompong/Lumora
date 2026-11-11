@@ -106,6 +106,9 @@ class FeedHome(Gtk.Box):
         self.pack_start(self.columns, False, False, 0)
 
         self.schedule = gtk_feed.ScheduleStrip(on_open=on_schedule_open)
+        # A clock pinned by set_now() (tests, screenshots) survives a refresh;
+        # without one each load re-reads the wall clock so the strip stays current.
+        self._now: datetime | None = None
         # The strip's own empty line ("Nothing airs on …") is true only after a
         # load has answered; until then it must not appear, not even through the
         # page's show_all().  It is shown by _apply_schedule once data arrives.
@@ -235,7 +238,7 @@ class FeedHome(Gtk.Box):
         # are airings, and with its own "Nothing airs on …" line when the week
         # really is empty.  The old code hid the strip for an empty answer, so
         # an empty result and a missing one looked the same.
-        self.schedule.set_now(datetime.now())
+        self.schedule.set_now(self._now or datetime.now())
         self.schedule.set_entries(entries)
         self.schedule.set_no_show_all(False)
         self.schedule.show_all()
@@ -243,6 +246,7 @@ class FeedHome(Gtk.Box):
         return False
 
     def set_now(self, when: datetime) -> None:
+        self._now = when
         self.schedule.set_now(when)
 
     # -- callbacks ----------------------------------------------------------
