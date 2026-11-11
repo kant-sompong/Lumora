@@ -6577,8 +6577,9 @@ class MainWindow(Gtk.ApplicationWindow):
         self._forward_btn.set_tooltip_text("Forward")
         nav.pack_start(self._forward_btn, False, False, 0)
         header.pack_start(nav)
-        # One button, on every page: a drawn die picks a random title.
-        header.pack_start(self._build_dice_button())
+        # One button, on every page, at the right: a drawn die picks a random
+        # title from the page the user is looking at.
+        header.pack_end(self._build_dice_button())
 
         pill = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         pill.get_style_context().add_class("search-pill")

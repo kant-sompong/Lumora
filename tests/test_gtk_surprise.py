@@ -100,3 +100,58 @@ def test_a_media_key_opens_the_media_view():
     gtk_surprise.jump_to(parent, "movie", "movie:7")
     assert parent.views == ["media"]
     assert parent.selected == []
+
+
+class PageParent(FakeParent):
+    """A window that knows which page is open and what Media shows."""
+
+    def __init__(self, page, *, section="", cards=None, entries=(), games=()):
+        super().__init__(entries, cards, store=bool(entries))
+        self.page = page
+        self.section = section
+        self._games = list(games)
+        if cards is not None:
+            self.media_view = SimpleNamespace(
+                loaded_cards=lambda: list(cards),
+                _stack=SimpleNamespace(get_visible_child_name=lambda: section),
+            )
+
+    def active_view(self):
+        return self.page
+
+
+def test_the_library_page_picks_only_games():
+    parent = PageParent(
+        "library",
+        entries=[game("a", "Alpha")],
+        cards=[card("movie", "movie:1", "A Film")],
+    )
+    pool = gtk_surprise.pool_for_page(parent)
+    assert [row["kind"] for row in pool] == ["game"]
+
+
+def test_the_browse_page_picks_from_browse_games():
+    parent = PageParent(
+        "archive",
+        entries=[game("lib", "Library Game")],
+        games=[game("browse", "Browse Game")],
+    )
+    pool = gtk_surprise.pool_for_page(parent)
+    assert [row["key"] for row in pool] == ["browse"]
+
+
+def test_the_media_page_picks_only_the_open_section():
+    parent = PageParent(
+        "media",
+        section="anime",
+        cards=[card("movie", "movie:1", "A Film"), card("anime", "anime:2", "A Series")],
+    )
+    pool = gtk_surprise.pool_for_page(parent)
+    assert [row["key"] for row in pool] == ["anime:2"]
+
+
+def test_an_empty_page_never_crashes_or_navigates():
+    parent = PageParent("media", section="anime", cards=[])
+    assert gtk_surprise.pool_for_page(parent) == []
+    assert gtk_surprise.surprise(parent) is None
+    assert parent.toasts == [(gtk_surprise.EMPTY_MESSAGE, True)]

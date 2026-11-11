@@ -8,7 +8,7 @@ for Movies / TV Shows / Anime, and My List / History built from local state.
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from math import ceil
 from pathlib import Path
 from typing import Callable, Iterable, Sequence
@@ -733,6 +733,10 @@ class MediaPage(QWidget):
                 view_all=show_all,
             )
             row.item_clicked.connect(self.open_card)
+            # A row fills its strip asynchronously; ask for every poster once
+            # the cards exist, otherwise the strip stays blank until something
+            # else happens to call _load_posters().
+            row.cards_set.connect(self._load_posters)
             if target:
                 row.view_all_clicked.connect(
                     lambda _checked=False, section=target: self.show_section(section)
@@ -934,6 +938,7 @@ class MediaPage(QWidget):
         return Card(
             key=f"anime:{ident}",
             title=str(data.get("title") or "Untitled"),
+            poster_url=str(data.get("poster_url") or ""),
             kind="anime",
             mal_id=ident,
             rating=rating,
@@ -1315,8 +1320,12 @@ class MediaPage(QWidget):
         """The loaded card with ``key``, or ``None`` if this page never saw it."""
         return next((card for card in self._all_cards() if card.key == key), None)
 
-    def _load_image(self, url: str, key: str, apply: Callable[[QPixmap | None], None] | None) -> None:
+    def _load_image(self, url: str, key: str,
+                    apply: Callable[[QPixmap | None], None] | None,
+                    fallback: str = "") -> None:
         if not url:
+            if fallback:
+                self._load_image(fallback, key, apply)
             return
         if key in self._pix and apply is not None:
             apply(self._pix[key])
@@ -1325,9 +1334,16 @@ class MediaPage(QWidget):
         def work() -> bytes:
             return cached_image_bytes(url, self._cache_root, key, timeout=25.0)
 
+        def failed(_exc: object) -> None:
+            # A missing backdrop still tries the poster, so a detail page never
+            # shows a bare gradient when any artwork for the title exists.
+            if fallback and fallback != url:
+                self._load_image(fallback, key, apply)
+
         def done(data: object) -> None:
             pix = pixmap_from_bytes(data)
             if pix is None:
+                failed(None)
                 return
             self._pix[key] = pix
             if apply is not None:
@@ -1335,7 +1351,7 @@ class MediaPage(QWidget):
                 return
             self._paint_card(url, pix)
 
-        run_async(work, done, lambda _exc: None)
+        run_async(work, done, failed)
 
     def _poster_widgets(self) -> list[PosterCard]:
         """Every poster currently on screen, from every grid and carousel."""
@@ -1513,11 +1529,12 @@ class MediaPage(QWidget):
         if not key:
             return
         title = str(entry.get("title") or "").strip() or "Untitled"
-        self.open_card(Card(key=key, title=title, kind="anime"))
+        self.open_card(self.card(key) or Card(key=key, title=title, kind="anime"))
 
     def open_card(self, card: object) -> None:
         if not isinstance(card, Card):
             return
+        card = self._fullest_card(card)
         self._detail_card = card
         recently_viewed.record(
             recently_viewed.default_path(),
@@ -1538,12 +1555,28 @@ class MediaPage(QWidget):
         )
         self.stack.setCurrentWidget(self._detail_page)
         self._load_image(card.backdrop_url or card.poster_url, f"backdrop-{card.key}",
-                         self._detail_backdrop)
+                         self._detail_backdrop,
+                         fallback=card.poster_url if card.backdrop_url else "")
         self._detail_trailer = None
         self.trailer_btn.setVisible(False)
         self.trailer_note.setVisible(False)
         self._load_episodes(card)
         self._load_trailer(card)
+
+    def _fullest_card(self, card: Card) -> Card:
+        """Fill in artwork a card arrived without (compare rows, history rows)."""
+        known = self.card(card.key) if card.key else None
+        if known is None or known is card:
+            return card
+        updates: dict[str, object] = {
+            "poster_url": card.poster_url or known.poster_url,
+            "backdrop_url": card.backdrop_url or known.backdrop_url,
+            "overview": card.overview or known.overview,
+            "year": card.year or known.year,
+        }
+        if card.rating is None:
+            updates["rating"] = known.rating
+        return replace(card, **updates)
 
     def _detail_backdrop(self, pix: QPixmap | None) -> None:
         """Show the backdrop on the hero and blur a copy behind the page."""

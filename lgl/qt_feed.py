@@ -97,6 +97,8 @@ class PosterRow(QWidget):
 
     item_clicked = Signal(object)
     view_all_clicked = Signal()
+    #: Every card in the strip is now in place, so the page can fetch artwork.
+    cards_set = Signal()
 
     def __init__(
         self,
@@ -185,6 +187,7 @@ class PosterRow(QWidget):
         self.error.setVisible(False)
         self.placeholder.setVisible(False)
         self.setVisible(bool(self._cards))
+        self.cards_set.emit()
 
     def _fit_to_cards(self) -> None:
         """Make the strip exactly as tall as one poster card.

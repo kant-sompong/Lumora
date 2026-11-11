@@ -11,7 +11,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from typing import Any
 
-from . import discovery
+from . import discovery, surprise_pool
 
 #: Shown when there is nothing to pick from.
 EMPTY_MESSAGE = "Nothing to pick yet — add a game or open Movies & TV."
@@ -92,9 +92,56 @@ def jump_to(parent: Any, kind: str, key: str) -> None:
         apply_view("media")
 
 
+def current_page(parent: Any) -> str:
+    """The page the window is showing: library, archive (Browse) or media."""
+    active = getattr(parent, "active_view", None)
+    if callable(active):
+        try:
+            return str(active() or "library")
+        except Exception:  # noqa: BLE001 - a broken view falls back to Library
+            return "library"
+    return "library"
+
+
+def media_section(parent: Any) -> str:
+    """The visible tab inside Movies & TV, so a pick stays on that tab."""
+    view = getattr(parent, "media_view", None)
+    stack = getattr(view, "_stack", None)
+    if stack is None:
+        return ""
+    try:
+        return str(stack.get_visible_child_name() or "")
+    except Exception:  # noqa: BLE001 - no stack, no narrowing
+        return ""
+
+
+def browse_games(parent: Any) -> list[Any]:
+    """The games the Browse grid is currently showing."""
+    try:
+        return list(getattr(parent, "_games", ()) or ())
+    except TypeError:
+        return []
+
+
+def pool_for_page(parent: Any) -> list[dict[str, str]]:
+    """The random-pick pool for the page the window is showing."""
+    page = current_page(parent)
+    if page == "library":
+        return surprise_pool.pool_for("library", games=library_entries(parent))
+    if page in ("archive", "browse"):
+        return surprise_pool.pool_for("browse", games=browse_games(parent))
+    if page == "media":
+        return surprise_pool.pool_for(
+            "media", media=loaded_cards(parent), section=media_section(parent)
+        )
+    return surprise_pool.pool_for(
+        "", games=library_entries(parent), media=loaded_cards(parent)
+    )
+
+
 def surprise(parent: Any) -> Mapping[str, str] | None:
-    """Pick one title, say which, and take the user there."""
-    pool = build_pool(library_entries(parent), loaded_cards(parent))
+    """Pick one title from the open page, say which, and take the user there."""
+    pool = pool_for_page(parent)
     choice = discovery.random_pick(pool)
     toast = getattr(parent, "toast", None)
     if choice is None:
@@ -110,7 +157,11 @@ def surprise(parent: Any) -> Mapping[str, str] | None:
 __all__ = [
     "EMPTY_MESSAGE",
     "build_pool",
+    "browse_games",
+    "current_page",
     "jump_to",
+    "media_section",
+    "pool_for_page",
     "library_entries",
     "loaded_cards",
     "surprise",
