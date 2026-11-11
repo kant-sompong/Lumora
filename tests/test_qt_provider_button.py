@@ -10,7 +10,7 @@ import pytest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 pytest.importorskip("PySide6.QtWidgets")
 
-from PySide6.QtWidgets import QApplication, QComboBox  # noqa: E402
+from PySide6.QtWidgets import QApplication, QComboBox, QWidget  # noqa: E402
 
 from lgl import hidden_gems, mal, qt_media, release_feed, streaming, tmdb  # noqa: E402
 
@@ -75,6 +75,24 @@ def pump(app, seconds=0.2):
     while time.time() < end:
         app.processEvents()
         time.sleep(0.01)
+
+
+def _squeeze(width, widget, child, needed):
+    """Why a header widget did not get the room it asked for, for the log."""
+    hint = child.sizeHint().width()
+    floor = child.minimumSizeHint().width()
+    metrics = child.fontMetrics()
+    return {
+        "asked_for": width,
+        "page": widget.width(),
+        "child": child.width(),
+        "size_hint": hint,
+        "minimum": floor,
+        "needed": needed,
+        "font": (child.font().family(), metrics.horizontalAdvance("Search Movies & TV")),
+        "header": [w.width() for w in widget.provider_button.parent().children()
+                   if isinstance(w, QWidget)],
+    }
 
 
 def test_one_button_and_no_provider_combo_in_the_header(app, tmp_path):
@@ -154,11 +172,11 @@ def test_the_button_is_never_clipped_at_three_widths(app, tmp_path):
         # The ping is never elided, even where the header has no room to spare.
         ping_room = (button._text_left() + metrics.horizontalAdvance(button._suffix)
                      + button.PAD)
-        assert button.width() >= ping_room, (width, button.width(), ping_room)
+        assert button.width() >= ping_room, _squeeze(width, widget, button, ping_room)
         if width >= 1280:
             needed = metrics.horizontalAdvance(button.text()) + button._text_left() + button.PAD
-            assert button.width() >= needed, (width, button.width(), needed)
-        assert widget.width() >= 1000
+            assert button.width() >= needed, _squeeze(width, widget, button, needed)
+        assert widget.width() >= 1000, (width, widget.width())
     widget.close()
 
 
@@ -176,7 +194,7 @@ def test_the_button_keeps_its_full_text_at_1280(app, tmp_path):
     button = widget.provider_button
     assert button.text() == "CineSrc · 180 ms"
     needed = button.fontMetrics().horizontalAdvance("CineSrc · 180 ms")
-    assert button.width() >= needed, (button.width(), needed)
+    assert button.width() >= needed, _squeeze(1280, widget, button, needed)
     widget.close()
 
 
@@ -223,6 +241,6 @@ def test_the_search_placeholder_fits_at_1280(app, tmp_path):
     field = widget.search
     text = field.placeholderText()
     assert text
-    assert field.width() >= field.fontMetrics().horizontalAdvance(text) + 24, (
-        field.width(), text)
+    needed = field.fontMetrics().horizontalAdvance(text) + 24
+    assert field.width() >= needed, _squeeze(1280, widget, field, needed)
     widget.close()
