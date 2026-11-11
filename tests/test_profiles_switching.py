@@ -179,11 +179,21 @@ def test_a_running_app_keeps_its_profile_until_restart(folders):
     assert profiles.active_data_dir() == data
 
 
-def test_qt_header_names_the_profile_and_a_switch_asks_for_restart(folders):
+def test_qt_header_names_the_profile_and_a_switch_asks_for_restart(folders, monkeypatch):
     pytest.importorskip("PySide6.QtWidgets")
     from PySide6.QtWidgets import QApplication
 
-    from lgl import qt_main, qt_profiles
+    from lgl import qt_main, qt_media, qt_profiles
+
+    # Two pages of the window fetch on the shared worker pool the moment they
+    # appear: Browse ranks its discovery rows, and Media reloads its remote
+    # sections.  This test only reads the header labels and the profile dialog,
+    # and on a slow runner those jobs were still in flight 3 s after the test
+    # body, so the drain guard failed it at teardown.  Answer both locally; the
+    # media feed tests cover those loaders with their own injected ones.
+    monkeypatch.setattr(qt_main.Window, "_discover_rows", lambda self: [])
+    monkeypatch.setattr(qt_main.Window, "_liked_keys", lambda self: [])
+    monkeypatch.setattr(qt_media.MediaPage, "reload", lambda self: None)
 
     app = QApplication.instance() or QApplication([])
     store = profiles.load()
