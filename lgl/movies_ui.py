@@ -1341,6 +1341,7 @@ class AniPmTile(Gtk.FlowBoxChild):
 
     def __init__(self, item: "anipm.AniTitle", images: Images, on_open) -> None:
         super().__init__()
+        self.item = item
         self.get_style_context().add_class("movie-tile")
         button = Gtk.Button()
         button.set_relief(Gtk.ReliefStyle.NONE)
@@ -3103,6 +3104,26 @@ class MoviesWindow(Gtk.Box):
         inner.pack_start(self._gems_flow, True, True, 0)
         return scroller
 
+    def loaded_cards(self) -> list:
+        """The titles the visible page shows, for Surprise me."""
+        name = ""
+        if hasattr(self, "_stack"):
+            name = self._stack.get_visible_child_name() or ""
+        flow = {
+            "browse": getattr(self, "_browse_flow", None),
+            "search": getattr(self, "_search_flow", None),
+            "anime": getattr(self, "_anime_flow", None),
+            "gems": getattr(self, "_gems_flow", None),
+            "mylist": getattr(self, "_mylist_flow", None),
+        }.get(name)
+        cards = []
+        if flow is not None:
+            for child in flow.get_children():
+                item = getattr(child, "item", None)
+                if item is not None:
+                    cards.append(item)
+        return cards
+
     def _open_gems(self) -> None:
         """The AniList Hidden Gems collection, with no MyAnimeList requirement."""
         self._stack.set_visible_child_name("gems")
@@ -3173,6 +3194,7 @@ class MoviesWindow(Gtk.Box):
         return anipm.AniTitle(
             anilist_id=ident,
             title=str(entry.get("title") or "Untitled"),
+            poster_url=str(entry.get("poster_url") or ""),
             format=str(entry.get("format") or ""),
             score=rating,
             status=str(entry.get("status") or ""),
@@ -4168,6 +4190,13 @@ class MoviesWindow(Gtk.Box):
         overlay.set_size_request(-1, 420)
         backdrop = Backdrop(420)
         overlay.add(backdrop)
+        # The row that opened this page already has its art: show it now instead
+        # of leaving the hero blank until the details request answers, and keep
+        # the poster as the fallback for a title with no backdrop.
+        self._load_detail_image(
+            getattr(item, "backdrop_url", "") or getattr(item, "poster_url", ""),
+            backdrop,
+        )
         scrim = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         scrim.set_hexpand(True)
         scrim.set_vexpand(True)

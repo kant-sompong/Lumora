@@ -19,6 +19,7 @@ def media(ident, title, score, popularity, *, episodes=12, fmt="TV", status="FIN
         "title": {"english": title, "romaji": title},
         "averageScore": score,
         "popularity": popularity,
+        "coverImage": {"large": f"https://img.anilist.test/{ident}.jpg"},
         "episodes": episodes,
         "format": fmt,
         "status": status,
@@ -266,3 +267,42 @@ def test_lines_and_details_show_score_and_rank():
     assert "popularity 100 (rank 2 of 6)" in details
     assert "12 episodes" in details
     assert hidden_gems.entry_details(None) == ""
+
+
+def test_the_query_asks_for_cover_art_so_gems_can_show_posters():
+    query = " ".join(hidden_gems.QUERY.split())
+    assert "coverImage" in query
+    assert "large" in query
+
+
+def test_each_gem_keeps_the_poster_the_api_sent():
+    entries = hidden_gems.fetch_catalogue(post=catalogue_post)
+    assert entries
+    assert all(entry["poster_url"].startswith("https://img.anilist.test/") for entry in entries)
+
+
+def test_a_gem_without_cover_art_simply_has_no_poster():
+    def post(_payload):
+        return page([{"id": 5, "title": {"romaji": "Bare"}, "averageScore": 90,
+                     "popularity": 10, "coverImage": None}])
+
+    entries = hidden_gems.fetch_catalogue(post=post)
+    assert entries[0]["poster_url"] == ""
+
+
+def test_a_cache_from_before_cover_art_is_not_trusted(tmp_path):
+    cache = tmp_path / "gems.json"
+    cache.write_text(
+        '{"version": 1, "catalogue": {"fetched_at": 1000, "entries": ['
+        '{"key": "anilist:1", "title": "Old", "score": 90, "popularity": 1}]}}',
+        "utf-8",
+    )
+    calls = []
+
+    def post(payload):
+        calls.append(payload)
+        return catalogue_post(payload)
+
+    result = hidden_gems.load_gems(post=post, cache_path=cache, now=1001)
+    assert calls, "a v1 cache has no posters, so it must be fetched again"
+    assert all(entry["poster_url"] for entry in result.entries)

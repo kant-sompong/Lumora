@@ -30,6 +30,8 @@ from . import platform_support, release_feed, season_data
 #: Three hours, the same freshness as the season list and release calendar.
 CACHE_TTL = season_data.CACHE_TTL
 CACHE_FILENAME = "hidden-gems.json"
+#: v2 added poster_url; a v1 cache has no cover art, so it is ignored.
+CACHE_VERSION = 2
 LISTS_CACHE_FILENAME = "anime-lists.json"
 #: A score of 78 is "good, not just fine" on AniList's 100-point average.
 MIN_SCORE = 78
@@ -50,6 +52,7 @@ query ($page: Int) {
       title { romaji english }
       averageScore
       popularity
+      coverImage { large }
       episodes
       format
       status
@@ -205,6 +208,8 @@ def fetch_catalogue(*, post: Post | None = None) -> list[dict[str, Any]]:
             popularity = _int(row.get("popularity"))
             if ident is None or not title or popularity is None:
                 continue
+            cover = row.get("coverImage") if isinstance(row.get("coverImage"), dict) else {}
+            poster = str(cover.get("large") or cover.get("extraLarge") or "").strip()
             key = f"anilist:{ident}"
             if key in seen:
                 continue
@@ -219,6 +224,7 @@ def fetch_catalogue(*, post: Post | None = None) -> list[dict[str, Any]]:
                     "episodes": _int(row.get("episodes"), minimum=1),
                     "format": str(row.get("format") or ""),
                     "status": str(row.get("status") or ""),
+                    "poster_url": poster,
                     "source": "AniList",
                 }
             )
@@ -350,6 +356,8 @@ def _load_cache(path: Path) -> dict[str, Any]:
         return {}
     if not isinstance(data, dict):
         return {}
+    if data.get("version") != CACHE_VERSION:
+        return {}
     block = data.get("catalogue")
     return block if isinstance(block, dict) else {}
 
@@ -359,7 +367,8 @@ def _save_cache(path: Path, block: Mapping[str, Any]) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_suffix(path.suffix + ".tmp")
         tmp.write_text(
-            json.dumps({"version": 1, "catalogue": dict(block)}, indent=2, sort_keys=True),
+            json.dumps({"version": CACHE_VERSION, "catalogue": dict(block)}, indent=2,
+                       sort_keys=True),
             "utf-8",
         )
         tmp.replace(path)

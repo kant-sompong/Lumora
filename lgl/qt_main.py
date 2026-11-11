@@ -35,6 +35,7 @@ from PySide6.QtWidgets import (
 
 from . import discovery
 from . import nav_layout
+from . import surprise_pool
 from . import profiles
 from . import recently_viewed
 from . import suggestions
@@ -284,11 +285,12 @@ class Window(QMainWindow):
         hint.setObjectName("keyHint")
         pill_row.addWidget(hint)
         row.addWidget(pill, 0)
+        row.addStretch(1)
+
+        # Right-hand cluster: the die sits with the other page actions.
         self.surprise_btn = DiceButton("Surprise me")
         self.surprise_btn.clicked.connect(self.pick_random)
         row.addWidget(self.surprise_btn)
-        row.addStretch(1)
-
         self.menu_btn = IconButton("menu", "Menu", 18, 34)
         self.menu_btn.clicked.connect(self._show_menu)
         row.addWidget(self.menu_btn)
@@ -704,15 +706,29 @@ class Window(QMainWindow):
             self.media.open_card(card)
 
     def pick_random(self) -> None:
-        """Open one random game or media title from what is already loaded."""
-        pool: list[dict[str, str]] = [
-            {"kind": "game", "key": entry.identifier, "title": entry.title}
-            for entry in self.library._entries  # noqa: SLF001
-        ]
-        pool += [
-            {"kind": card.kind, "key": card.key, "title": card.title}
-            for card in self.media._all_cards()  # noqa: SLF001
-        ]
+        """Open one random title from the page the user is looking at."""
+        page = getattr(self, "_current", "") or "library"
+        games: list = []
+        media: list = []
+        section = ""
+        if page == "library":
+            games = list(self.library._entries)  # noqa: SLF001
+        elif page == "browse":
+            browse = getattr(self, "browse", None)
+            games = list(
+                getattr(browse, "_shown", None)
+                or getattr(browse, "_games", None)
+                or ()
+            )
+        elif page == "media":
+            media = self.media._all_cards()  # noqa: SLF001
+            section = str(getattr(self.media, "_section", "") or "")
+        else:
+            games = list(self.library._entries)  # noqa: SLF001
+            media = self.media._all_cards()  # noqa: SLF001
+        pool = surprise_pool.pool_for(
+            page, games=games, media=media, section=section
+        )
         choice = discovery.random_pick(pool)
         if choice is None:
             self.toast.show_message(
