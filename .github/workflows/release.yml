@@ -51,7 +51,11 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 20
     env:
-      QT_QPA_PLATFORM: offscreen
+      # The offscreen plugin has no font engine on Windows: every family
+      # resolves to a stub whose glyphs are one em wide ("Movies & TV" measures
+      # 143 px at 13 px), so header and image tests would measure a font no user
+      # sees.  The windows plugin uses the runner's real fonts.
+      QT_QPA_PLATFORM: windows
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -69,7 +73,10 @@ jobs:
             throw "Tag ${{ github.ref_name }} does not match lgl.__version__ $v"
           }
       - name: Run tests
-        run: python -m pytest tests -q
+        # --durations keeps the slowest tests in the log: the suite has to fit
+        # in the job timeout, and a test that quietly grows is the first sign
+        # it will not.
+        run: python -m pytest tests -q --durations=15
 
   linux-tests:
     name: Tests (Linux, GTK)

@@ -13,6 +13,11 @@ These fixtures keep that from turning into flakiness:
 * a test that finishes with jobs still running is failed by name, with the
   jobs still in flight, instead of quietly poisoning the next one.  Stub the
   network in that test rather than raising the timeout.
+* a window a test closed is destroyed, not merely hidden.  ``close()`` only
+  hides a widget; Qt keeps every top-level widget alive until it is deleted,
+  so the window and its ~950 children stayed in the application and the next
+  test's theme pass repolished all of them.  That cost grew with every Qt
+  test, which is what pushed the Windows suite past its job timeout.
 """
 
 from __future__ import annotations
@@ -47,6 +52,32 @@ def qt_pool_threads():
         return
     pool = QThreadPool.globalInstance()
     pool.setMaxThreadCount(max(8, pool.maxThreadCount()))
+    yield
+
+
+@pytest.fixture(autouse=True)
+def qt_widgets_destroyed():
+    """Delete the windows an earlier test left behind, before this test runs.
+
+    A test's own window has already had its worker jobs delivered by then, so
+    deleting here cannot pull a widget out from under a queued callback.
+    """
+    widgets = sys.modules.get("PySide6.QtWidgets")
+    core = sys.modules.get("PySide6.QtCore")
+    if widgets is not None and core is not None:
+        app = widgets.QApplication.instance()
+        if app is not None:
+            # Only windows: a child dies with its parent, and deleteLater on a
+            # child whose parent is already gone would be a dangling call.
+            leftovers = [w for w in app.topLevelWidgets() if w.parent() is None]
+            for widget in leftovers:
+                widget.close()
+                widget.deleteLater()
+            # deleteLater only queues the destruction; deliver it now so the
+            # theme pass at the end of this test does not repolish the old
+            # widget tree all over again.
+            core.QCoreApplication.sendPostedEvents(None, core.QEvent.DeferredDelete)
+            app.processEvents()
     yield
 
 
