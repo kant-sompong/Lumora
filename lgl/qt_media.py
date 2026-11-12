@@ -939,6 +939,9 @@ class MediaPage(QWidget):
             key=f"anime:{ident}",
             title=str(data.get("title") or "Untitled"),
             poster_url=str(data.get("poster_url") or ""),
+            # The gems feed carries no wide art; the detail page uses the
+            # poster so the hero still shows the title.
+            backdrop_url=str(data.get("poster_url") or ""),
             kind="anime",
             mal_id=ident,
             rating=rating,
@@ -1322,7 +1325,7 @@ class MediaPage(QWidget):
 
     def _load_image(self, url: str, key: str,
                     apply: Callable[[QPixmap | None], None] | None,
-                    fallback: str = "") -> None:
+                    fallback: str = "", paint_url: str = "") -> None:
         if not url:
             if fallback:
                 self._load_image(fallback, key, apply)
@@ -1343,13 +1346,22 @@ class MediaPage(QWidget):
         def done(data: object) -> None:
             pix = pixmap_from_bytes(data)
             if pix is None:
+                # TMDB answers a sized path with WebP; a build without that
+                # decoder gets the untouched JPEG original once, then gives up.
+                from . import images
+
+                twin = images.portable_image_url(url)
+                if twin:
+                    self._load_image(twin, f"{key}-portable", apply, fallback,
+                                     paint_url=paint_url or url)
+                    return
                 failed(None)
                 return
             self._pix[key] = pix
             if apply is not None:
                 apply(pix)
                 return
-            self._paint_card(url, pix)
+            self._paint_card(paint_url or url, pix)
 
         run_async(work, done, failed)
 
@@ -2079,10 +2091,16 @@ class MediaPage(QWidget):
                     self._note_error("No AniList id matched this title.")
                     return
                 url = streaming.anime_url(provider, anilist_id, 1)
+            elif card.tmdb_id:
+                # A TMDB provider plays anime too; it needs the TMDB id that a
+                # MAL-keyed title may not have, so ask TMDB for one.
+                self._play_tmdb(card)
+                return
             else:
                 self._note_error(
-                    "This anime title has no MyAnimeList id, so the anime provider "
-                    "cannot be used. Pick ani.pm in Settings → Media."
+                    f"{streaming.LABELS.get(provider, provider)} has no anime "
+                    "route for this title. Pick ToFlix, CineLite or Vidy, or "
+                    "ani.pm, in the provider menu."
                 )
                 return
         except (streaming.EmbedUrlError, ValueError) as exc:
