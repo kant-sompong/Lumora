@@ -1354,7 +1354,7 @@ class LibraryPage(QWidget):
         # The tiles were just replaced; an open preview re-anchors to the new one.
         self.preview.cards_rebuilt()
 
-    def _add_card(self, index: int, entry: LibraryEntry, cell: int) -> None:
+    def _add_card(self, index: int, entry: LibraryEntry, cell: int) -> QWidget:
         card: QWidget = LibraryCard(entry)
         card.setMinimumWidth(min(200, cell))
         card.setMaximumWidth(cell)
@@ -1362,14 +1362,20 @@ class LibraryPage(QWidget):
             card, index // self._last_columns, index % self._last_columns, Qt.AlignTop
         )
         self._wire(card, entry)
+        return card
 
     def _fill_grid(self, cell: int, token: int) -> None:
         pending = getattr(self, "_pending_cards", [])
+        visible = self.isVisible()
         for _ in range(self._CHUNK):
             if not pending:
                 break
             index, entry = pending.pop(0)
-            self._add_card(index, entry, cell)
+            card = self._add_card(index, entry, cell)
+            if visible:
+                # These batches arrive after the page was shown, so the tile
+                # has to be shown itself.
+                card.show()
         if pending and token == getattr(self, "_render_token", -1):
             QTimer.singleShot(0, lambda: self._fill_grid(cell, token))
             return
