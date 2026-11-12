@@ -4595,6 +4595,14 @@ class MoviesWindow(Gtk.Box):
             self._header.set_visible(not active)
         except Exception:  # noqa: BLE001
             pass
+        # The window's icon rail lives outside the Media page, so fullscreen
+        # used to keep a strip of it down the left of the video.
+        rail = getattr(toplevel, "_rail", None)
+        if rail is not None:
+            try:
+                rail.set_visible(not active)
+            except Exception:  # noqa: BLE001
+                pass
         # Nothing but the video stays on screen: title, "provider 2 of 6" and
         # the source note would otherwise sit above and below it.
         frame = getattr(self, "_player_frame", None)
