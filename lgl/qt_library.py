@@ -959,6 +959,15 @@ class LibraryPage(QWidget):
         self.tabs = QTabWidget()
         self.tabs.setObjectName("libraryTabs")
         self.tabs.setDocumentMode(True)
+        # The strip is drawn by the page, in the same pill style as the media
+        # nav: the native tab bar spread seven boxed tabs across the window.
+        self.tabs.tabBar().hide()
+        self._tab_row = QWidget()
+        self._tab_row.setObjectName("libraryTabRow")
+        tab_line = QHBoxLayout(self._tab_row)
+        tab_line.setContentsMargins(24, 8, 24, 2)
+        tab_line.setSpacing(2)
+        self._tab_buttons: list[QPushButton] = []
         self.tabs.addTab(left, "Games")
         self._tab_hosts: dict[str, QWidget] = {}
         for tab_key, tab_name in nav_layout.tabs_for("library")[1:]:
@@ -968,13 +977,26 @@ class LibraryPage(QWidget):
             host_columns.setSpacing(8)
             self.tabs.addTab(host, tab_name)
             self._tab_hosts[tab_key] = host
+        for index in range(self.tabs.count()):
+            button = QPushButton(self.tabs.tabText(index))
+            button.setObjectName("libraryTab")
+            button.setCheckable(True)
+            button.setCursor(Qt.PointingHandCursor)
+            button.setToolTip(self.tabs.tabText(index))
+            button.clicked.connect(lambda _=False, i=index: self.tabs.setCurrentIndex(i))
+            tab_line.addWidget(button)
+            self._tab_buttons.append(button)
+        tab_line.addStretch(1)
+        layout.addWidget(self._tab_row)
+        self._sync_tab_row(0)
         self.tabs.currentChanged.connect(self._tab_changed)
+        self.tabs.currentChanged.connect(self._sync_tab_row)
         root.addWidget(self.tabs, 1)
 
         self._toolbar = QWidget()
         toolbar = self._toolbar
         bar = QHBoxLayout(toolbar)
-        bar.setContentsMargins(24, 16, 24, 10)
+        bar.setContentsMargins(24, 6, 24, 8)
         self._bar = bar
         bar.setSpacing(8)
         # The window's header search filters this page.  A second box here was
@@ -993,6 +1015,7 @@ class LibraryPage(QWidget):
         self.direction.clicked.connect(self._flip)
         bar.addWidget(self.direction)
         self.filter_btn = QPushButton("Filter")
+        self.filter_btn.setObjectName("pill")
         self.filter_btn.setCursor(Qt.PointingHandCursor)
         self.filter_btn.clicked.connect(self._show_filters)
         bar.addWidget(self.filter_btn)
@@ -1003,6 +1026,9 @@ class LibraryPage(QWidget):
 
         self.bulk = QtBulk(self)
         bar.addWidget(self.bulk.toggle)
+        # The controls keep their own width instead of being spread across the
+        # bar; the two icon buttons stay at the right edge.
+        bar.addStretch(1)
         self.refresh_btn = IconButton("refresh", "Rescan the library", 17, 34)
         self.refresh_btn.clicked.connect(self.rescan)
         bar.addWidget(self.refresh_btn)
@@ -1054,6 +1080,11 @@ class LibraryPage(QWidget):
 
         # Hover preview: off unless Tools -> Interface turns it on.
         self.preview = QuickPreview(self)
+
+    def _sync_tab_row(self, index: int) -> None:
+        """Keep the pill row showing the tab that is actually open."""
+        for position, button in enumerate(self._tab_buttons):
+            button.setChecked(position == index)
 
     # data ------------------------------------------------------------------
     def genres(self) -> list[str]:
@@ -1235,11 +1266,18 @@ class LibraryPage(QWidget):
             if self._compact:
                 # The gap alone barely shows; a denser grid needs smaller tiles.
                 cell = max(150, min(cell, 190))
+            # Give every column its share before the cards go in: a short
+            # library otherwise stretched the two columns it did create, and
+            # the cards drifted away from the left edge.
+            for position in range(self.grid.columnCount()):
+                self.grid.setColumnStretch(position, 0)
+            for position in range(columns):
+                self.grid.setColumnStretch(position, 1)
             for index, entry in enumerate(self._shown):
                 card: QWidget = LibraryCard(entry)
                 card.setMinimumWidth(min(200, cell))
                 card.setMaximumWidth(cell)
-                self.grid.addWidget(card, index // columns, index % columns)
+                self.grid.addWidget(card, index // columns, index % columns, Qt.AlignTop)
                 self._wire(card, entry)
         else:
             for entry in self._shown:
