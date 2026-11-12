@@ -236,6 +236,9 @@ def fetch_catalogue(*, post: Post | None = None) -> list[dict[str, Any]]:
 
 # -- cache -----------------------------------------------------------------
 
+#: Bump when a cached list would be missing a field the rows now use.
+LISTS_VERSION = 2
+
 LISTS_QUERY = """
 query ($sort: [MediaSort]) {
   Page(page: 1, perPage: 50) {
@@ -246,6 +249,7 @@ query ($sort: [MediaSort]) {
       status
       episodes
       endDate { year month day }
+      coverImage { large }
     }
   }
 }
@@ -264,6 +268,7 @@ def _list_rows(block: Any) -> list[dict[str, Any]]:
         title = str(titles.get("english") or titles.get("romaji") or "").strip()
         if not title:
             continue
+        cover = raw.get("coverImage") if isinstance(raw.get("coverImage"), dict) else {}
         end = raw.get("endDate") if isinstance(raw.get("endDate"), dict) else {}
         end_text = ""
         if end.get("year") and end.get("month") and end.get("day"):
@@ -275,6 +280,9 @@ def _list_rows(block: Any) -> list[dict[str, Any]]:
             "status": str(raw.get("status") or ""),
             "episodes": _int(raw.get("episodes")) or 0,
             "end_date": end_text,
+            "poster_url": str(
+                (cover.get("large") if isinstance(cover, dict) else "") or ""
+            ),
         })
     return rows
 
@@ -305,6 +313,7 @@ def load_anime_lists(
         and isinstance(cached.get("fetched_at"), (int, float))
         and 0 <= current - float(cached["fetched_at"]) < ttl
         and isinstance(cached.get("new_added"), list)
+        and cached.get("version") == LISTS_VERSION
     ):
         return {
             "new_added": list(cached.get("new_added") or []),
@@ -333,7 +342,12 @@ def load_anime_lists(
             "errors": errors,
             "from_cache": True,
         }
-    block = {"fetched_at": current, "new_added": added, "just_completed": completed}
+    block = {
+        "version": LISTS_VERSION,
+        "fetched_at": current,
+        "new_added": added,
+        "just_completed": completed,
+    }
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_suffix(".tmp")

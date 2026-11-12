@@ -306,3 +306,36 @@ def test_a_cache_from_before_cover_art_is_not_trusted(tmp_path):
     result = hidden_gems.load_gems(post=post, cache_path=cache, now=1001)
     assert calls, "a v1 cache has no posters, so it must be fetched again"
     assert all(entry["poster_url"] for entry in result.entries)
+
+
+def _lists_page(ident, title):
+    return {"data": {"Page": {"media": [
+        {"id": ident, "title": {"romaji": title}, "format": "TV",
+         "episodes": 12, "endDate": {"year": 2026, "month": 11, "day": 1},
+         "coverImage": {"large": f"https://img.anilist.test/{ident}.jpg"}},
+    ]}}}
+
+
+def test_the_anime_lists_carry_a_poster_for_their_rows(tmp_path):
+    block = hidden_gems.load_anime_lists(
+        post=lambda body: _lists_page(5, "Covered"),
+        cache_path=tmp_path / "lists.json",
+    )
+    assert block["new_added"][0]["poster_url"] == "https://img.anilist.test/5.jpg"
+    assert block["just_completed"][0]["poster_url"] == "https://img.anilist.test/5.jpg"
+
+
+def test_a_saved_list_from_before_the_posters_is_not_used(tmp_path):
+    """A v1 cache has no covers, so a cached read would show blank rows."""
+    path = tmp_path / "lists.json"
+    path.write_text(json.dumps({
+        "fetched_at": 1000.0,
+        "new_added": [{"id": 1, "title": "Old", "format": "TV", "status": "",
+                       "episodes": 12, "end_date": ""}],
+        "just_completed": [],
+    }), "utf-8")
+    block = hidden_gems.load_anime_lists(
+        post=lambda body: _lists_page(6, "Fresh"), now=1001.0, cache_path=path
+    )
+    assert block["new_added"][0]["poster_url"] == "https://img.anilist.test/6.jpg"
+    assert block["from_cache"] is False

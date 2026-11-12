@@ -77,6 +77,8 @@ class Entry:
     changed: bool = False
     #: The provider gave a day but no time (movies, TV): show the date only.
     date_only: bool = False
+    #: Cover art for the row that shows this entry, when the source gave one.
+    poster_url: str = ""
 
     @property
     def known(self) -> bool:
@@ -105,6 +107,7 @@ def entry_from(raw: Mapping[str, Any]) -> Entry | None:
         delayed=bool(raw.get("delayed", False)),
         changed=bool(raw.get("changed", False)),
         date_only=bool(raw.get("date_only", False)),
+        poster_url=_clean(raw.get("poster_url"), 500),
     )
 
 

@@ -368,14 +368,27 @@ class PosterRow(Gtk.Box):
             self._on_open(card)
 
 
+#: The cover a three-column row draws, and the size requested for it.
+COLUMN_THUMB = (34, 50)
+COLUMN_THUMB_REQUEST = (68, 100)
+
+
 class ThreeColumnList(Gtk.Box):
     """New Release / New Added / Just Completed, five rows each."""
 
-    def __init__(self, *, on_open: OpenHandler | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        on_open: OpenHandler | None = None,
+        image_loader: Callable[..., Any] | None = None,
+    ) -> None:
         super().__init__(orientation=Gtk.Orientation.HORIZONTAL, spacing=18)
         self.get_style_context().add_class("feed-columns")
         self.state = feed_model.ThreeColumnState()
         self._on_open = on_open
+        self._image_loader = image_loader
+        self._covers: dict[str, Any] = {}
+        self._thumbs: dict[str, list[tuple[Any, str]]] = {}
         self.columns: dict[str, dict[str, Any]] = {}
 
         for key, title in feed_model.COLUMN_HEADINGS:
@@ -435,8 +448,9 @@ class ThreeColumnList(Gtk.Box):
         box = parts["box"]
         rows = parts["rows"]
         _clear(rows)
+        self._thumbs[key] = []
         for item in self.state.rows(key):
-            rows.pack_start(self._feed_row(item), False, False, 0)
+            rows.pack_start(self._feed_row(item, key), False, False, 0)
         has_rows = self.state.row_count(key) > 0
         error = self.state.error_text(key)
         visible = self.state.visible(key)
@@ -454,7 +468,7 @@ class ThreeColumnList(Gtk.Box):
         box.set_visible(visible)
         self.set_visible(self.state.any_visible())
 
-    def _feed_row(self, item: Any) -> Gtk.Button:
+    def _feed_row(self, item: Any, key: str) -> Gtk.Button:
         button = Gtk.Button()
         button.set_relief(Gtk.ReliefStyle.NONE)
         button.set_halign(Gtk.Align.FILL)
@@ -480,20 +494,61 @@ class ThreeColumnList(Gtk.Box):
         button.add(line)
         button.set_tooltip_text(title)
         button.connect("clicked", lambda _b, entry=item: self._open(entry))
-        self._thumb_for(thumb, item)
+        self._thumb_for(thumb, item, key)
         return button
 
-    def _thumb_for(self, thumb: Gtk.Image, item: Any) -> None:
-        """A row cover is optional; the caller can hand one through ``cover``."""
+    @staticmethod
+    def _poster_url(item: Any) -> str:
+        if isinstance(item, dict):
+            return str(item.get("poster_url") or "")
+        return str(getattr(item, "poster_url", "") or "")
+
+    def _thumb_for(self, thumb: Gtk.Image, item: Any, key: str) -> None:
+        """A row shows its cover when it has one, through the page's loader.
+
+        The cover may arrive as a pixbuf (``cover``) or as a URL
+        (``poster_url``); a URL is fetched once and repaints every row that
+        shares it.
+        """
         pixbuf = None
         if isinstance(item, dict):
             pixbuf = item.get("cover")
         else:
             pixbuf = getattr(item, "cover", None)
         if pixbuf is not None:
-            fitted = _fit_pixbuf(pixbuf, 34, 50)
+            fitted = _fit_pixbuf(pixbuf, *COLUMN_THUMB)
             if fitted is not None:
                 thumb.set_from_pixbuf(fitted)
+            return
+        url = self._poster_url(item)
+        if not url:
+            return
+        self._thumbs.setdefault(key, []).append((thumb, url))
+        if url in self._covers:
+            self._paint_thumb(thumb, url)
+            return
+        if self._image_loader is None:
+            return
+
+        def done(result: Any, url: str = url) -> bool:
+            if result is not None:
+                self._covers[url] = result
+                GLib.idle_add(self._paint_covers)
+            return False
+
+        self._image_loader(url, COLUMN_THUMB_REQUEST, done)
+
+    def _paint_thumb(self, thumb: Gtk.Image, url: str) -> None:
+        fitted = _fit_pixbuf(self._covers[url], *COLUMN_THUMB)
+        if fitted is not None:
+            thumb.set_from_pixbuf(fitted)
+
+    def _paint_covers(self) -> bool:
+        for thumbs in list(self._thumbs.values()):
+            for thumb, url in list(thumbs):
+                if url in self._covers:
+                    self._paint_thumb(thumb, url)
+        return False
 
     def toggle(self, key: str) -> bool:
         expanded = self.state.toggle(key)
@@ -510,6 +565,19 @@ class ThreeColumnList(Gtk.Box):
     def _open(self, item: Any) -> None:
         if self._on_open is not None:
             self._on_open(item)
+
+
+def _entry_kind(entry: Any) -> str:
+    """``Anime``, ``TV`` or ``Movie`` for a schedule row, or ``""``."""
+    from . import release_feed
+
+    key = entry.get("key") if isinstance(entry, dict) else getattr(entry, "key", "")
+    labels = {"anime": "Anime", "tv": "TV", "movie": "Movie"}
+    kind = release_feed.kind_of_key(key)
+    if kind in labels:
+        return labels[kind]
+    raw = entry.get("kind") if isinstance(entry, dict) else getattr(entry, "kind", "")
+    return labels.get(str(raw or "").lower(), "")
 
 
 class ScheduleStrip(Gtk.Box):
@@ -681,14 +749,21 @@ class ScheduleStrip(Gtk.Box):
         episode = entry.get("episode") if isinstance(entry, dict) else getattr(
             entry, "episode", None
         )
+        kind = _entry_kind(entry)
         if episode not in ("", None):
+            text = f"Episode {episode}"
+            if kind:
+                text = f"{kind} · {text}"
             line.pack_end(
-                _label(f"Episode {episode}", "dim", "small", "feed-schedule-episode"),
+                _label(text, "dim", "small", "feed-schedule-episode"),
                 False, False, 0,
             )
         else:
+            text = meta
+            if kind:
+                text = f"{kind} · {meta}" if meta else kind
             line.pack_end(
-                _label(meta, "dim", "small", "feed-schedule-meta"), False, False, 0
+                _label(text, "dim", "small", "feed-schedule-meta"), False, False, 0
             )
         button.add(line)
         button.connect("clicked", lambda _b, item=entry: self._open(item))
@@ -700,6 +775,7 @@ class ScheduleStrip(Gtk.Box):
 
 
 __all__ = [
+    "COLUMN_THUMB",
     "CoverLoader",
     "POSTER_SIZE",
     "PosterCard",

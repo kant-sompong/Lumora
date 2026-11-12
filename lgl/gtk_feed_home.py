@@ -102,7 +102,9 @@ class FeedHome(Gtk.Box):
             self.pack_start(row, False, False, 0)
             self.rows[key] = row
 
-        self.columns = gtk_feed.ThreeColumnList(on_open=self._opened)
+        self.columns = gtk_feed.ThreeColumnList(
+            on_open=self._opened, image_loader=image_loader
+        )
         self.pack_start(self.columns, False, False, 0)
 
         self.schedule = gtk_feed.ScheduleStrip(on_open=on_schedule_open)
