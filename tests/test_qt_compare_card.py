@@ -246,12 +246,8 @@ def test_the_columns_stack_when_the_card_is_narrow(app):
     assert widget._columns_row.direction() == QBoxLayout.TopToBottom
 
 
-def test_media_home_hosts_the_new_card_below_the_schedule(app, tmp_path):
+def test_the_media_page_no_longer_hosts_the_compare_card(app, tmp_path):
     media = qt_media.MediaPage(settings=None, cache_root=tmp_path)
 
-    assert isinstance(media.compare_panel, qt_season.CompareCard)
-    assert media.compare_panel.close_btn is None
-    assert media.compare_panel.parent() is media.compare_card
-    layout = media.compare_card.parentWidget().layout()
-    assert layout.indexOf(media.compare_card) > layout.indexOf(media.schedule)
+    assert not hasattr(media, "compare_panel")
     media.close()

@@ -165,7 +165,18 @@ GRID_MIN_CELL = 232
 
 
 class LibraryCard(QFrame):
-    """Square cover card for an installed game."""
+    """Cover card for an installed game.
+
+    The cover box follows the artwork's own shape, the way the Linux window
+    does, so a poster stays tall and a square capsule stays square instead of
+    every game being stretched into the same oversized tile.
+    """
+
+    #: Cover height bounds, matching the Linux library tile.
+    MIN_COVER_HEIGHT = 110
+    MAX_COVER_HEIGHT = 420
+    #: Shape used before the artwork arrives: the Linux default aspect.
+    DEFAULT_ASPECT = 1.5
 
     clicked = Signal(str)
     #: Right-click: the game's identifier and where the menu should open.
@@ -188,7 +199,8 @@ class LibraryCard(QFrame):
         column.setSpacing(0)
         name = entry.title or entry.identifier
         self.cover = CoverArt(radius=6, crop=True, title=name)
-        self.cover.setMinimumHeight(160)
+        self.cover.setMinimumHeight(self.MIN_COVER_HEIGHT)
+        self._cover_aspect = self.DEFAULT_ASPECT
         column.addWidget(self.cover)
 
         row = QHBoxLayout()
@@ -213,16 +225,23 @@ class LibraryCard(QFrame):
             compat.setContentsMargins(2, 0, 2, 0)
             column.addWidget(compat)
 
-    def resizeEvent(self, event) -> None:  # noqa: N802
-        super().resizeEvent(event)
-        height = max(140, self.width())
+    def set_cover_aspect(self, aspect: float) -> None:
+        """Keep the artwork's shape: width / height of the loaded cover."""
+        if not aspect or aspect <= 0:
+            return
+        self._cover_aspect = float(aspect)
+        self._fit_cover()
+
+    def _fit_cover(self) -> None:
+        height = round(self.width() * self._cover_aspect)
+        height = max(self.MIN_COVER_HEIGHT, min(self.MAX_COVER_HEIGHT, height))
         self.cover.setFixedHeight(height)
-        # The cover is square and sized from the card's width, which can exceed
-        # the slot the grid first gave the card; raising the card's minimum
-        # height keeps the title (and a bulk check box) below the artwork
-        # instead of under it.
         rest = self.layout().sizeHint().height() - self.cover.height()
         self.setMinimumHeight(height + max(0, rest))
+
+    def resizeEvent(self, event) -> None:  # noqa: N802
+        super().resizeEvent(event)
+        self._fit_cover()
 
     def set_selected(self, on: bool) -> None:
         self._flag("selected", on)
@@ -1321,6 +1340,9 @@ class LibraryPage(QWidget):
         card = self._cards.get(identifier)
         if card is not None and hasattr(card, "cover"):
             card.cover.set_pixmap(pix)  # type: ignore[attr-defined]
+            if pix.width():
+                # Same as Linux: the tile takes the artwork's own shape.
+                card.set_cover_aspect(pix.height() / pix.width())  # type: ignore[attr-defined]
         if identifier == self._selected:
             entry = self._entry(identifier)
             if entry is not None:

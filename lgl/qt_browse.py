@@ -1034,17 +1034,10 @@ class BrowsePage(QWidget):
         self.recommended_row.setObjectName("browseRecommendedRow")
         self.recommended_row.item_clicked.connect(self.item_requested.emit)
         column.addWidget(self.recommended_row)
-        self.gems_row = PosterRow(
-            "Hidden gems", "Well rated, easy to miss", view_all=False
-        )
-        self.gems_row.setObjectName("browseHiddenGemsRow")
-        self.gems_row.item_clicked.connect(self.item_requested.emit)
-        column.addWidget(self.gems_row)
         # Ranked off the UI thread; a row hides itself when there is nothing to
         # show and says "Could not load: …" when the rows cannot be read.
         if rows_provider is not None:
             self.recommended_row.set_loader(self.load_recommended)
-            self.gems_row.set_loader(self.load_gems)
         column.addWidget(self.shelves_host)
         column.addWidget(self.grid_host)
         self.list_host = QWidget()
@@ -1377,7 +1370,6 @@ class BrowsePage(QWidget):
     def refresh_rows(self) -> None:
         """Re-rank the two discovery rows; they never block the page."""
         self.recommended_row.refresh()
-        self.gems_row.refresh()
 
     def _local_rows(self) -> list[dict]:
         """The rows the strips rank, read from the provider on the worker thread."""
@@ -1393,10 +1385,6 @@ class BrowsePage(QWidget):
         """Titles closest to what the library already likes."""
         liked = list(self._liked_provider() or []) if self._liked_provider else []
         return discovery.recommend(self._local_rows(), liked)
-
-    def load_gems(self) -> list[dict]:
-        """Well rated but not widely known."""
-        return discovery.hidden_gems(self._local_rows())
 
     @staticmethod
     def _row_meta(row: dict) -> str:
