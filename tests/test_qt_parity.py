@@ -18,6 +18,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 QtWidgets = pytest.importorskip("PySide6.QtWidgets")
 QtGui = pytest.importorskip("PySide6.QtGui")
+QtCore = pytest.importorskip("PySide6.QtCore")
 
 from lgl.catalog_store import CatalogGame, CatalogStore  # noqa: E402
 from lgl.downloader import DownloadStatus  # noqa: E402
@@ -217,6 +218,92 @@ def test_catalog_download_dialog_explains_an_empty_catalogue(app, tmp_path):
     assert "carries a download link" in dialog.status.text()
     assert dialog.queue_btn.isEnabled() is False
     dialog.deleteLater()
+
+
+def _catalog_with_one_link(tmp_path):
+    """A store holding one imported record and the link the importer stored."""
+    from lgl.catalog_store import MirrorRecord
+    from lgl.sources import SourceGame
+
+    store = CatalogStore(tmp_path / "catalog.json")
+    store.upsert_game(SourceGame(
+        source_id="kryoto", game_id="w-w-d-d", title="W.W.D.D.", year="2024",
+    ))
+    store.add_mirror(MirrorRecord(
+        source_id="kryoto", game_key="kryoto:w-w-d-d",
+        url="https://kryo.to/dl/WWDD-setup.exe", filename="WWDD-setup.exe",
+    ))
+    return store
+
+
+def test_catalog_download_dialog_shows_each_link_address(app, tmp_path):
+    """A link row carries its address, as the Linux dialog does."""
+    dialog = CatalogDownloadDialog(None, _catalog_with_one_link(tmp_path), None, None, tmp_path)
+    assert dialog.links.count() == 1
+    item = dialog.links.item(0)
+    assert "https://kryo.to/dl/WWDD-setup.exe" in item.text()
+    assert item.data(QtCore.Qt.UserRole) == "https://kryo.to/dl/WWDD-setup.exe"
+    assert dialog.open_link_btn.isEnabled() is True
+    assert dialog.download_link_btn.isEnabled() is True
+    dialog.deleteLater()
+
+
+def test_catalog_download_dialog_opens_and_queues_the_selected_link(app, tmp_path, monkeypatch):
+    from lgl import platform_support
+
+    opened: list[str] = []
+    monkeypatch.setattr(platform_support, "open_url", lambda url: opened.append(url) or True)
+    added: list[dict] = []
+    manager = SimpleNamespace(add=lambda **kwargs: added.append(kwargs))
+    dialog = CatalogDownloadDialog(
+        None, _catalog_with_one_link(tmp_path), manager, None, tmp_path
+    )
+
+    dialog.open_link()
+    assert opened == ["https://kryo.to/dl/WWDD-setup.exe"]
+
+    dialog.copy_link()
+    assert QtWidgets.QApplication.clipboard().text() == "https://kryo.to/dl/WWDD-setup.exe"
+
+    dialog.download_link()
+    assert [entry["url"] for entry in added] == ["https://kryo.to/dl/WWDD-setup.exe"]
+    assert "Queued WWDD-setup.exe" in dialog.status.text()
+    dialog.deleteLater()
+
+
+def test_the_kryoto_preset_imports_with_download_links(app, tmp_path, monkeypatch):
+    """Without the enrichment pass a Kryoto import stores rows and no links."""
+    from lgl import qt_catalog
+
+    seen: list[object] = []
+
+    def fake_import(target, url, options=None, progress=None):
+        seen.append(options)
+        return SimpleNamespace(summary="done"), SimpleNamespace(name="Kryoto")
+
+    monkeypatch.setattr(qt_catalog, "import_source", fake_import)
+    for enrich in (True, False):
+        dialog = qt_catalog.CatalogDialog(None, catalog=CatalogStore(), enrich=enrich)
+        dialog.start_import()
+        for _ in range(300):
+            app.processEvents()
+            if seen:
+                break
+        assert seen and seen[-1].enrich is enrich
+        dialog.deleteLater()
+    # The menu entry the Windows build offers must ask for those links.
+    from lgl import qt_main
+
+    calls: list[dict] = []
+    monkeypatch.setattr(
+        qt_catalog, "CatalogDialog",
+        lambda *a, **kw: SimpleNamespace(exec=lambda: calls.append(kw)),
+    )
+    window = SimpleNamespace(
+        catalog=CatalogStore(), _catalog_imported=lambda count: None
+    )
+    qt_main.Window.show_kryoto_catalog(window)
+    assert calls and calls[0]["enrich"] is True
 
 
 def test_match_artwork_dialog_builds(app):

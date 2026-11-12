@@ -607,7 +607,7 @@ class Window(QMainWindow):
         CatalogDialog(
             self, title="Kryoto Catalog", url=KRYOTO_URL, note=KRYOTO_NOTE,
             action="Import all", catalog=self.catalog,
-            on_imported=self._catalog_imported,
+            on_imported=self._catalog_imported, enrich=True,
         ).exec()
 
     def _catalog_imported(self, count: int) -> None:
