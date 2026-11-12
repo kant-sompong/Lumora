@@ -78,6 +78,7 @@ _NAV_ITEMS = (
     ("movies", "Movies"),
     ("tv", "TV Shows"),
     ("anime", "Anime"),
+    ("calendar", "Calendar"),
     ("search", "Search"),
     ("mylist", "My List"),
     ("history", "History"),
@@ -757,13 +758,18 @@ def _decode_image(data: bytes):
 
 
 def _alternate_image_url(url: str) -> str:
-    """The JPEG twin of a WebP image URL, when there is one.
+    """A URL for the same artwork that every build can decode, if one exists.
 
-    MyAnimeList hands out ``.webp`` poster paths for part of its catalogue,
-    and a gdk-pixbuf build without a WebP loader cannot decode them.  Its CDN
-    still serves the same artwork at the ``.jpg`` path, which every build can
-    read, so a failed WebP download is retried against that twin.
+    TMDB answers its sized paths with WebP (which a gdk-pixbuf build without a
+    WebP loader cannot read) but keeps the JPEG at ``/t/p/original/``, and
+    MyAnimeList hands out ``.webp`` poster paths next to their ``.jpg`` twins.
+    A failed decode is retried against whichever twin there is.
     """
+    from . import images
+
+    twin = images.portable_image_url(url)
+    if twin:
+        return twin
     parts = urllib.parse.urlsplit(url)
     if not parts.path.lower().endswith(".webp"):
         return ""
@@ -1558,6 +1564,20 @@ class ProviderHealthDialog(Gtk.Dialog):
         return super().run()
 
 
+def _gem_poster_url(entry: dict) -> str:
+    """A hidden-gem row's cover art: the feed publishes ``poster_url``.
+
+    Older caches wrote ``cover_image`` (and, before that, ``image``); both are
+    still read so a saved list keeps its posters.
+    """
+    return str(
+        entry.get("poster_url")
+        or entry.get("cover_image")
+        or entry.get("image")
+        or ""
+    )
+
+
 class MoviesWindow(Gtk.Box):
     """The cinematic Movies & TV surface, embedded in the main window."""
 
@@ -1737,6 +1757,27 @@ class MoviesWindow(Gtk.Box):
             "clicked", lambda *_a: self.open_provider_health()
         )
         header.pack_end(self._health_button)
+
+        # Provider picker, like the Windows header button: it names the
+        # provider that will play and changes it in one click.
+        holder = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        self._provider_dot = Gtk.Label(label="●")
+        self._provider_dot.get_style_context().add_class("movie-provider-dot")
+        holder.pack_start(self._provider_dot, False, False, 0)
+        self._provider_label = Gtk.Label(label="")
+        holder.pack_start(self._provider_label, False, False, 0)
+        self._provider_button = Gtk.MenuButton()
+        self._provider_button.add(holder)
+        self._provider_button.set_tooltip_text(
+            "Provider used to play · click to change"
+        )
+        self._provider_button.get_style_context().add_class("movie-btn-dark")
+        self._provider_button.set_use_popover(False)
+        self._provider_menu = Gtk.Menu()
+        self._provider_button.set_popup(self._provider_menu)
+        header.pack_end(self._provider_button)
+        self._refresh_provider_button()
+
         self._gear.connect("clicked", lambda *_a: self._open_media_settings())
         header.pack_end(self._gear)
         header.pack_end(self._search)
@@ -1757,7 +1798,75 @@ class MoviesWindow(Gtk.Box):
             self._load_home()
             GLib.timeout_add_seconds(3, self._startup_health)
 
+    # provider picker -------------------------------------------------------
     # provider health -----------------------------------------------------
+    def _provider_section(self) -> str:
+        """Whether the header button offers anime or movie/TV providers."""
+        return "anime" if self._active_section in ("anime", "gems") else "movies"
+
+    def _provider_choices(self) -> tuple[str, ...]:
+        if self._provider_section() == "anime":
+            return tuple(streaming.ANIME_PROVIDERS)
+        return tuple(streaming.PROVIDERS)
+
+    def _current_provider(self) -> str:
+        if self._provider_section() == "anime":
+            return self._anime_provider()
+        return self._streaming_provider()
+
+    def _choose_provider(self, provider: str) -> None:
+        if self._provider_section() == "anime":
+            self._set_anime_provider(provider)
+        else:
+            self._set_streaming_provider(provider)
+        self._refresh_provider_button()
+
+    def _toggle_auto(self, item) -> None:
+        try:
+            self._settings.set(provider_health.AUTO_KEY, bool(item.get_active()))
+        except (OSError, ValueError, AttributeError):
+            pass
+
+    def _refresh_provider_button(self) -> None:
+        """Name the provider that will play, and rebuild its menu."""
+        button = getattr(self, "_provider_button", None)
+        if button is None:
+            return
+        current = self._current_provider()
+        label = getattr(self, "_provider_label", None)
+        if label is not None:
+            label.set_text(streaming.LABELS.get(current, current))
+        menu = getattr(self, "_provider_menu", None) or Gtk.Menu()
+        for child in menu.get_children():
+            menu.remove(child)
+        auto = Gtk.CheckMenuItem(label="Auto (fastest)")
+        try:
+            auto.set_active(bool(self._settings.get(provider_health.AUTO_KEY, False)))
+        except (TypeError, ValueError, AttributeError):
+            auto.set_active(False)
+        auto.connect("toggled", self._toggle_auto)
+        menu.append(auto)
+        menu.append(Gtk.SeparatorMenuItem())
+        group = None
+        for key in self._provider_choices():
+            entry = Gtk.RadioMenuItem(label=streaming.LABELS.get(key, key))
+            if group is None:
+                group = entry
+            else:
+                entry.join_group(group)
+            entry.set_active(key == current)
+            entry.connect(
+                "activate", lambda _widget, name=key: self._choose_provider(name)
+            )
+            menu.append(entry)
+        menu.append(Gtk.SeparatorMenuItem())
+        test = Gtk.MenuItem(label="Test connections now")
+        test.connect("activate", lambda *_a: self.open_provider_health())
+        menu.append(test)
+        menu.show_all()
+        self._provider_menu = menu
+        button.set_popup(menu)
+
     def open_provider_health(self) -> None:
         """Open the health sheet; checks start only when it is asked to."""
         dialog = ProviderHealthDialog(self, self._settings)
@@ -1865,6 +1974,9 @@ class MoviesWindow(Gtk.Box):
             if not self._anime_loaded:
                 self._load_anime()
             return
+        if page == "calendar":
+            self._open_calendar()
+            return
         # Home
         self._stack.set_visible_child_name("home")
         self._set_active_nav("home")
@@ -1881,6 +1993,31 @@ class MoviesWindow(Gtk.Box):
                 context.add_class("active")
             else:
                 context.remove_class("active")
+        refresh = getattr(self, "_refresh_provider_button", None)
+        if callable(refresh):
+            refresh()
+
+    def _open_calendar(self) -> None:
+        """Open the release calendar and keep the Calendar tab lit meanwhile."""
+        self._set_active_nav("calendar")
+        parent = self._parent
+        opener = getattr(parent, "show_calendar", None)
+        if not callable(opener):
+            self._set_active_nav(
+                self._nav_key_for_page(self._stack.get_visible_child_name() or "home")
+            )
+            return
+        opener()
+        window = getattr(parent, "_calendar_window", None)
+        if window is not None:
+            try:
+                window.connect("destroy", self._on_calendar_closed)
+            except (AttributeError, TypeError):
+                pass
+
+    def _on_calendar_closed(self, *_args) -> None:
+        name = self._stack.get_visible_child_name() or "home"
+        self._set_active_nav(self._nav_key_for_page(name))
 
     def _nav_key_for_page(self, name: str) -> str:
         if name in ("details", "player"):
@@ -2319,7 +2456,7 @@ class MoviesWindow(Gtk.Box):
                 item = AniListItem(
                     id=ident,
                     title=str(entry.get("title") or "Untitled"),
-                    poster_url=str(entry.get("cover_image") or entry.get("image") or ""),
+                    poster_url=_gem_poster_url(entry),
                     rating=rating,
                 )
                 meta = f"Anime · {_rating_text(rating)}" if rating else "Anime"
@@ -3194,7 +3331,7 @@ class MoviesWindow(Gtk.Box):
         return anipm.AniTitle(
             anilist_id=ident,
             title=str(entry.get("title") or "Untitled"),
-            poster_url=str(entry.get("poster_url") or ""),
+            poster_url=_gem_poster_url(entry),
             format=str(entry.get("format") or ""),
             score=rating,
             status=str(entry.get("status") or ""),
@@ -3606,18 +3743,47 @@ class MoviesWindow(Gtk.Box):
                 except streaming.EmbedUrlError:
                     api_embed = ""
                 break
+        preferred = self._anime_provider()
+        if preferred != streaming.ANI_PROVIDER and not streaming.has_anime_route(preferred):
+            # The chosen provider plays movies and TV through TMDB, so look the
+            # title up there instead of quietly opening ani.pm.
+            token = self._search_token + 1
+            self._search_token = token
+
+            def work() -> None:
+                try:
+                    results = self._client.search(item.title)
+                except TmdbError as error:
+                    GLib.idle_add(self._anime_watch_error, token, error)
+                    return
+                GLib.idle_add(
+                    self._anime_watch_apply_tmdb,
+                    token,
+                    item.title,
+                    results,
+                    preferred,
+                    language == "dub",
+                )
+
+            threading.Thread(target=work, daemon=True, name="lgl-anime-watch").start()
+            return
         attempts: list[tuple[str, str]] = []
-        try:
-            url = anipm.playback_url(
-                item.anilist_id, number, language, api_embed
-            )
-            attempts.append(
-                (streaming.ANI_PROVIDER,
-                 streaming.validate_embed_url(streaming.ANI_PROVIDER, url))
-            )
-        except (streaming.EmbedUrlError, ValueError):
-            pass
-        for provider in streaming.ANILIST_ANIME_PROVIDERS:
+        if preferred == streaming.ANI_PROVIDER:
+            try:
+                url = anipm.playback_url(
+                    item.anilist_id, number, language, api_embed
+                )
+                attempts.append(
+                    (streaming.ANI_PROVIDER,
+                     streaming.validate_embed_url(streaming.ANI_PROVIDER, url))
+                )
+            except (streaming.EmbedUrlError, ValueError):
+                pass
+        order = list(streaming.ANILIST_ANIME_PROVIDERS)
+        if preferred in order:
+            order.remove(preferred)
+            order.insert(0, preferred)
+        for provider in order:
             try:
                 url = streaming.anime_url(provider, item.anilist_id, number)
                 attempts.append(
@@ -3759,7 +3925,12 @@ class MoviesWindow(Gtk.Box):
         identifiers are never substituted for one another.
         """
         attempts: list[tuple[str, str]] = []
-        for provider in streaming.fallback_anime_providers(self._anime_provider()):
+        preferred = self._anime_provider()
+        for provider in streaming.fallback_anime_providers(preferred):
+            # Never quietly play from ani.pm when another anime provider was
+            # chosen: the pick is what the user asked for.
+            if provider == streaming.ANI_PROVIDER and preferred != streaming.ANI_PROVIDER:
+                continue
             try:
                 if provider == streaming.ANI_PROVIDER:
                     url = streaming.ani_mal_url(

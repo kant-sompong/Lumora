@@ -90,6 +90,13 @@ def jump_to(parent: Any, kind: str, key: str) -> None:
         return
     if callable(apply_view):
         apply_view("media")
+    view = getattr(parent, "media_view", None)
+    open_key = getattr(view, "_open_feed_key", None)
+    if callable(open_key):
+        try:
+            open_key(str(key))
+        except Exception:  # noqa: BLE001 - opening is best effort, the pick stands
+            pass
 
 
 def current_page(parent: Any) -> str:
@@ -110,9 +117,13 @@ def media_section(parent: Any) -> str:
     if stack is None:
         return ""
     try:
-        return str(stack.get_visible_child_name() or "")
+        name = str(stack.get_visible_child_name() or "")
     except Exception:  # noqa: BLE001 - no stack, no narrowing
         return ""
+    if name in ("details", "player"):
+        # A title's own page still belongs to the tab it was opened from.
+        return str(getattr(view, "_details_origin", "") or "")
+    return name
 
 
 def browse_games(parent: Any) -> list[Any]:
