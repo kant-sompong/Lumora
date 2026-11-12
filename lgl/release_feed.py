@@ -31,6 +31,8 @@ from .anime_calendar import Entry, entry_from
 ANILIST_URL = "https://graphql.anilist.co"
 USER_AGENT = "Lumora (personal desktop client)"
 CACHE_TTL = 3 * 3600
+#: Bump when a saved feed would be missing a field the rows now draw.
+CACHE_VERSION = 2
 MAX_PAGES = 4
 MAX_TV_SHOWS = 20
 
@@ -312,6 +314,8 @@ class FeedResult:
 def _load(path: Path) -> FeedResult | None:
     try:
         data = json.loads(path.read_text("utf-8"))
+        if data.get("version") != CACHE_VERSION:
+            return None
         entries = [Entry(**row) for row in data["entries"] if isinstance(row, dict)]
         return FeedResult(entries, list(data.get("errors", [])), float(data["fetched_at"]), True)
     except (OSError, ValueError, KeyError, TypeError):
@@ -323,6 +327,7 @@ def _save(path: Path, result: FeedResult) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_suffix(".tmp")
         tmp.write_text(json.dumps({
+            "version": CACHE_VERSION,
             "fetched_at": result.fetched_at,
             "errors": result.errors,
             "entries": [asdict(e) for e in result.entries],
