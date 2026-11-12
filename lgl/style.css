@@ -1523,6 +1523,102 @@ button.movie-nav-item:disabled {
   background-color: transparent;
 }
 
+/* The active tab pill and the primary button must stay visible even when the
+ * desktop theme paints its own dark buttons on our header.  Every state names
+ * its own colour pair and cancels the theme's image, shadow and border. */
+headerbar.movie-nav button.movie-nav-item.active,
+button.movie-nav-item.active {
+  background-color: @fg;
+  background-image: none;
+  border: 1px solid transparent;
+  border-color: transparent;
+  box-shadow: none;
+  text-shadow: none;
+  color: @bg;
+}
+
+headerbar.movie-nav button.movie-nav-item.active:hover,
+headerbar.movie-nav button.movie-nav-item.active:active,
+button.movie-nav-item.active:hover,
+button.movie-nav-item.active:active {
+  background-color: @fg;
+  background-image: none;
+  border-color: transparent;
+  box-shadow: none;
+  text-shadow: none;
+  color: @bg;
+}
+
+headerbar.movie-nav button.movie-nav-item.active:backdrop,
+button.movie-nav-item.active:backdrop {
+  background-color: @fg;
+  background-image: none;
+  border-color: transparent;
+  box-shadow: none;
+  text-shadow: none;
+  color: @bg;
+}
+
+headerbar.movie-nav button.movie-nav-item.active:disabled,
+button.movie-nav-item.active:disabled {
+  background-color: alpha(@fg, 0.10);
+  background-image: none;
+  border-color: transparent;
+  box-shadow: none;
+  text-shadow: none;
+  color: @muted;
+}
+
+headerbar.movie-nav button.movie-nav-item:backdrop,
+button.movie-nav-item:backdrop {
+  background-color: transparent;
+  background-image: none;
+  box-shadow: none;
+  text-shadow: none;
+  color: @muted;
+}
+
+button.movie-btn-primary,
+button.movie-btn-primary:hover,
+button.movie-btn-primary:active,
+button.movie-btn-primary:disabled,
+button.movie-btn-primary:backdrop {
+  background-image: none;
+  border-image: none;
+  box-shadow: none;
+  text-shadow: none;
+}
+
+button.movie-btn-primary:backdrop {
+  background-color: @fg;
+  border-color: transparent;
+  color: @bg;
+}
+
+button.movie-btn-primary:disabled {
+  background-color: alpha(@fg, 0.12);
+  border-color: transparent;
+  color: @muted;
+}
+
+button.movie-btn-dark,
+button.movie-btn-dark:hover,
+button.movie-btn-dark:active,
+button.movie-btn-dark:checked,
+button.movie-btn-dark:disabled,
+button.movie-btn-dark:backdrop {
+  background-image: none;
+  border-image: none;
+  box-shadow: none;
+  text-shadow: none;
+}
+
+button.movie-btn-dark:backdrop {
+  background-color: alpha(@fg, 0.10);
+  border-color: alpha(@fg, 0.14);
+  color: @fg;
+}
+
 button.movie-icon-button {
   background-color: transparent;
   background-image: none;
