@@ -1414,32 +1414,63 @@ flowboxchild.browse-tile:hover .cover-card {
   padding: 1px 5px;
 }
 
-/* -- movies & tv (cinematic) -- */
+/* -- movies & tv -- */
 
-/* The window paints its own near-black base; these rules only use tokens so
-   the file stays honest about the palette.  The fixed cinematic colours live
-   in movies_ui.py, scoped to that window, because the movie window is dark in
-   both app themes by design. */
+/* Rule for this whole section: palette tokens only.  The one exception is the
+   hero artwork overlay and the video player area below, which stay dark in
+   both themes because white text sits on a photograph or a video there. */
+
 .movie-window.background,
 .movie-window {
   background-color: @bg;
   color: @fg;
 }
 
-.movie-window stack,
+.movie-window stack {
+  background-color: @bg;
+}
+
 .movie-window scrolledwindow,
+.movie-scroll,
+.movie-scroll viewport {
+  background-color: transparent;
+}
+
 .movie-window scrolledwindow > viewport {
   background-color: @bg;
   background-image: none;
 }
 
-.movie-nav {
-  background-color: @bg;
+/* The Media header is a header bar like the rest of the app: same @surface. */
+headerbar.movie-nav {
+  background-color: @surface;
   background-image: none;
   border-bottom: 1px solid alpha(@fg, 0.07);
   box-shadow: none;
+  min-height: 48px;
   padding: 4px 12px;
+  color: @fg;
 }
+
+headerbar.movie-nav:backdrop {
+  background-color: @surface;
+  color: @fg;
+}
+
+headerbar.movie-nav button.titlebutton {
+  background-color: transparent;
+  background-image: none;
+  border: none;
+  box-shadow: none;
+  color: @fg;
+}
+
+headerbar.movie-nav button.titlebutton:hover {
+  background-color: alpha(@fg, 0.10);
+}
+
+.movie-brand { color: @fg; font-weight: 700; font-size: 0.98em; }
+.movie-brand-mark { color: @warning; font-size: 0.85em; }
 
 button.movie-nav-item {
   background-color: transparent;
@@ -1447,12 +1478,14 @@ button.movie-nav-item {
   border: none;
   border-image: none;
   box-shadow: none;
+  text-shadow: none;
   color: @muted;
   padding: 5px 10px;
   min-height: 0;
   min-width: 0;
   border-radius: 7px;
   font-weight: 600;
+  font-size: 0.9em;
 }
 
 button.movie-nav-item:hover {
@@ -1463,29 +1496,101 @@ button.movie-nav-item:hover {
 button.movie-nav-item.active {
   color: @bg;
   background-color: @fg;
+  background-image: none;
+  border-color: transparent;
+  box-shadow: none;
+  text-shadow: none;
 }
 
-.movie-brand { color: @fg; font-weight: 700; }
-.movie-brand-mark { color: @warning; }
+button.movie-nav-item.active:hover {
+  color: @bg;
+  background-color: @fg;
+}
 
+button.movie-nav-item:disabled {
+  color: @faint;
+  background-color: transparent;
+}
+
+button.movie-icon-button {
+  background-color: transparent;
+  background-image: none;
+  border: none;
+  box-shadow: none;
+  color: @muted;
+  padding: 4px;
+  min-width: 0;
+  min-height: 0;
+  border-radius: 7px;
+}
+
+button.movie-icon-button:hover {
+  color: @fg;
+  background-color: alpha(@fg, 0.09);
+}
+
+.movie-search {
+  background-color: @raised;
+  background-image: none;
+  border: 1px solid @divider;
+  border-radius: 999px;
+  box-shadow: none;
+  color: @fg;
+  padding: 1px 10px;
+  min-height: 30px;
+}
+
+.movie-search entry {
+  background-color: transparent;
+  background-image: none;
+  border: none;
+  box-shadow: none;
+  color: @fg;
+}
+
+.movie-search entry placeholder { color: @faint; }
+.movie-search image { color: @faint; }
+
+.movie-window scrollbar {
+  background-color: transparent;
+  border: none;
+}
+
+.movie-window scrollbar slider {
+  background-color: alpha(@fg, 0.16);
+  border: none;
+  border-radius: 8px;
+  min-width: 6px;
+  min-height: 6px;
+}
+
+.movie-window scrollbar slider:hover {
+  background-color: alpha(@fg, 0.28);
+}
+
+.movie-window separator {
+  background-color: alpha(@fg, 0.07);
+}
+
+/* -- hero: kept dark in both themes (white text over artwork) ------------ */
 .movie-hero {
-  background-color: @surface;
-  background-image: linear-gradient(120deg, @raised, @bg 55%, @surface);
+  background-color: #111419;
+  background-image: linear-gradient(120deg, #171b22, #0b0d10 55%, #16130f);
 }
 
 .movie-hero-scrim {
   background-image: linear-gradient(
     to bottom,
-    alpha(@bg, 0.00) 0%,
-    alpha(@bg, 0.24) 38%,
-    alpha(@bg, 0.88) 78%,
-    @bg 100%
+    rgba(10, 11, 13, 0.00) 0%,
+    rgba(10, 11, 13, 0.22) 38%,
+    rgba(10, 11, 13, 0.86) 76%,
+    #0a0b0d 100%
   );
 }
 
 .movie-hero-badge {
-  background-color: alpha(@fg, 0.13);
-  color: @fg;
+  background-color: rgba(255, 255, 255, 0.13);
+  color: #ffffff;
   border-radius: 4px;
   padding: 2px 8px;
   font-size: 0.68em;
@@ -1493,22 +1598,24 @@ button.movie-nav-item.active {
 }
 
 .movie-hero-title {
-  color: @fg;
+  color: #ffffff;
   font-size: 2.5em;
   font-weight: 800;
 }
 
-.movie-rating-star {
-  color: @warning;
-  font-weight: 700;
-}
+.movie-page-title { color: @fg; font-size: 1.65em; font-weight: 800; }
+.movie-rating-star { color: @warning; font-weight: 700; }
+.movie-meta { color: @muted; font-size: 0.9em; }
+.movie-overview { color: @fg; font-size: 0.98em; }
 
 button.movie-btn-primary {
   background-color: @fg;
   background-image: none;
-  border: none;
+  border: 1px solid transparent;
   border-image: none;
+  border-color: transparent;
   box-shadow: none;
+  text-shadow: none;
   color: @bg;
   border-radius: 8px;
   padding: 9px 20px;
@@ -1519,6 +1626,27 @@ button.movie-btn-primary {
 button.movie-btn-primary:hover {
   background-color: @hover;
   color: @fg;
+  border-color: alpha(@fg, 0.12);
+}
+
+button.movie-btn-primary:active {
+  background-color: @hover;
+  color: @fg;
+  border-color: alpha(@fg, 0.18);
+  box-shadow: none;
+}
+
+button.movie-btn-primary:disabled {
+  background-color: alpha(@fg, 0.12);
+  background-image: none;
+  color: @muted;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+button.movie-btn-primary:backdrop {
+  background-color: alpha(@fg, 0.85);
+  color: @bg;
 }
 
 button.movie-btn-dark {
@@ -1526,7 +1654,9 @@ button.movie-btn-dark {
   background-image: none;
   border: 1px solid alpha(@fg, 0.14);
   border-image: none;
+  border-color: alpha(@fg, 0.14);
   box-shadow: none;
+  text-shadow: none;
   color: @fg;
   border-radius: 8px;
   padding: 8px 16px;
@@ -1535,8 +1665,46 @@ button.movie-btn-dark {
 }
 
 button.movie-btn-dark:hover {
-  background-color: alpha(@fg, 0.18);
+  background-color: alpha(@fg, 0.17);
+  color: @fg;
 }
+
+button.movie-btn-dark:active {
+  background-color: alpha(@fg, 0.22);
+  color: @fg;
+}
+
+button.movie-btn-dark:disabled {
+  background-color: alpha(@fg, 0.06);
+  color: @faint;
+  border-color: alpha(@fg, 0.08);
+}
+
+button.movie-btn-dark:checked {
+  background-color: alpha(@warning, 0.16);
+  border-color: alpha(@warning, 0.55);
+  color: @warning;
+}
+
+button.movie-btn-small {
+  padding: 4px 12px;
+  border-radius: 6px;
+  font-size: 0.85em;
+}
+
+button.movie-link {
+  background-color: transparent;
+  background-image: none;
+  border: none;
+  box-shadow: none;
+  color: @muted;
+  padding: 2px 6px;
+  min-height: 0;
+  font-weight: 600;
+  font-size: 0.86em;
+}
+
+button.movie-link:hover { color: @fg; }
 
 .movie-section-title {
   color: @fg;
@@ -1564,11 +1732,14 @@ button.movie-card {
   border: none;
   border-image: none;
   box-shadow: none;
+  text-shadow: none;
   padding: 0;
   min-height: 0;
   min-width: 0;
   border-radius: 10px;
 }
+
+button.movie-card:hover .movie-card-title { color: @fg; }
 
 .movie-card-poster {
   background-color: @surface;
@@ -1600,10 +1771,7 @@ button.movie-card {
   border-radius: 10px;
 }
 
-.movie-title {
-  color: @fg;
-  font-weight: 600;
-}
+.movie-title { color: @fg; font-weight: 600; }
 
 button.movie-arrow {
   background-color: alpha(@bg, 0.72);
@@ -1620,10 +1788,12 @@ button.movie-arrow {
 
 button.movie-arrow:hover {
   background-color: alpha(@fg, 0.16);
+  color: @fg;
 }
 
 button.movie-arrow:disabled {
   color: @faint;
+  background-color: alpha(@bg, 0.45);
 }
 
 .movie-empty {
@@ -1640,25 +1810,23 @@ button.movie-arrow:disabled {
   font-weight: 700;
 }
 
+.movie-empty-icon { color: @faint; }
+
 .movie-status {
   color: @muted;
   font-size: 0.88em;
 }
 
-.movie-meta {
-  color: @muted;
-  font-size: 0.9em;
+.movie-adult-badge {
+  background-color: @danger;
+  color: @on_accent;
+  border-radius: 5px;
+  padding: 1px 6px;
+  font-size: 0.7em;
+  font-weight: 800;
 }
 
-.movie-overview {
-  color: @fg;
-  font-size: 0.98em;
-}
-
-.movie-episode {
-  color: @fg;
-  font-size: 0.94em;
-}
+.movie-episode { color: @fg; font-size: 0.94em; }
 
 .movie-episode-row {
   background-color: @surface;
@@ -1666,13 +1834,9 @@ button.movie-arrow:disabled {
   padding: 6px 8px;
 }
 
-.movie-episode-row:hover {
-  background-color: @hover;
-}
+.movie-episode-row:hover { background-color: @hover; }
 
-.movie-episode-list {
-  background-color: transparent;
-}
+.movie-episode-list { background-color: transparent; }
 
 .movie-history-row {
   background-color: @surface;
@@ -1684,56 +1848,246 @@ button.movie-arrow:disabled {
   padding: 8px;
 }
 
+.movie-history-row:hover {
+  background-color: @hover;
+  border-color: alpha(@fg, 0.12);
+}
+
 .movie-history-title {
   color: @fg;
   font-weight: 600;
   font-size: 0.95em;
 }
 
-.movie-scroll,
-.movie-scroll viewport {
+.movie-detail-body { background-color: @bg; }
+
+/* -- player: kept black in both themes (video area) ---------------------- */
+.movie-player-frame {
+  background-color: @bg;
+  border-radius: 10px;
+}
+
+.movie-player-frame webkitwebview { background-color: #000000; }
+
+/* -- home feed ----------------------------------------------------------- */
+.movie-window .feed-row,
+.movie-window .feed-columns,
+.movie-window .feed-schedule,
+.movie-window .feed-days,
+.movie-window .feed-strip,
+.movie-window .feed-scroll,
+.movie-window .feed-scroll viewport {
   background-color: transparent;
 }
 
-button.movie-link {
+.movie-window .feed-scroll {
+  border: none;
+}
+
+.movie-window .feed-title {
+  color: @fg;
+  font-size: 0.96em;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+}
+
+.movie-window .feed-count {
+  background-color: alpha(@fg, 0.08);
+  color: @muted;
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-size: 0.72em;
+  font-weight: 700;
+}
+
+.movie-window .feed-note,
+.movie-window .feed-placeholder,
+.movie-window .feed-empty {
+  color: @muted;
+  font-size: 0.82em;
+}
+
+.movie-window .feed-error {
+  color: @danger;
+  font-size: 0.82em;
+}
+
+.movie-window .feed-strip { padding: 2px 0; }
+
+button.feed-arrow {
+  background-color: alpha(@bg, 0.72);
+  background-image: none;
+  border: 1px solid alpha(@fg, 0.14);
+  border-image: none;
+  box-shadow: none;
+  color: @fg;
+  border-radius: 999px;
+  padding: 0;
+  min-width: 28px;
+  min-height: 28px;
+}
+
+button.feed-arrow:hover {
+  background-color: alpha(@fg, 0.16);
+  color: @fg;
+}
+
+button.feed-card {
+  background-color: transparent;
+  background-image: none;
+  border: 1px solid transparent;
+  border-image: none;
+  box-shadow: none;
+  border-radius: 8px;
+  padding: 4px;
+  min-width: 0;
+  min-height: 0;
+}
+
+button.feed-card:hover {
+  background-color: alpha(@fg, 0.05);
+  border-color: alpha(@fg, 0.10);
+}
+
+.movie-window .feed-poster {
+  background-color: @surface;
+  border-radius: 6px;
+}
+
+.movie-window .feed-card-title {
+  color: @fg;
+  font-size: 0.88em;
+  font-weight: 600;
+}
+
+.movie-window .feed-card-meta {
+  color: @muted;
+  font-size: 0.78em;
+}
+
+.movie-window .feed-column-title {
+  color: @fg;
+  font-size: 0.74em;
+  font-weight: 700;
+  letter-spacing: 0.9px;
+}
+
+.movie-window .feed-column-error {
+  color: @danger;
+  font-size: 0.78em;
+}
+
+button.feed-column-row {
+  background-color: transparent;
+  background-image: none;
+  border: 1px solid transparent;
+  border-image: none;
+  box-shadow: none;
+  border-radius: 7px;
+  padding: 3px 5px;
+  min-height: 0;
+}
+
+button.feed-column-row:hover {
+  background-color: alpha(@fg, 0.06);
+  border-color: alpha(@fg, 0.08);
+}
+
+.movie-window .feed-column-row .poster-frame {
+  background-color: @surface;
+  border-radius: 4px;
+}
+
+.movie-window .feed-column-row-title {
+  color: @fg;
+  font-size: 0.88em;
+  font-weight: 600;
+}
+
+.movie-window .feed-column-row-meta {
+  color: @muted;
+  font-size: 0.78em;
+}
+
+button.feed-column-more {
   background-color: transparent;
   background-image: none;
   border: none;
   box-shadow: none;
   color: @muted;
-  padding: 2px 6px;
+  padding: 2px 0;
   min-height: 0;
   font-weight: 600;
+  font-size: 0.84em;
 }
 
-button.movie-link:hover {
+button.feed-column-more:hover { color: @fg; }
+
+.movie-window .feed-now {
+  color: @muted;
+  font-size: 0.8em;
+}
+
+button.feed-day {
+  background-color: alpha(@fg, 0.04);
+  background-image: none;
+  border: 1px solid alpha(@fg, 0.10);
+  border-image: none;
+  box-shadow: none;
+  color: @muted;
+  border-radius: 8px;
+  padding: 5px 8px;
+  min-height: 0;
+  font-size: 0.84em;
+}
+
+button.feed-day:hover {
+  background-color: alpha(@fg, 0.09);
   color: @fg;
 }
 
-.movie-search {
-  background-color: @raised;
-  border: 1px solid @divider;
-  border-radius: 999px;
+button.feed-day:checked,
+button.feed-day.chip-on {
+  background-color: alpha(@fg, 0.16);
+  border-color: alpha(@fg, 0.22);
   color: @fg;
-  padding: 1px 10px;
-  min-height: 30px;
 }
 
-.movie-search entry {
+button.feed-day.feed-today {
+  color: @fg;
+  font-weight: 700;
+}
+
+button.feed-schedule-row {
   background-color: transparent;
   background-image: none;
-  border: none;
+  border: 1px solid transparent;
+  border-image: none;
   box-shadow: none;
+  border-radius: 7px;
+  padding: 4px 6px;
+  min-height: 0;
+}
+
+button.feed-schedule-row:hover {
+  background-color: alpha(@fg, 0.06);
+  border-color: alpha(@fg, 0.08);
+}
+
+.movie-window .feed-schedule-time {
+  color: @muted;
+  font-size: 0.8em;
+}
+
+.movie-window .feed-schedule-title {
   color: @fg;
+  font-size: 0.9em;
 }
 
-.movie-detail-body {
-  background-color: @bg;
-}
-
-.movie-player-frame {
-  background-color: @bg;
-  border-radius: 10px;
+.movie-window .feed-schedule-episode,
+.movie-window .feed-schedule-meta {
+  color: @muted;
+  font-size: 0.78em;
 }
 
 
