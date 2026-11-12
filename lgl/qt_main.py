@@ -34,6 +34,7 @@ from PySide6.QtWidgets import (
 )
 
 from . import discovery
+from . import qt_player
 from . import nav_layout
 from . import surprise_pool
 from . import profiles
@@ -1215,6 +1216,11 @@ def self_test(window: "Window", app: QApplication) -> int:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = list(argv if argv is not None else sys.argv)
+    # Chromium is loaded from a plugin in the packaged build: WebEngine has to
+    # be imported, and shared GL contexts allowed, before the application object
+    # exists, or the embedded player cannot start on Windows.
+    qt_player.preload_webengine()
+    QApplication.setAttribute(Qt.ApplicationAttribute.AA_ShareOpenGLContexts, True)
     app = QApplication(args)
     app.setApplicationName(APP_TITLE)
     app.setApplicationDisplayName(APP_TITLE)
