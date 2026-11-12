@@ -1215,12 +1215,13 @@ class LibraryPage(QWidget):
         self._shown = LibraryStore.sort_entries(
             filtered, self._sort_key, self._descending
         )
-        # A library page that is not on screen renders when it is shown, so a
-        # large collection no longer builds hundreds of cards during startup.
-        if self.isVisible():
-            self._render()
-        else:
+        # A big library that is not on screen renders when it is shown, so
+        # startup does not build hundreds of cards first. Small libraries render
+        # immediately, so every refresh leaves the page exactly as it was.
+        if not self.isVisible() and len(self._shown) > self._CHUNK:
             self._needs_render = True
+        else:
+            self._render()
         self._update_stats()
 
     def _update_stats(self) -> None:
