@@ -4179,7 +4179,10 @@ class MoviesWindow(Gtk.Box):
         if token != self._season_token:
             return False
         # Keep it: playing an episode of this season has to find the next one.
-        self._season_cache[season.number] = season
+        cache = getattr(self, "_season_cache", None)
+        if cache is None:
+            cache = self._season_cache = {}
+        cache[season.number] = season
         for child in box.get_children():
             box.remove(child)
         if not season.episodes:
