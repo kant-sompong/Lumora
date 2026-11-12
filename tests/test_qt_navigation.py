@@ -87,26 +87,24 @@ def wait_until(app, predicate, timeout: float = 5.0) -> bool:
     return predicate()
 
 
-def test_browse_has_two_discovery_rows_filled_from_the_library(app):
+def test_browse_has_one_discovery_row_filled_from_the_library(app):
     page = qt_browse.BrowsePage(
         rows_provider=lambda: ROWS, liked_provider=lambda: ["a"],
     )
     page.set_games([])
 
     assert wait_until(app, lambda: page.recommended_row.cards())
-    assert wait_until(app, lambda: page.gems_row.cards())
     assert [card["title"] for card in page.recommended_row.cards()] == ["Beta", "Gamma"]
-    assert [card["title"] for card in page.gems_row.cards()] == ["Alpha", "Beta"]
     assert not page.recommended_row.isHidden()
-    assert not page.gems_row.isHidden()
+    # Hidden gems belongs to Media now, so Browse must not carry a second row.
+    assert not hasattr(page, "gems_row")
 
 
-def test_the_discovery_rows_hide_themselves_when_there_is_nothing(app):
+def test_the_discovery_row_hides_itself_when_there_is_nothing(app):
     page = qt_browse.BrowsePage(rows_provider=lambda: [], liked_provider=lambda: [])
     page.set_games([])
 
     assert wait_until(app, lambda: page.recommended_row.isHidden())
-    assert wait_until(app, lambda: page.gems_row.isHidden())
 
 
 def test_a_failing_row_provider_shows_why(app):
@@ -116,9 +114,12 @@ def test_a_failing_row_provider_shows_why(app):
     page = qt_browse.BrowsePage(rows_provider=broken)
     page.set_games([])
 
-    assert wait_until(app, lambda: not page.recommended_row.isHidden())
-    assert wait_until(app, lambda: not page.gems_row.isHidden())
-    assert page.recommended_row.error.text() == "Could not load: library unreadable"
+    assert wait_until(
+        app,
+        lambda: page.recommended_row.error.text()
+        == "Could not load: library unreadable",
+    )
+    assert not page.recommended_row.isHidden()
     assert page.recommended_row.cards() == []
 
 
@@ -129,8 +130,7 @@ def test_the_rows_stay_on_screen_when_the_catalogue_list_is_empty(window, app):
     browse = window.browse
     assert browse._shown == []
     assert not browse.scroll.isHidden()
-    for row in (browse.recommended_row, browse.gems_row):
-        assert row.isHidden() or row.isVisibleTo(browse)
+    assert browse.recommended_row.isHidden() or browse.recommended_row.isVisibleTo(browse)
 
 
 def test_the_header_search_filters_the_library_games(window, app):
@@ -153,13 +153,13 @@ def test_the_loading_state_below_the_rows_is_never_clipped(app, width):
     page.resize(width, 780)
     page.show()
     page.set_games([])
-    assert wait_until(app, lambda: page.gems_row.cards())
+    assert wait_until(app, lambda: page.recommended_row.cards())
     pump(app, 0.2)
 
     empty = page.empty
     assert empty.isVisible()
     assert empty.height() >= empty.sizeHint().height()
-    rows = [row for row in (page.recommended_row, page.gems_row) if row.isVisible()]
+    rows = [row for row in (page.recommended_row,) if row.isVisible()]
     assert empty.geometry().top() >= max(row.geometry().bottom() for row in rows)
     assert empty.geometry().bottom() <= page.scroll.widget().height()
 
@@ -246,12 +246,13 @@ def test_library_tabs_exist_and_switching_builds_the_panel(window, app):
     assert window.library.detail.isHidden() in (True, False)
 
 
-def test_media_has_six_tabs_and_the_dice_lives_in_the_header(window):
+def test_media_has_six_tabs_and_no_die_in_the_header(window):
     assert list(window.media._nav) == ["home", "movies", "tv", "anime", "list", "history"]
     assert "calendar" not in window.media._pages
     assert "compare" not in window.media._pages
     assert not hasattr(window.media, "surprise_btn")
-    assert window.surprise_btn.toolTip() == "Surprise me"
+    # The die was removed from the window header entirely.
+    assert not hasattr(window, "surprise_btn")
 
 def test_the_header_menu_contains_only_the_allowed_entries(window):
     menu = window._build_menu()

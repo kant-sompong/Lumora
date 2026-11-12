@@ -747,7 +747,7 @@ class MediaPage(QWidget):
         self._home_carousels = self._home_rows  # kept: history and posters read it
 
         # Section 7: three vertical lists, five small rows each.
-        self.three_columns = ThreeColumnList()
+        self.three_columns = ThreeColumnList(image_loader=self._load_image)
         column.addWidget(self.three_columns)
         self.column_loaders: dict[str, Callable[[], object]] = {}
         self.columns_placeholder = label("", "mediaNote")
@@ -762,23 +762,6 @@ class MediaPage(QWidget):
         column.addWidget(self.schedule_error)
         self.schedule_loader: Callable[[], object] | None = None
         self.schedule.setVisible(False)
-
-        # Section 9: the compact season comparison card.
-        self.compare_card = QFrame()
-        self.compare_card.setObjectName("feedColumn")
-        compare_column = QVBoxLayout(self.compare_card)
-        compare_column.setContentsMargins(16, 12, 16, 12)
-        compare_column.setSpacing(8)
-        try:
-            from .qt_season import CompareCard
-
-            self.compare_panel = CompareCard(self)
-            self.compare_panel.item_clicked.connect(self._open_compare_entry)
-            compare_column.addWidget(self.compare_panel)
-        except Exception:  # noqa: BLE001 - never take the whole page down
-            self.compare_panel = None
-            compare_column.addWidget(label("Season comparison is unavailable.", "mediaNote"))
-        column.addWidget(self.compare_card)
 
         column.addStretch(1)
 
@@ -1161,14 +1144,6 @@ class MediaPage(QWidget):
         )
         column.addWidget(self.calendar_panel, 1)
 
-    def _build_compare(self, column: QVBoxLayout) -> None:
-        """Two anime seasons side by side; it fetches only when Compare runs."""
-        from .qt_season import CompareCard
-
-        self.compare_panel = CompareCard(self)
-        self.compare_panel.item_clicked.connect(self._open_compare_entry)
-        column.addWidget(self.compare_panel, 1)
-
     # navigation ------------------------------------------------------------
     def show_section(self, key: str) -> None:
         # Choosing a section from the media bar while the video plays stops it,
@@ -1533,16 +1508,6 @@ class MediaPage(QWidget):
         self._load_posters()
 
     # detail / playback -----------------------------------------------------
-    def _open_compare_entry(self, entry: object) -> None:
-        """A compared title opens its own detail page."""
-        if not isinstance(entry, dict):
-            return
-        key = str(entry.get("key") or "").strip()
-        if not key:
-            return
-        title = str(entry.get("title") or "").strip() or "Untitled"
-        self.open_card(self.card(key) or Card(key=key, title=title, kind="anime"))
-
     def open_card(self, card: object) -> None:
         if not isinstance(card, Card):
             return

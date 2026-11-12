@@ -71,7 +71,6 @@ from .qt_media import MediaPage
 from .qt_settings import AboutDialog, SettingsDialog
 from .qt_theme import build_stylesheet
 from .qt_widgets import (
-    DiceButton,
     IconButton,
     RailButton,
     Toast,
@@ -288,9 +287,6 @@ class Window(QMainWindow):
         row.addStretch(1)
 
         # Right-hand cluster: the die sits with the other page actions.
-        self.surprise_btn = DiceButton("Surprise me")
-        self.surprise_btn.clicked.connect(self.pick_random)
-        row.addWidget(self.surprise_btn)
         self.menu_btn = IconButton("menu", "Menu", 18, 34)
         self.menu_btn.clicked.connect(self._show_menu)
         row.addWidget(self.menu_btn)

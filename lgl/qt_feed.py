@@ -278,7 +278,12 @@ class FeedRow(QFrame):
 
     clicked = Signal(object)
 
-    def __init__(self, item: Any, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        item: Any,
+        parent: QWidget | None = None,
+        image_loader: Callable[..., Any] | None = None,
+    ) -> None:
         super().__init__(parent)
         self.setObjectName("feedRow")
         self.setCursor(Qt.PointingHandCursor)
@@ -294,6 +299,16 @@ class FeedRow(QFrame):
         row.setSpacing(10)
         thumb = CoverArt(40, 58, radius=4, crop=True, title=title)
         row.addWidget(thumb, 0, Qt.AlignVCenter)
+        self.cover = thumb
+        self._cover_asked = False
+        if image_loader is not None:
+            url = str(
+                (item.get("poster_url") if isinstance(item, dict)
+                 else getattr(item, "poster_url", "")) or ""
+            )
+            if url:
+                self._cover_asked = True
+                image_loader(url, f"feed-column-{abs(hash(url))}", thumb.set_pixmap)
         text = QVBoxLayout()
         text.setSpacing(2)
         name = ElideLabel(title)
@@ -323,8 +338,14 @@ class ThreeColumnList(QWidget):
     )
     LIMIT = 5
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        parent: QWidget | None = None,
+        *,
+        image_loader: Callable[..., Any] | None = None,
+    ) -> None:
         super().__init__(parent)
+        self._image_loader = image_loader
         row = QHBoxLayout(self)
         row.setContentsMargins(0, 0, 0, 0)
         row.setSpacing(18)
@@ -359,7 +380,7 @@ class ThreeColumnList(QWidget):
         clear_layout(rows)
         shown = list(items)[: self.LIMIT]
         for item in shown:
-            feed_row = FeedRow(item)
+            feed_row = FeedRow(item, image_loader=self._image_loader)
             feed_row.clicked.connect(self.item_clicked.emit)
             rows.addWidget(feed_row)
         error.setVisible(False)
