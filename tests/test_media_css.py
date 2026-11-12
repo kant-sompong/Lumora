@@ -70,7 +70,7 @@ HEX = re.compile(r"^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$")
 
 
 def _parse(path: Path) -> dict[str, dict[str, str]]:
-    text = re.sub(r"/\*.*?\*/", "", path.read_text(), flags=re.S)
+    text = re.sub(r"/\*.*?\*/", "", path.read_text(encoding="utf-8"), flags=re.S)
     rules: dict[str, dict[str, str]] = {}
     for match in re.finditer(r"([^{}]+)\{([^{}]*)\}", text):
         declarations = {}
@@ -205,7 +205,7 @@ LGL = Path(__file__).resolve().parents[1] / "lgl"
 
 
 def test_the_deleted_stylesheet_helpers_are_gone():
-    tree = ast.parse(MOVIES_UI.read_text())
+    tree = ast.parse(MOVIES_UI.read_text(encoding="utf-8"))
     banned = {"_cinematic_provider", "_CSS_PROVIDER", "_CINEMATIC_CSS"}
     found = [node.id for node in ast.walk(tree) if isinstance(node, ast.Name) and node.id in banned]
     found += [node.attr for node in ast.walk(tree) if isinstance(node, ast.Attribute) and node.attr in banned]
@@ -214,7 +214,7 @@ def test_the_deleted_stylesheet_helpers_are_gone():
 
 def test_media_window_never_loads_an_undefined_provider():
     """A leftover ``if provider is not None`` crashed the app at start-up."""
-    tree = ast.parse(MOVIES_UI.read_text())
+    tree = ast.parse(MOVIES_UI.read_text(encoding="utf-8"))
     checked = []
     for klass in (n for n in ast.walk(tree) if isinstance(n, ast.ClassDef) and n.name == "MoviesWindow"):
         for func in klass.body:
