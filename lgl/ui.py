@@ -6943,7 +6943,8 @@ class MainWindow(Gtk.ApplicationWindow):
 
         shell = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
         shell.get_style_context().add_class("app-shell")
-        shell.pack_start(self._build_rail(), False, False, 0)
+        self._rail = self._build_rail()
+        shell.pack_start(self._rail, False, False, 0)
         shell.pack_start(body, True, True, 0)
 
         overlay = Gtk.Overlay()
