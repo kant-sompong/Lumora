@@ -292,6 +292,23 @@ def following_episode(
     return None
 
 
+def seasons_with_episodes(
+    seasons: Sequence[Season], loaded: Mapping[int, Season]
+) -> tuple[Season, ...]:
+    """The season list, using the fully fetched season where one is loaded.
+
+    ``MediaDetails.seasons`` only summarises each season (name, air date,
+    episode count); the episodes arrive when a page fetches one season, so the
+    Next episode target has to look in both places.
+    """
+    return tuple(
+        loaded[season.number]
+        if getattr(loaded.get(season.number), "episodes", ())
+        else season
+        for season in sorted(seasons or (), key=lambda item: item.number)
+    )
+
+
 @dataclass(frozen=True)
 class MediaDetails:
     kind: str
