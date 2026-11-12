@@ -17,6 +17,7 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
+    QApplication,
     QDialog,
     QHBoxLayout,
     QLineEdit,
@@ -44,10 +45,11 @@ WEBSITE_NOTE = (
 )
 
 KRYOTO_NOTE = (
-    "Discovery uses the site's public API. A record with source links, and a "
-    "verified file, are different states; only a check that returned a file "
-    "response enables the download button. Importing is polite: one request at "
-    "a time with a small gap."
+    "Discovery uses the site's public API. The import then reads each record's "
+    "details and download links, so it takes longer than the plain listing. A "
+    "record with source links, and a verified file, are different states; only a "
+    "check that returned a file response calls a link verified. Importing keeps "
+    "a small, bounded number of requests in flight."
 )
 
 
@@ -64,6 +66,7 @@ class CatalogDialog(QDialog):
         action: str = "Import catalogue",
         catalog: CatalogStore | None = None,
         on_imported: Callable[[int], None] | None = None,
+        enrich: bool = False,
     ) -> None:
         super().__init__(parent)
         self.setObjectName("sheet")
@@ -78,6 +81,9 @@ class CatalogDialog(QDialog):
             else CatalogStore(platform_support.data_dir() / "catalog.json")
         )
         self._on_imported = on_imported if callable(on_imported) else None
+        #: A catalogue whose download links live on each record (Kryoto) needs
+        #: the enrichment pass, or every row is imported without a single link.
+        self._enrich = bool(enrich)
 
         column = QVBoxLayout(self)
         column.setContentsMargins(24, 22, 24, 16)
@@ -153,8 +159,12 @@ class CatalogDialog(QDialog):
 
         def work() -> tuple[int, str, str]:
             store = self.catalog
+            options = (
+                ImportOptions(enrich=True, workers=4) if self._enrich
+                else ImportOptions()
+            )
             outcome, report = import_source(
-                store, url, options=ImportOptions(), progress=self._record_progress
+                store, url, options=options, progress=self._record_progress
             )
             name = getattr(report, "name", "") or getattr(outcome, "source_name", "")
             problem = ""
@@ -291,9 +301,38 @@ class CatalogDownloadDialog(QDialog):
         self.list = QListWidget()
         self.list.currentRowChanged.connect(self._show_details)
         body.addWidget(self.list, 1)
+        side = QVBoxLayout()
+        side.setSpacing(8)
         self.detail = label("", "detailNote", wrap=True)
         self.detail.setMinimumWidth(220)
-        body.addWidget(self.detail, 1)
+        side.addWidget(self.detail)
+        #: One row per recorded http(s) link, so a link can be opened in the
+        #: browser or queued on its own instead of only in bulk.
+        self.links = QListWidget()
+        self.links.setAccessibleName("Download links")
+        self.links.setToolTip("Double-click a link to open it in the browser")
+        self.links.itemDoubleClicked.connect(lambda _item: self.open_link())
+        self.links.currentRowChanged.connect(lambda _row: self._update_link_buttons())
+        side.addWidget(self.links, 1)
+        link_row = QHBoxLayout()
+        link_row.setSpacing(8)
+        self.open_link_btn = QPushButton("Open in browser")
+        self.open_link_btn.setCursor(Qt.PointingHandCursor)
+        self.open_link_btn.clicked.connect(self.open_link)
+        link_row.addWidget(self.open_link_btn)
+        self.copy_link_btn = QPushButton("Copy link")
+        self.copy_link_btn.setCursor(Qt.PointingHandCursor)
+        self.copy_link_btn.clicked.connect(self.copy_link)
+        link_row.addWidget(self.copy_link_btn)
+        self.download_link_btn = QPushButton("Download link")
+        self.download_link_btn.setObjectName("suggested")
+        self.download_link_btn.setCursor(Qt.PointingHandCursor)
+        self.download_link_btn.setToolTip("Queue only the selected link")
+        self.download_link_btn.clicked.connect(self.download_link)
+        link_row.addWidget(self.download_link_btn)
+        link_row.addStretch(1)
+        side.addLayout(link_row)
+        body.addLayout(side, 1)
         column.addLayout(body, 1)
 
         self.status = label("", "detailNote", wrap=True)
@@ -307,7 +346,7 @@ class CatalogDownloadDialog(QDialog):
         self.art_btn.clicked.connect(self.match_artwork)
         bottom.addWidget(self.art_btn)
         bottom.addStretch(1)
-        self.queue_btn = QPushButton("Queue selected")
+        self.queue_btn = QPushButton("Download all links")
         self.queue_btn.setObjectName("suggested")
         self.queue_btn.setCursor(Qt.PointingHandCursor)
         self.queue_btn.clicked.connect(self.queue_selected)
@@ -342,6 +381,7 @@ class CatalogDownloadDialog(QDialog):
             )
             self.queue_btn.setEnabled(False)
             self.art_btn.setEnabled(False)
+            self._fill_links([])
         else:
             self.status.setText(f"{len(self._games)} record(s) with links.")
             self.list.setCurrentRow(0)
@@ -381,16 +421,104 @@ class CatalogDownloadDialog(QDialog):
             for record in magnets[:4]:
                 lines.append(f"  · {getattr(record, 'display_name', '') or 'unnamed'}")
         if mirrors:
-            lines.append("Links:")
-            for record in mirrors[:6]:
-                status = getattr(record, "status_label", None)
-                label_text = status() if callable(status) else str(
-                    getattr(record, "check_status", "unchecked")
-                )
-                lines.append(f"  · {getattr(record, 'filename', '') or mirror_filename(getattr(record, 'url', ''))}: {label_text}")
+            lines.append(f"{len(mirrors)} download link(s):")
         self.detail.setText("\n".join(lines))
+        self._fill_links(mirrors)
+
+    def _mirror_status(self, record: object) -> str:
+        status = getattr(record, "status_label", None)
+        if callable(status):
+            return str(status())
+        return str(getattr(record, "check_status", "unchecked") or "unchecked")
+
+    def _fill_links(self, mirrors: list[object]) -> None:
+        """List this record's links with their addresses, so they can be visited."""
+        self.links.clear()
+        for record in mirrors:
+            url = str(getattr(record, "url", "") or "")
+            name = str(getattr(record, "filename", "") or "") or mirror_filename(url)
+            item = QListWidgetItem(f"{name}  ·  {self._mirror_status(record)}\n{url}")
+            item.setData(Qt.UserRole, url)
+            item.setToolTip(url)
+            self.links.addItem(item)
+        if not mirrors:
+            empty = QListWidgetItem("This record carries no download link.")
+            empty.setFlags(Qt.NoItemFlags)
+            self.links.addItem(empty)
+        else:
+            self.links.setCurrentRow(0)
+        self._update_link_buttons()
+
+    def _update_link_buttons(self) -> None:
+        has_link = bool(self._selected_link())
+        for button in (
+            self.open_link_btn, self.copy_link_btn, self.download_link_btn,
+        ):
+            button.setEnabled(has_link)
+
+    def _selected_link(self) -> str:
+        item = self.links.currentItem()
+        if item is None:
+            return ""
+        return str(item.data(Qt.UserRole) or "")
 
     # actions ---------------------------------------------------------------
+    def open_link(self) -> None:
+        """Open the selected link in the user's browser."""
+        url = self._selected_link()
+        if not url:
+            return
+        if not platform_support.open_url(url):
+            self.status.setText(f"The browser could not be opened for {url}")
+
+    def copy_link(self) -> None:
+        url = self._selected_link()
+        if not url:
+            return
+        QApplication.clipboard().setText(url)
+        self.status.setText("Link copied.")
+
+    def download_link(self) -> None:
+        """Queue only the link the user picked."""
+        game = self._selected()
+        if game is None:
+            return
+        row = self.links.currentRow()
+        mirrors = self._mirrors(game)
+        if not (0 <= row < len(mirrors)):
+            return
+        record = mirrors[row]
+        error = self._queue_mirror(game, record)
+        if error:
+            self.status.setText(f"Nothing was queued: {error}")
+            return
+        name = str(getattr(record, "filename", "") or "") or mirror_filename(
+            str(getattr(record, "url", "") or "")
+        )
+        self.status.setText(f"Queued {name}.")
+        if self._on_queued is not None:
+            self._on_queued(catalog_identifier(game.key), game.title or game.game_id)
+
+    def _queue_mirror(self, game: CatalogGame, record: object) -> str:
+        """Queue one http(s) link; returns an error message, or "" on success."""
+        if self.manager is None:
+            return "the download queue is unavailable"
+        url = str(getattr(record, "url", "") or "")
+        if not url:
+            return "that link has no address"
+        name = str(getattr(record, "filename", "") or "") or mirror_filename(url)
+        try:
+            self.manager.add(  # type: ignore[attr-defined]
+                identifier=catalog_identifier(game.key),
+                filename=name,
+                url=url,
+                download_dir=self.download_dir,
+                total_size=getattr(record, "size", 0) or None,
+            )
+        except Exception as exc:  # noqa: BLE001 - collected, never fatal
+            return f"{name}: {exc}"
+        return ""
+
     def queue_selected(self) -> None:
         game = self._selected()
         if game is None:
@@ -409,24 +537,12 @@ class CatalogDownloadDialog(QDialog):
                 added += 1
             except Exception as exc:  # noqa: BLE001 - collected, never fatal
                 errors.append(str(exc))
-        if self.manager is None:
-            errors.append("the download queue is unavailable")
-        else:
-            identifier = catalog_identifier(game.key)
-            for record in self._mirrors(game):
-                url = str(getattr(record, "url", "") or "")
-                name = str(getattr(record, "filename", "") or "") or mirror_filename(url)
-                try:
-                    self.manager.add(  # type: ignore[attr-defined]
-                        identifier=identifier,
-                        filename=name,
-                        url=url,
-                        download_dir=self.download_dir,
-                        total_size=getattr(record, "size", 0) or None,
-                    )
-                    added += 1
-                except Exception as exc:  # noqa: BLE001
-                    errors.append(f"{name}: {exc}")
+        for record in self._mirrors(game):
+            error = self._queue_mirror(game, record)
+            if error:
+                errors.append(error)
+            else:
+                added += 1
         if added and self._on_queued is not None:
             self._on_queued(catalog_identifier(game.key), game.title or game.game_id)
         if added:
