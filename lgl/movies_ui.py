@@ -1024,6 +1024,8 @@ class MoviesWindow(Gtk.Box):
         self._playback_title = ""
         self._playback_reason = ""
         self._player_fullscreen = False
+        #: (season, episode) of the TV episode playing, for Next episode.
+        self._playing_episode: tuple[int, int] | None = None
         self._active_section = "home"
         #: The blurred backdrop of the open details page; only the movie/TV page
         #: builds one, so every reader must cope with ``None``.
@@ -4247,6 +4249,7 @@ class MoviesWindow(Gtk.Box):
         if item.kind == "tv":
             self._open_details(item)
             return
+        self._playing_episode = None
         self._record_playback(item.key, item.title, item.poster_url, item.year)
         dub = bool(self._settings.get("anime_dub", False))
         attempts = self._provider_attempts(
@@ -4261,6 +4264,7 @@ class MoviesWindow(Gtk.Box):
         if show is None:
             return
         self._record_playback(show.key, show.title, show.poster_url, show.year)
+        self._playing_episode = (int(season), int(episode.number))
         title = f"{episode.title} · S{season:02d}E{episode.number:02d}"
         dub = bool(self._settings.get("anime_dub", False))
         attempts = self._provider_attempts(
@@ -4392,10 +4396,31 @@ class MoviesWindow(Gtk.Box):
             self._back_target = current
         for child in self._player.get_children():
             self._player.remove(child)
+        # Title on the left, Next episode on the right of the same line, so the
+        # video keeps the whole width below it.
+        header_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
         heading = Gtk.Label(label=title, xalign=0)
         heading.set_ellipsize(Pango.EllipsizeMode.END)
         heading.get_style_context().add_class("movie-page-title")
-        self._player.pack_start(heading, False, False, 0)
+        header_row.pack_start(heading, True, True, 0)
+        following = self._next_episode()
+        self._next_episode_button = None
+        if following is not None:
+            next_season, next_one = following
+            button = Gtk.Button(label="Next episode")
+            button.get_style_context().add_class("movie-btn-dark")
+            button.set_valign(Gtk.Align.CENTER)
+            button.set_tooltip_text(
+                f"Play S{next_season:02d}E{next_one.number:02d}"
+                + (f" · {next_one.title}" if next_one.title else "")
+            )
+            button.connect(
+                "clicked",
+                lambda _b, s=next_season, e=next_one: self._play_episode(s, e),
+            )
+            header_row.pack_end(button, False, False, 0)
+            self._next_episode_button = button
+        self._player.pack_start(header_row, False, False, 0)
 
         if len(self._playback_attempts) > 1:
             status = Gtk.Label(
@@ -4501,6 +4526,17 @@ class MoviesWindow(Gtk.Box):
         self._player.show_all()
         self._stack.set_visible_child_name("player")
         self._update_back()
+
+    def _next_episode(self):
+        """The episode after the one playing, if the details list it."""
+        playing = getattr(self, "_playing_episode", None)
+        details = self._current_details
+        if playing is None or details is None:
+            return None
+        season, number = playing
+        return tmdb.following_episode(
+            getattr(details, "seasons", ()) or (), season, number
+        )
 
     def _apply_player_settings(self, view, spec: streaming.ProviderSpec) -> None:
         """Media permissions every player needs; security stays per provider."""
@@ -4656,6 +4692,7 @@ class MoviesWindow(Gtk.Box):
 
     def _open_player_message(self, title: str, message: str) -> None:
         """Stay on the watch page and explain why nothing can play."""
+        self._playing_episode = None
         current = self._stack.get_visible_child_name()
         if current not in (None, "player"):
             self._back_target = current

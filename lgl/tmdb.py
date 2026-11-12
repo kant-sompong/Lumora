@@ -268,6 +268,30 @@ class Season:
     episodes: tuple[Episode, ...] = ()
 
 
+def following_episode(
+    seasons: Sequence[Season], season: int, number: int
+) -> tuple[int, Episode] | None:
+    """The episode played after ``season``/``number``.
+
+    The rest of the same season comes first, then the first episode of the
+    nearest later season, so a series finale has nothing to offer.
+    """
+    ordered = sorted(seasons or (), key=lambda item: item.number)
+    for item in ordered:
+        if item.number != season:
+            continue
+        episodes = sorted(item.episodes or (), key=lambda ep: ep.number)
+        for position, episode in enumerate(episodes):
+            if episode.number == number and position + 1 < len(episodes):
+                return item.number, episodes[position + 1]
+    for item in ordered:
+        if item.number > season:
+            episodes = sorted(item.episodes or (), key=lambda ep: ep.number)
+            if episodes:
+                return item.number, episodes[0]
+    return None
+
+
 @dataclass(frozen=True)
 class MediaDetails:
     kind: str
