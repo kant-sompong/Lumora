@@ -195,3 +195,26 @@ def test_kind_of_key_names_the_three_sources():
     assert feed.kind_of_key("tmdb:movie:7") == "movie"
     assert feed.kind_of_key("") == ""
     assert feed.kind_of_key("something-else") == ""
+
+
+def test_a_feed_saved_before_the_posters_is_refetched(tmp_path):
+    """A v1 cache has no poster_url, so serving it would leave rows art-less."""
+    path = tmp_path / "release-calendar.json"
+    path.write_text(json.dumps({
+        "fetched_at": NOW,
+        "errors": [],
+        "entries": [{
+            "key": "anilist:1", "title": "Old", "episode": "", "air_at": NOW,
+            "source": "AniList", "delayed": False, "changed": False,
+            "date_only": False,
+        }],
+    }), "utf-8")
+    page = anilist_page([{
+        "airingAt": NOW + 120, "episode": 1,
+        "media": {"id": 1, "isAdult": False, "title": {"english": "Fresh"},
+                  "coverImage": {"large": "https://img.anilist.test/1.jpg"}},
+    }])
+    result = feed.load_feed(path, now=NOW + 60, anilist=lambda body: page)
+    assert result.from_cache is False
+    assert result.entries[0].title == "Fresh"
+    assert result.entries[0].poster_url == "https://img.anilist.test/1.jpg"

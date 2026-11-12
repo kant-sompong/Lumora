@@ -1025,6 +1025,9 @@ class MoviesWindow(Gtk.Box):
         self._playback_reason = ""
         self._player_fullscreen = False
         self._active_section = "home"
+        #: The blurred backdrop of the open details page; only the movie/TV page
+        #: builds one, so every reader must cope with ``None``.
+        self._artwork: ArtworkBackdrop | None = None
         self._health_results: list[dict[str, Any]] = []
         #: Last trending TMDB titles, the pool For you / More like this rank.
         self._feed_pool: list[MediaItem] = []
@@ -2758,6 +2761,9 @@ class MoviesWindow(Gtk.Box):
         page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         page.set_valign(Gtk.Align.START)
         page.get_style_context().add_class("movie-detail-body")
+        # An anime page draws no blurred backdrop; dropping the movie page's
+        # one keeps its dead widget out of the image callback.
+        self._artwork = None
 
         overlay = Gtk.Overlay()
         overlay.set_size_request(-1, 420)
@@ -3895,8 +3901,12 @@ class MoviesWindow(Gtk.Box):
                 backdrop.set_pixbuf(pixbuf)
             except Exception:  # noqa: BLE001 - the page may have been replaced
                 pass
-            if pixbuf is not None:
-                self._artwork.show_pixbuf(url, pixbuf)
+            artwork = self._artwork
+            if pixbuf is not None and artwork is not None:
+                try:
+                    artwork.show_pixbuf(url, pixbuf)
+                except Exception:  # noqa: BLE001 - a replaced page's widget is gone
+                    pass
             return False
 
         self._images.load(url, DETAIL_BACKDROP_SIZE, apply)

@@ -20,6 +20,8 @@ try:
 except (ValueError, ImportError):  # pragma: no cover - GTK 3 typelib missing
     pytest.skip("GTK 3 is not installed", allow_module_level=True)
 
+from gi.repository import GdkPixbuf  # noqa: E402
+
 from lgl import anime_calendar, anipm, hidden_gems, mal, movies_ui, tmdb  # noqa: E402
 
 
@@ -450,3 +452,17 @@ def test_clicking_a_real_schedule_row_opens_its_title(window):
     assert isinstance(opened[0], anipm.AniTitle)
     assert opened[0].anilist_id == 161645
     assert opened[0].title == "Frieren"
+
+
+def test_a_details_image_needs_no_blurred_backdrop_page(window, monkeypatch):
+    """Anime pages draw no backdrop; the loader used to raise AttributeError."""
+    captured = {}
+    monkeypatch.setattr(
+        window._images, "load",
+        lambda url, size, callback: captured.setdefault("callback", callback),
+    )
+    window._artwork = None
+    window._load_detail_image("https://img.test/x.jpg", movies_ui.Backdrop(120))
+    pixbuf = GdkPixbuf.Pixbuf.new(GdkPixbuf.Colorspace.RGB, False, 8, 2, 2)
+    captured["callback"](pixbuf)  # raised "'MoviesWindow' object has no attribute '_artwork'"
+    pump()
