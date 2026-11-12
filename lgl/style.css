@@ -1425,11 +1425,22 @@ flowboxchild.browse-tile:hover .cover-card {
   padding: 1px 5px;
 }
 
-/* -- movies & tv -- */
+/* -- movies & tv --------------------------------------------------------- */
 
-/* Rule for this whole section: palette tokens only.  The one exception is the
-   hero artwork overlay and the video player area below, which stay dark in
-   both themes because white text sits on a photograph or a video there. */
+/* Rule for this whole section: palette tokens only.
+ *
+ * Every Media and home-feed rule below is written with the app palette
+ * (@bg, @surface, @raised, @fg, @muted, @faint, @accent, @warning, @danger), so
+ * the page follows the dark/light setting exactly like the rest of the app.
+ *
+ * Literal colours are allowed in two places only, each marked "kept dark":
+ *   .movie-hero, .movie-hero-scrim, .movie-hero-badge, .movie-hero-title
+ *     White text sits on a photograph, so the gradient scrim stays dark in
+ *     both themes.
+ *   .movie-player-frame webkitwebview
+ *     The video area is black in every desktop theme.
+ * tests/test_media_css.py enforces both halves of the rule.
+ */
 
 .movie-window.background,
 .movie-window {
