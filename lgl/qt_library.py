@@ -1361,7 +1361,6 @@ class LibraryPage(QWidget):
         self.grid.addWidget(
             card, index // self._last_columns, index % self._last_columns, Qt.AlignTop
         )
-        card.show()
         self._wire(card, entry)
 
     def _fill_grid(self, cell: int, token: int) -> None:
