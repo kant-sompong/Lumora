@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
-from lgl.tmdb import Episode, Season, following_episode
+from lgl.tmdb import (
+    Episode,
+    Season,
+    following_episode,
+    seasons_with_episodes,
+)
 
 
 def season(number: int, *episodes: tuple[int, str]) -> Season:
@@ -55,3 +60,41 @@ def test_a_season_without_episodes_is_skipped():
     assert found is not None
     assert found[0] == 3
     assert found[1].number == 1
+
+
+def test_a_loaded_season_replaces_its_summary():
+    """That is the real shape: details has counts, the tab has the episodes."""
+    summary = Season(number=1, name="Season 1", episode_count=2)
+
+    merged = seasons_with_episodes((summary,), {1: season(1, (1, "Pilot"), (2, "Next"))})
+
+    assert len(merged) == 1
+    assert [episode.number for episode in merged[0].episodes] == [1, 2]
+
+
+def test_the_next_episode_is_found_once_a_season_is_loaded():
+    show = (
+        Season(number=4, episode_count=2),
+        Season(number=5, episode_count=1),
+    )
+    loaded = {4: season(4, (1, "One"), (2, "Finale of four")), 5: season(5, (1, "Later"))}
+
+    found = following_episode(seasons_with_episodes(show, loaded), 4, 2)
+
+    assert found is not None
+    assert found[0] == 5
+    assert found[1].title == "Later"
+
+
+def test_a_summary_alone_offers_nothing():
+    show = (Season(number=4, episode_count=2),)
+
+    assert following_episode(seasons_with_episodes(show, {}), 4, 1) is None
+
+
+def test_an_empty_loaded_season_keeps_the_summary():
+    show = (Season(number=1, episode_count=3),)
+
+    merged = seasons_with_episodes(show, {1: Season(number=1)})
+
+    assert merged[0].episode_count == 3

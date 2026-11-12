@@ -1026,6 +1026,11 @@ class MoviesWindow(Gtk.Box):
         self._player_fullscreen = False
         #: (season, episode) of the TV episode playing, for Next episode.
         self._playing_episode: tuple[int, int] | None = None
+        #: Seasons fetched in full: MediaDetails carries only their summaries,
+        #: so the Next episode target reads the episodes from here.
+        self._season_cache: dict[int, Any] = {}
+        #: The title line of the player, where Next episode is added.
+        self._player_header: Any | None = None
         self._active_section = "home"
         #: The blurred backdrop of the open details page; only the movie/TV page
         #: builds one, so every reader must cope with ``None``.
@@ -3737,6 +3742,7 @@ class MoviesWindow(Gtk.Box):
                 subtitle=str(getattr(item, "year", "") or ""),
             )
         self._current_details = None
+        self._season_cache.clear()
         self._detail_token += 1
         self._season_token += 1
         token = self._detail_token
@@ -4172,6 +4178,8 @@ class MoviesWindow(Gtk.Box):
     def _apply_season(self, token: int, box: Gtk.ListBox, season) -> bool:
         if token != self._season_token:
             return False
+        # Keep it: playing an episode of this season has to find the next one.
+        self._season_cache[season.number] = season
         for child in box.get_children():
             box.remove(child)
         if not season.episodes:
@@ -4403,23 +4411,13 @@ class MoviesWindow(Gtk.Box):
         heading.set_ellipsize(Pango.EllipsizeMode.END)
         heading.get_style_context().add_class("movie-page-title")
         header_row.pack_start(heading, True, True, 0)
-        following = self._next_episode()
+        self._player_header = header_row
         self._next_episode_button = None
+        following = self._next_episode()
         if following is not None:
-            next_season, next_one = following
-            button = Gtk.Button(label="Next episode")
-            button.get_style_context().add_class("movie-btn-dark")
-            button.set_valign(Gtk.Align.CENTER)
-            button.set_tooltip_text(
-                f"Play S{next_season:02d}E{next_one.number:02d}"
-                + (f" · {next_one.title}" if next_one.title else "")
-            )
-            button.connect(
-                "clicked",
-                lambda _b, s=next_season, e=next_one: self._play_episode(s, e),
-            )
-            header_row.pack_end(button, False, False, 0)
-            self._next_episode_button = button
+            self._offer_next_episode(following)
+        else:
+            self._offer_next_season()
         self._player.pack_start(header_row, False, False, 0)
 
         if len(self._playback_attempts) > 1:
@@ -4528,15 +4526,88 @@ class MoviesWindow(Gtk.Box):
         self._update_back()
 
     def _next_episode(self):
-        """The episode after the one playing, if the details list it."""
+        """The episode after the one playing, from the seasons already loaded."""
         playing = getattr(self, "_playing_episode", None)
         details = self._current_details
         if playing is None or details is None:
             return None
         season, number = playing
-        return tmdb.following_episode(
-            getattr(details, "seasons", ()) or (), season, number
+        seasons = tmdb.seasons_with_episodes(
+            getattr(details, "seasons", ()) or (),
+            getattr(self, "_season_cache", {}),
         )
+        return tmdb.following_episode(seasons, season, number)
+
+    def _offer_next_episode(self, following) -> None:
+        """Put Next episode at the right of the title being played."""
+        header_row = getattr(self, "_player_header", None)
+        if header_row is None or getattr(self, "_next_episode_button", None) is not None:
+            return
+        next_season, next_one = following
+        button = Gtk.Button(label="Next episode")
+        button.get_style_context().add_class("movie-btn-dark")
+        button.set_valign(Gtk.Align.CENTER)
+        button.set_tooltip_text(
+            f"Play S{next_season:02d}E{next_one.number:02d}"
+            + (f" · {next_one.title}" if next_one.title else "")
+        )
+        button.connect(
+            "clicked",
+            lambda _b, s=next_season, e=next_one: self._play_episode(s, e),
+        )
+        header_row.pack_end(button, False, False, 0)
+        button.show()
+        self._next_episode_button = button
+
+    def _next_season_number(self) -> int | None:
+        """The season after the playing one, once this season's episodes are known."""
+        playing = getattr(self, "_playing_episode", None)
+        details = self._current_details
+        cache = getattr(self, "_season_cache", {})
+        if playing is None or details is None:
+            return None
+        season, number = playing
+        loaded = cache.get(season)
+        if loaded is None:
+            return None
+        numbers = sorted(ep.number for ep in (getattr(loaded, "episodes", ()) or ()))
+        if not numbers or number < numbers[-1]:
+            return None  # the next one is in this season, or not known yet
+        later = sorted(
+            item.number
+            for item in (getattr(details, "seasons", ()) or ())
+            if item.number > season
+        )
+        if not later or later[0] in cache:
+            return None
+        return later[0]
+
+    def _offer_next_season(self) -> None:
+        """A season finale: fetch the next season so it can still be offered."""
+        number = self._next_season_number()
+        details = self._current_details
+        if number is None or details is None:
+            return
+        header_row = getattr(self, "_player_header", None)
+        tmdb_id = details.tmdb_id
+
+        def work() -> None:
+            try:
+                season = self._client.season(tmdb_id, number)
+            except TmdbError:
+                return
+            GLib.idle_add(self._apply_next_season, season, header_row)
+
+        threading.Thread(target=work, daemon=True, name="lgl-tmdb-next").start()
+
+    def _apply_next_season(self, season, header_row) -> bool:
+        if header_row is None or header_row is not getattr(self, "_player_header", None):
+            return False
+        self._season_cache[season.number] = season
+        following = self._next_episode()
+        if following is not None:
+            self._offer_next_episode(following)
+        return False
 
     def _apply_player_settings(self, view, spec: streaming.ProviderSpec) -> None:
         """Media permissions every player needs; security stays per provider."""

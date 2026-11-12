@@ -72,6 +72,7 @@ class EmbeddedPlayer(QWidget):
     """
 
     back_requested = Signal()
+    next_requested = Signal()
     fullscreen_changed = Signal(bool)
 
     def __init__(self, parent: QWidget | None = None, *,
@@ -108,6 +109,14 @@ class EmbeddedPlayer(QWidget):
         bar.addWidget(self.back)
         self.title_label = label("", "playerTitle")
         bar.addWidget(self.title_label, 1)
+        #: Shown only while an episode plays and the next one is known.
+        self.next_episode = QPushButton("Next episode  ›")
+        self.next_episode.setObjectName("heroAction")
+        self.next_episode.setCursor(Qt.PointingHandCursor)
+        self.next_episode.setToolTip("Play the next episode")
+        self.next_episode.setVisible(False)
+        self.next_episode.clicked.connect(lambda _checked=False: self.next_requested.emit())
+        bar.addWidget(self.next_episode)
         column.addWidget(self.chrome)
 
         self.stage = QFrame()
@@ -184,8 +193,18 @@ class EmbeddedPlayer(QWidget):
         else:
             self.pages.setCurrentWidget(self.fallback)
 
+    def offer_next_episode(self, tooltip: str = "") -> None:
+        """Show the button that plays the episode after the one on screen."""
+        self.next_episode.setToolTip(tooltip or "Play the next episode")
+        self.next_episode.setVisible(True)
+
+    def clear_next_episode(self) -> None:
+        """Hide it: a movie, or the last episode of a show, has no next one."""
+        self.next_episode.setVisible(False)
+
     def stop_playback(self) -> None:
         """Stop loading and clear the video, like the GTK page's Back."""
+        self.clear_next_episode()
         if self._fullscreen:
             self.set_fullscreen(False)
         view = self.view

@@ -651,6 +651,13 @@ class MediaPage(QWidget):
         self._player_factory = player_factory or make_player
         self.player = self._player_factory(self)
         self.player.back_requested.connect(self._leave_player)
+        self.player.next_requested.connect(self._play_next_episode)
+        #: (season, episode) on screen, with the title it belongs to.
+        self._playing_episode: tuple[int, int] | None = None
+        self._playing_card: Card | None = None
+        #: The seasons fetched in full: details carries only their summaries.
+        self._season_cache: dict[int, object] = {}
+        self._detail_seasons: tuple[object, ...] = ()
         self.stack.addWidget(self.player)
         self._player_return: QWidget | None = None
         self.show_section("home")
@@ -1513,6 +1520,11 @@ class MediaPage(QWidget):
             return
         card = self._fullest_card(card)
         self._detail_card = card
+        self._detail_seasons = ()
+        self._season_cache.clear()
+        self._playing_episode = None
+        self._playing_card = None
+        self.player.clear_next_episode()
         recently_viewed.record(
             recently_viewed.default_path(),
             kind=card.kind,
@@ -1600,6 +1612,7 @@ class MediaPage(QWidget):
                 season for season in (getattr(result, "seasons", ()) or ())
                 if int(getattr(season, "number", 0) or 0) > 0
             ]
+            self._detail_seasons = tuple(seasons)
             self.episode_head.count.setText(f"{len(seasons)} seasons")
             self.season_combo.blockSignals(True)
             self.season_combo.clear()
@@ -1638,6 +1651,7 @@ class MediaPage(QWidget):
             return client.season(card.tmdb_id, number)
 
         def done(result: object) -> None:
+            self._season_cache[int(getattr(result, "number", number))] = result
             clear_layout(self.episode_column)
             episodes = list(getattr(result, "episodes", ()) or ())
             self.episode_head.count.setText(f"Season {number} · {len(episodes)} episodes")
@@ -1716,6 +1730,82 @@ class MediaPage(QWidget):
             self._play_anime(card)
         else:
             self._play_tmdb(card)
+
+    # next episode ----------------------------------------------------------
+    def _next_episode(self):
+        """The episode after the one playing, from the seasons already loaded."""
+        playing = getattr(self, "_playing_episode", None)
+        if playing is None:
+            return None
+        season, number = playing
+        seasons = tmdb.seasons_with_episodes(
+            getattr(self, "_detail_seasons", ()) or (),
+            getattr(self, "_season_cache", {}),
+        )
+        return tmdb.following_episode(seasons, season, number)
+
+    def _refresh_next_episode(self) -> None:
+        """Offer the following episode, or fetch a season finale's next one."""
+        following = self._next_episode()
+        if following is not None:
+            season, episode = following
+            self.player.offer_next_episode(
+                f"Play S{season:02d}E{episode.number:02d}"
+                + (f" · {episode.title}" if episode.title else "")
+            )
+            return
+        self.player.clear_next_episode()
+        self._offer_next_season()
+
+    def _play_next_episode(self) -> None:
+        """The player's Next episode button."""
+        following = self._next_episode()
+        card = getattr(self, "_playing_card", None)
+        if following is None or card is None:
+            self._refresh_next_episode()
+            return
+        self._play_tmdb(card, following[0], following[1])
+
+    def _next_season_number(self) -> int | None:
+        """The season after the playing one, once this season's episodes are known."""
+        playing = getattr(self, "_playing_episode", None)
+        cache = getattr(self, "_season_cache", {})
+        if playing is None:
+            return None
+        season, number = playing
+        loaded = cache.get(season)
+        if loaded is None:
+            return None
+        numbers = sorted(
+            ep.number for ep in (getattr(loaded, "episodes", ()) or ())
+        )
+        if not numbers or number < numbers[-1]:
+            return None  # the next one is in this season, or not known yet
+        later = sorted(
+            int(getattr(item, "number", 0) or 0)
+            for item in (getattr(self, "_detail_seasons", ()) or ())
+            if int(getattr(item, "number", 0) or 0) > season
+        )
+        if not later or later[0] in cache:
+            return None
+        return later[0]
+
+    def _offer_next_season(self) -> None:
+        """A season finale: fetch the next season so it can still be offered."""
+        number = self._next_season_number()
+        card = getattr(self, "_playing_card", None)
+        client = getattr(self, "_tmdb", None)
+        if number is None or card is None or client is None:
+            return
+
+        def work() -> object:
+            return client.season(card.tmdb_id, number)
+
+        def done(result: object) -> None:
+            self._season_cache[int(getattr(result, "number", number))] = result
+            self._refresh_next_episode()
+
+        run_async(work, done, lambda _exc: None)
 
     # embedded player -------------------------------------------------------
     def play_embedded(self, url: str, title: str = "") -> EmbeddedPlayer:
@@ -2018,7 +2108,18 @@ class MediaPage(QWidget):
             self._note_error(str(exc))
             return
         self._record_history(card)
+        # Next episode belongs to TV episodes only; a card's Watch button has
+        # no season or episode to move on from.
+        if card.kind == "tv" and episode is not None and season is not None:
+            self._playing_episode = (
+                int(season), int(getattr(episode, "number", 0) or 0),
+            )
+            self._playing_card = card
+        else:
+            self._playing_episode = None
+            self._playing_card = None
         self.play_embedded(url, card.title)
+        self._refresh_next_episode()
 
     def _play_anilist_match(self) -> None:
         """Play the AniList match the search already resolved.
@@ -2043,7 +2144,10 @@ class MediaPage(QWidget):
         except (streaming.EmbedUrlError, ValueError) as exc:
             self._note_error(str(exc))
             return
+        self._playing_episode = None
+        self._playing_card = None
         self.play_embedded(url, title)
+        self._refresh_next_episode()
 
     def _play_anime(self, card: Card) -> None:
         provider = self._anime_provider()
@@ -2072,7 +2176,10 @@ class MediaPage(QWidget):
             self._note_error(str(exc))
             return
         self._record_history(card)
+        self._playing_episode = None
+        self._playing_card = None
         self.play_embedded(url, card.title)
+        self._refresh_next_episode()
 
     def _record_history(self, card: Card) -> None:
         if self.settings is None or card.key.startswith("anime:"):
