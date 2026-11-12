@@ -119,6 +119,17 @@ QPushButton#pill:checked {{
 }}
 QToolButton::menu-indicator {{ image: none; width: 0; }}
 
+/* ---- library tabs --------------------------------------------------- */
+/* The library's own pill row, the same weight as the media nav. The native
+   tab bar was seven boxed tabs spread across the whole window. */
+QTabWidget#libraryTabs::pane {{ border: none; }}
+QPushButton#libraryTab {{
+    background: transparent; border: none; padding: 5px 12px;
+    color: {c['muted']}; border-radius: {sm}px;
+}}
+QPushButton#libraryTab:hover {{ color: {fg}; background: {alpha(fg, 0.05)}; }}
+QPushButton#libraryTab:checked {{ color: {fg}; font-weight: 600; }}
+
 /* ---- inputs -------------------------------------------------------- */
 QLineEdit, QComboBox, QSpinBox {{
     background: {c['surface']}; border: 1px solid {alpha(fg, 0.14)};
