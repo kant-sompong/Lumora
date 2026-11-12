@@ -224,6 +224,12 @@ class LibraryCard(QFrame):
             compat.setObjectName("coverMeta")
             compat.setContentsMargins(2, 0, 2, 0)
             column.addWidget(compat)
+        self._fit_width = -1
+
+    def refresh_fit(self) -> None:
+        """Re-measure after the layout changed, e.g. a bulk check box appeared."""
+        self._fit_width = -1
+        self._fit_cover()
 
     def set_cover_aspect(self, aspect: float) -> None:
         """Keep the artwork's shape: width / height of the loaded cover."""
@@ -233,11 +239,18 @@ class LibraryCard(QFrame):
         self._fit_cover()
 
     def _fit_cover(self) -> None:
-        height = round(self.width() * self._cover_aspect)
+        width = self.width()
+        if width == self._fit_width:
+            return
+        self._fit_width = width
+        height = round(width * self._cover_aspect)
         height = max(self.MIN_COVER_HEIGHT, min(self.MAX_COVER_HEIGHT, height))
-        self.cover.setFixedHeight(height)
+        if height != self.cover.height():
+            self.cover.setFixedHeight(height)
         rest = self.layout().sizeHint().height() - self.cover.height()
-        self.setMinimumHeight(height + max(0, rest))
+        needed = height + max(0, rest)
+        if self.minimumHeight() != needed:
+            self.setMinimumHeight(needed)
 
     def resizeEvent(self, event) -> None:  # noqa: N802
         super().resizeEvent(event)
@@ -987,11 +1000,18 @@ class LibraryPage(QWidget):
             tab_line.addWidget(button)
             self._tab_buttons.append(button)
         tab_line.addStretch(1)
-        layout.addWidget(self._tab_row)
         self._sync_tab_row(0)
         self.tabs.currentChanged.connect(self._tab_changed)
         self.tabs.currentChanged.connect(self._sync_tab_row)
-        root.addWidget(self.tabs, 1)
+        # The strip sits above the tab widget, not inside the Games page: a
+        # strip packed into the first tab disappeared with it and left no way
+        # back to the library.
+        self._tab_column = QVBoxLayout()
+        self._tab_column.setContentsMargins(0, 0, 0, 0)
+        self._tab_column.setSpacing(0)
+        self._tab_column.addWidget(self._tab_row)
+        self._tab_column.addWidget(self.tabs, 1)
+        root.addLayout(self._tab_column, 1)
 
         self._toolbar = QWidget()
         toolbar = self._toolbar
@@ -1080,6 +1100,11 @@ class LibraryPage(QWidget):
 
         # Hover preview: off unless Tools -> Interface turns it on.
         self.preview = QuickPreview(self)
+
+    def showEvent(self, event) -> None:  # noqa: N802
+        super().showEvent(event)
+        if getattr(self, "_needs_render", False):
+            self._render()
 
     def _sync_tab_row(self, index: int) -> None:
         """Keep the pill row showing the tab that is actually open."""
@@ -1190,7 +1215,13 @@ class LibraryPage(QWidget):
         self._shown = LibraryStore.sort_entries(
             filtered, self._sort_key, self._descending
         )
-        self._render()
+        # A big library that is not on screen renders when it is shown, so
+        # startup does not build hundreds of cards first. Small libraries render
+        # immediately, so every refresh leaves the page exactly as it was.
+        if not self.isVisible() and len(self._shown) > self._CHUNK:
+            self._needs_render = True
+        else:
+            self._render()
         self._update_stats()
 
     def _update_stats(self) -> None:
@@ -1246,7 +1277,13 @@ class LibraryPage(QWidget):
         self.refresh()
 
     # rendering -------------------------------------------------------------
+    #: Cards built per event-loop turn for a big library, so the window stays
+    #: responsive while a few hundred tiles are created.
+    _CHUNK = 60
+
     def _render(self) -> None:
+        self._needs_render = False
+        self._render_token = getattr(self, "_render_token", 0) + 1
         while self.grid.count():
             item = self.grid.takeAt(0)
             widget = item.widget() if item else None
@@ -1273,12 +1310,16 @@ class LibraryPage(QWidget):
                 self.grid.setColumnStretch(position, 0)
             for position in range(columns):
                 self.grid.setColumnStretch(position, 1)
-            for index, entry in enumerate(self._shown):
-                card: QWidget = LibraryCard(entry)
-                card.setMinimumWidth(min(200, cell))
-                card.setMaximumWidth(cell)
-                self.grid.addWidget(card, index // columns, index % columns, Qt.AlignTop)
-                self._wire(card, entry)
+            self._last_columns = columns
+            pending = list(enumerate(self._shown))
+            if len(pending) > self._CHUNK:
+                # A big library is filled over a few event-loop turns; the page
+                # opens at once instead of freezing while every tile is built.
+                self._pending_cards = pending
+                self._fill_grid(cell, self._render_token)
+            else:
+                for index, entry in pending:
+                    self._add_card(index, entry, cell)
         else:
             for entry in self._shown:
                 card = LibraryRow(entry, compact=self._compact)
@@ -1308,9 +1349,38 @@ class LibraryPage(QWidget):
         if bulk is not None:
             # The tiles were just rebuilt, so the checks go back on them.
             bulk.sync()
-        self._load_covers()
+        if not getattr(self, "_pending_cards", None):
+            self._load_covers()
         # The tiles were just replaced; an open preview re-anchors to the new one.
         self.preview.cards_rebuilt()
+
+    def _add_card(self, index: int, entry: LibraryEntry, cell: int) -> QWidget:
+        card: QWidget = LibraryCard(entry)
+        card.setMinimumWidth(min(200, cell))
+        card.setMaximumWidth(cell)
+        self.grid.addWidget(
+            card, index // self._last_columns, index % self._last_columns, Qt.AlignTop
+        )
+        self._wire(card, entry)
+        return card
+
+    def _fill_grid(self, cell: int, token: int) -> None:
+        pending = getattr(self, "_pending_cards", [])
+        visible = self.isVisible()
+        for _ in range(self._CHUNK):
+            if not pending:
+                break
+            index, entry = pending.pop(0)
+            card = self._add_card(index, entry, cell)
+            if visible:
+                # These batches arrive after the page was shown, so the tile
+                # has to be shown itself.
+                card.show()
+        if pending and token == getattr(self, "_render_token", -1):
+            QTimer.singleShot(0, lambda: self._fill_grid(cell, token))
+            return
+        self._pending_cards = []
+        self._load_covers()
 
     def _wire(self, card: QWidget, entry: LibraryEntry) -> None:
         card.clicked.connect(self.select)  # type: ignore[attr-defined]
@@ -1324,9 +1394,49 @@ class LibraryPage(QWidget):
         width = max(self.scroll.viewport().width() - 48, 200)
         return max(1, int((width + self._gap) // (GRID_MIN_CELL + self._gap)))
 
-    def eventFilter(self, watched, event) -> bool:  # noqa: N802
-        if watched is self.scroll.viewport() and event.type() == QEvent.Resize:
+    def _reflow(self) -> None:
+        """Re-flow only when the column count changed.
+
+        A window resize fires this filter many times; rebuilding every card for
+        each of those is what made dragging the window crawl with a full
+        library. Cards resize themselves, so only a new column count matters.
+        """
+        if self._view != "grid":
+            return
+        if self._columns() == getattr(self, "_last_columns", -1):
+            return
+        if self._cards and len(self._cards) == len(self._shown):
+            self._relayout()
+        else:
             self._schedule_render()
+
+    def _relayout(self) -> None:
+        """Move the built cards into a new column count instead of rebuilding.
+
+        Rebuilding every card for a one-column change costs a new widget, a new
+        stylesheet polish and a new placeholder paint per game, which is what
+        made resizing a full library lag.
+        """
+        columns = self._columns()
+        for position in range(self.grid.columnCount()):
+            self.grid.setColumnStretch(position, 0)
+        for position in range(columns):
+            self.grid.setColumnStretch(position, 1)
+        for index, entry in enumerate(self._shown):
+            card = self._cards.get(entry.identifier)
+            if card is not None:
+                self.grid.addWidget(
+                    card, index // columns, index % columns, Qt.AlignTop
+                )
+        self._last_columns = columns
+
+    def eventFilter(self, watched, event) -> bool:  # noqa: N802
+        try:
+            if watched is self.scroll.viewport() and event.type() == QEvent.Resize:
+                self._reflow()
+        except RuntimeError:
+            # The page can outlive the scroll area while it is being destroyed.
+            return False
         return super().eventFilter(watched, event)
 
     def _schedule_render(self) -> None:
@@ -1346,9 +1456,7 @@ class LibraryPage(QWidget):
         width = self.scroll.viewport().width()
         if abs(width - getattr(self, "_last_width", 0)) > 8:
             self._last_width = width
-            self._last_columns = self._columns()
-            if self._cards:
-                self._schedule_render()
+            self._reflow()
 
     def _load_covers(self) -> None:
         for entry in self._shown:

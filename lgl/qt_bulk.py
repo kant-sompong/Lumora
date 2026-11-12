@@ -211,15 +211,26 @@ class QtBulk:
             check.toggled.connect(lambda on, k=str(key): self._on_check(k, bool(on)))
             layout.insertWidget(1 if hasattr(card, "cover") else 0, check)
             check.show()
+            # The card is taller now; re-measure so the box never sits on the
+            # artwork.
+            refit = getattr(card, "refresh_fit", None)
+            if refit is not None:
+                refit()
             self._checks[str(key)] = check
         self._sync_controls()
         return len(self._checks)
 
     def _clear_checks(self) -> None:
+        had_checks = bool(self._checks)
         for check in self._checks.values():
             check.setParent(None)
             check.deleteLater()
         self._checks = {}
+        if had_checks:
+            for card in self._cards().values():
+                refit = getattr(card, "refresh_fit", None)
+                if refit is not None:
+                    refit()
 
     def _sync_controls(self) -> None:
         count = len(self.keys())
