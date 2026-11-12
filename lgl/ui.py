@@ -6579,7 +6579,8 @@ class MainWindow(Gtk.ApplicationWindow):
         header.pack_start(nav)
         # One button, on every page, at the right: a drawn die picks a random
         # title from the page the user is looking at.
-        header.pack_end(self._build_dice_button())
+        self._dice_button = self._build_dice_button()
+        header.pack_end(self._dice_button)
 
         pill = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         pill.get_style_context().add_class("search-pill")
@@ -7974,6 +7975,11 @@ class MainWindow(Gtk.ApplicationWindow):
         nav = getattr(self, "_history_nav", None)
         if nav is not None:
             nav.set_visible(name != "media")
+        # Media has its own Surprise me and Estimated Schedule, so the app-wide
+        # die would only be a second copy of the same action there.
+        dice = getattr(self, "_dice_button", None)
+        if dice is not None:
+            dice.set_visible(name != "media")
         self._sync_rail()
         if name == "library":
             self.library_view.refresh()

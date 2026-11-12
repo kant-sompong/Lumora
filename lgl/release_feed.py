@@ -46,7 +46,7 @@ query ($from: Int, $to: Int, $page: Int) {
     airingSchedules(airingAt_greater: $from, airingAt_lesser: $to, sort: TIME) {
       airingAt
       episode
-      media { id isAdult title { romaji english } }
+      media { id isAdult title { romaji english } coverImage { large } }
     }
   }
 }
@@ -112,12 +112,40 @@ def fetch_anime(
                 "episode": _int(row.get("episode")) or "",
                 "air_at": _int(row.get("airingAt")),
                 "source": "AniList",
+                "poster_url": _anilist_cover(media.get("coverImage")),
             })
             if entry is not None and entry.known:
                 entries.append(entry)
         if not (block.get("pageInfo") or {}).get("hasNextPage"):
             break
     return entries
+
+
+def kind_of_key(key: Any) -> str:
+    """``anime``, ``tv`` or ``movie`` for an entry key; ``""`` when unknown."""
+    text = str(key or "")
+    if text.startswith("anilist:") or text.startswith("anime:"):
+        return KIND_ANIME
+    if text.startswith("tmdb:movie:"):
+        return KIND_MOVIE
+    if text.startswith("tmdb:tv:"):
+        return KIND_TV
+    return ""
+
+
+def _tmdb_poster(path: Any) -> str:
+    """A full poster URL from TMDB's ``poster_path``; ``""`` when absent."""
+    text = str(path or "").strip()
+    if not text.startswith("/"):
+        return ""
+    return "https://image.tmdb.org/t/p/w500" + text
+
+
+def _anilist_cover(block: Any) -> str:
+    """AniList's ``coverImage`` block to a poster URL, or ``""``."""
+    if not isinstance(block, dict):
+        return ""
+    return str(block.get("large") or block.get("medium") or "")
 
 
 def _day(value: Any) -> float | None:
@@ -150,6 +178,7 @@ def fetch_movies(*, now: float, days: int, get: Callable[[str, Mapping[str, Any]
             "air_at": when,
             "source": "TMDB",
             "date_only": True,
+            "poster_url": _tmdb_poster(row.get("poster_path")),
         })
         if ident and entry is not None and entry.known:
             entries.append(entry)
@@ -181,6 +210,7 @@ def fetch_tv(*, now: float, days: int, get: Callable[[str, Mapping[str, Any]], A
             "air_at": when,
             "source": "TMDB",
             "date_only": True,
+            "poster_url": _tmdb_poster(show.get("poster_path")),
         })
         # TMDB dates are whole days; keep today's episode even though midnight UTC has passed.
         if entry is None or when is None or when < now - 86400 or when > horizon:

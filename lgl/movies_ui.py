@@ -78,7 +78,6 @@ _NAV_ITEMS = (
     ("movies", "Movies"),
     ("tv", "TV Shows"),
     ("anime", "Anime"),
-    ("calendar", "Calendar"),
     ("search", "Search"),
     ("mylist", "My List"),
     ("history", "History"),
@@ -1140,16 +1139,6 @@ class MoviesWindow(Gtk.Box):
         # Settings gear — opens the Media settings tab.
         self._gear.get_style_context().add_class("movie-icon-button")
         self._gear.set_tooltip_text("Media settings (providers, audio, backdrop)")
-        self._health_button = Gtk.Button(label="Provider health")
-        self._health_button.get_style_context().add_class("movie-btn-dark")
-        self._health_button.set_tooltip_text(
-            "Test each streaming provider and use the fastest one"
-        )
-        self._health_button.connect(
-            "clicked", lambda *_a: self.open_provider_health()
-        )
-        header.pack_end(self._health_button)
-
         # Provider picker, like the Windows header button: it names the
         # provider that will play and changes it in one click.
         holder = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
@@ -1879,6 +1868,7 @@ class MoviesWindow(Gtk.Box):
                     "meta": f"{entry.source} · "
                     f"{time.strftime('%d %b', time.localtime(entry.air_at or 0))}",
                     "key": entry.key,
+                    "poster_url": getattr(entry, "poster_url", ""),
                 }
                 for entry in aired[:5]
             ]
@@ -1901,6 +1891,7 @@ class MoviesWindow(Gtk.Box):
                         if part
                     ),
                     "key": f"anime:{row.get('id')}",
+                    "poster_url": str(row.get("poster_url") or ""),
                 }
                 for row in (rows or [])
             ]

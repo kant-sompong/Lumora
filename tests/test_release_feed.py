@@ -164,3 +164,34 @@ def test_notify_due_respects_the_episode_switch_and_follows():
     settings["notify_episodes"] = True
     assert rf.notify_due(settings, [entry], notify=notify, now=now) == 1
     assert sent == ["Frieren episode 7"]
+
+
+def test_rows_carry_the_cover_the_sheet_needs():
+    """A calendar row shows its poster, so the source's art must survive parsing."""
+    page = anilist_page([
+        {"airingAt": NOW + 60, "episode": 2,
+         "media": {"id": 9, "isAdult": False, "title": {"english": "Covered"},
+                   "coverImage": {"large": "https://img.anilist.test/9.jpg"}}},
+    ])
+    entries = feed.fetch_anime(now=NOW, days=7, post=lambda body: page)
+    assert entries[0].poster_url == "https://img.anilist.test/9.jpg"
+
+    movie = feed.fetch_movies(
+        now=NOW, days=7,
+        get=lambda path, params: {"results": [
+            {"id": 7, "title": "Heat", "release_date": "2026-11-06",
+             "poster_path": "/heat.jpg"},
+            {"id": 8, "title": "No Art", "release_date": "2026-11-06"},
+        ]},
+    )
+    by_title = {entry.title: entry.poster_url for entry in movie}
+    assert by_title["Heat"] == "https://image.tmdb.org/t/p/w500/heat.jpg"
+    assert by_title["No Art"] == ""
+
+
+def test_kind_of_key_names_the_three_sources():
+    assert feed.kind_of_key("anilist:161645") == "anime"
+    assert feed.kind_of_key("tmdb:tv:42") == "tv"
+    assert feed.kind_of_key("tmdb:movie:7") == "movie"
+    assert feed.kind_of_key("") == ""
+    assert feed.kind_of_key("something-else") == ""

@@ -365,3 +365,12 @@ def test_a_day_chip_click_selects_that_day(display):
     pump()
     assert strip.selected_day() == datetime(2026, 11, 12)
     assert strip.day_buttons[2].get_active() is True
+
+
+# -- schedule kinds ----------------------------------------------------------
+def test_a_schedule_row_says_whether_it_is_tv_movie_or_anime():
+    assert gtk_feed._entry_kind({"key": "tmdb:tv:42"}) == "TV"
+    assert gtk_feed._entry_kind({"key": "tmdb:movie:7"}) == "Movie"
+    assert gtk_feed._entry_kind({"key": "anilist:161645"}) == "Anime"
+    assert gtk_feed._entry_kind({"kind": "movie"}) == "Movie"
+    assert gtk_feed._entry_kind({}) == ""
