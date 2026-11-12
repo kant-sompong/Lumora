@@ -24,11 +24,15 @@ window {
 .library-detail,
 .library-toolbar,
 .library-meta,
-.details,
+.details {
+  background-color: @bg;
+  background-image: none;
+}
+
 .sidebar,
 .downloads-panel,
 .dir-bar {
-  background-color: @bg;
+  background-color: @surface;
   background-image: none;
 }
 
@@ -811,12 +815,19 @@ popover {
 /* The in-app palette paints stock widgets too, so Dark stays dark even when
  * the desktop theme has no dark variant of its own. */
 
+/* Three surfaces only: @bg for the window and page content, @surface for bars,
+ * rails and side panels, @raised for cards and popovers. */
 headerbar,
 .titlebar,
 menubar,
-.background,
 dialog,
 decoration {
+  background-color: @surface;
+  background-image: none;
+  color: @fg;
+}
+
+.background {
   background-color: @bg;
   background-image: none;
   color: @fg;
@@ -1175,12 +1186,12 @@ progressbar progress {
 }
 
 .browse-filters {
-  background-color: @bg;
+  background-color: @surface;
   border-right: 1px solid alpha(@fg, 0.06);
 }
 
 .filter-body {
-  background-color: @bg;
+  background-color: @surface;
 }
 
 .filter-title {
@@ -1331,7 +1342,7 @@ flowboxchild.browse-tile:hover .cover-card {
 }
 
 .app-rail {
-  background-color: @bg;
+  background-color: @surface;
   border-right: 1px solid alpha(@fg, 0.06);
   padding: 8px 6px 10px 6px;
 }
@@ -1373,7 +1384,7 @@ flowboxchild.browse-tile:hover .cover-card {
 }
 
 .app-header {
-  background-color: @bg;
+  background-color: @surface;
   border-bottom: 1px solid alpha(@fg, 0.06);
   padding: 5px 8px;
 }
