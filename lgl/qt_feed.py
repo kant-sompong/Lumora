@@ -544,6 +544,7 @@ class ScheduleStrip(QWidget):
             button.setToolTip(day.strftime("%A %d %B"))
             button.clicked.connect(lambda _=False, i=index: self.select_day(i))
             self.day_row.addWidget(button, 1)
+            button.show()
             self.day_buttons.append(button)
 
     def _render_rows(self) -> None:

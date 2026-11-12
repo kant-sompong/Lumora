@@ -130,6 +130,19 @@ QPushButton#libraryTab {{
 QPushButton#libraryTab:hover {{ color: {fg}; background: {alpha(fg, 0.05)}; }}
 QPushButton#libraryTab:checked {{ color: {fg}; font-weight: 600; }}
 
+/* ---- schedule day chips --------------------------------------------- */
+QPushButton#dayChip {{
+    background: transparent; border: 1px solid {alpha(fg, 0.12)};
+    border-radius: 12px; padding: 4px 10px; color: {c['muted']};
+    font-size: {small}px;
+}}
+QPushButton#dayChip:hover {{ background: {alpha(fg, 0.06)}; color: {fg}; }}
+QPushButton#dayChip:checked {{
+    background: {c['raised']}; border-color: {alpha(fg, 0.28)}; color: {fg};
+    font-weight: 600;
+}}
+QPushButton#dayChip[today="true"] {{ border-color: {alpha(c['accent'], 0.55)}; }}
+
 /* ---- inputs -------------------------------------------------------- */
 QLineEdit, QComboBox, QSpinBox {{
     background: {c['surface']}; border: 1px solid {alpha(fg, 0.14)};
