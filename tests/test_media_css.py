@@ -6,7 +6,10 @@ CSS is inspected rather than rendered.
 
 from __future__ import annotations
 
+import ast
+import py_compile
 import re
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -22,7 +25,24 @@ DARK_OVERLAY_SELECTORS = (
     ".movie-hero-scrim",
     ".movie-hero-badge",
     ".movie-hero-title",
+    ".movie-hero-sub",
+    ".movie-hero-meta",
+    ".movie-hero-overview",
+    ".movie-hero-rating",
     ".movie-player-frame webkitwebview",
+)
+
+#: The two ends of the hero's background gradient (lightest, darkest).
+HERO_GRADIENT_STOPS = ("#171b22", "#0b0d10")
+
+#: Labels drawn on top of that gradient; they must read on either end.
+HERO_LABEL_SELECTORS = (
+    ".movie-hero-badge",
+    ".movie-hero-title",
+    ".movie-hero-sub",
+    ".movie-hero-meta",
+    ".movie-hero-overview",
+    ".movie-hero-rating",
 )
 
 #: (label, selector, text property, background property) pairs that must read.
@@ -164,3 +184,59 @@ def test_active_and_checked_media_states_set_a_colour_pair():
         if "color" not in declarations or "background-color" not in declarations:
             offenders.append(selector)
     assert offenders == [], f"states without a colour pair: {offenders}"
+
+
+@pytest.mark.parametrize("mode", ("dark", "light"))
+@pytest.mark.parametrize("selector", HERO_LABEL_SELECTORS)
+@pytest.mark.parametrize("stop", HERO_GRADIENT_STOPS)
+def test_hero_labels_read_on_the_hero_gradient(selector, stop, mode):
+    """The hero is dark in both themes, so its labels use literal light inks."""
+    palette = theme.PALETTES[mode]
+    foreground = _colour(RULES[selector]["color"], palette)
+    ratio = _contrast(foreground, _rgb(stop))
+    assert ratio >= theme.CONTRAST_TEXT, (
+        f"{selector} on {stop} is {ratio:.2f}:1 in {mode} mode, below "
+        f"{theme.CONTRAST_TEXT}"
+    )
+
+
+MOVIES_UI = Path(__file__).resolve().parents[1] / "lgl" / "movies_ui.py"
+LGL = Path(__file__).resolve().parents[1] / "lgl"
+
+
+def test_the_deleted_stylesheet_helpers_are_gone():
+    tree = ast.parse(MOVIES_UI.read_text())
+    banned = {"_cinematic_provider", "_CSS_PROVIDER", "_CINEMATIC_CSS"}
+    found = [node.id for node in ast.walk(tree) if isinstance(node, ast.Name) and node.id in banned]
+    found += [node.attr for node in ast.walk(tree) if isinstance(node, ast.Attribute) and node.attr in banned]
+    assert found == [], f"deleted helpers are still referenced: {sorted(set(found))}"
+
+
+def test_media_window_never_loads_an_undefined_provider():
+    """A leftover ``if provider is not None`` crashed the app at start-up."""
+    tree = ast.parse(MOVIES_UI.read_text())
+    checked = []
+    for klass in (n for n in ast.walk(tree) if isinstance(n, ast.ClassDef) and n.name == "MoviesWindow"):
+        for func in klass.body:
+            if not isinstance(func, ast.FunctionDef) or func.name not in ("__init__", "_build_header"):
+                continue
+            checked.append(func.name)
+            loaded = {
+                node.id
+                for node in ast.walk(func)
+                if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load)
+            }
+            assert "provider" not in loaded, (
+                f"MoviesWindow.{func.name} loads a bare name 'provider' that nothing assigns"
+            )
+    assert checked == ["__init__", "_build_header"]
+
+
+def test_every_lgl_module_compiles():
+    modules = sorted(LGL.glob("*.py"))
+    assert len(modules) > 10
+    with tempfile.TemporaryDirectory() as folder:
+        for module in modules:
+            py_compile.compile(
+                str(module), cfile=str(Path(folder) / (module.stem + ".pyc")), doraise=True
+            )

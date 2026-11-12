@@ -1065,10 +1065,6 @@ class MoviesWindow(Gtk.Box):
 
         self._stack.connect("notify::visible-child-name", self._on_page_changed)
 
-        if provider is not None:
-            priority = Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION + 1
-            self.get_style_context().add_provider(provider, priority)
-
         self._stack.set_visible_child_name("home")
         self._set_active_nav("home")
         self._update_back()
@@ -1090,11 +1086,6 @@ class MoviesWindow(Gtk.Box):
         header.set_show_close_button(False)
         header.get_style_context().add_class("movie-nav")
         header.set_title("Movies & TV")
-        if provider is not None:
-            header.get_style_context().add_provider(
-                provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION + 1
-            )
-
         self._back = Gtk.Button.new_from_icon_name(
             "go-previous-symbolic", Gtk.IconSize.BUTTON
         )
@@ -1591,28 +1582,32 @@ class MoviesWindow(Gtk.Box):
             box.pack_start(button, False, False, 0)
         return box
 
-    def _fill_meta(self, box: Gtk.Box, bits, rating=None) -> None:
+    def _fill_meta(self, box: Gtk.Box, bits, rating=None, *,
+                   css: str = "movie-meta",
+                   star_css: str = "movie-rating-star") -> None:
+        """One meta line.  ``css``/``star_css`` name the classes, so a hero
+        label can use the light-on-artwork set instead of the page tokens."""
         for child in box.get_children():
             box.remove(child)
         written = False
 
-        def add(text: str, css: str) -> None:
+        def add(text: str, klass: str) -> None:
             nonlocal written
             if written:
                 dot = Gtk.Label(label="·")
-                dot.get_style_context().add_class("movie-meta")
+                dot.get_style_context().add_class(css)
                 box.pack_start(dot, False, False, 0)
             label = Gtk.Label(label=text)
-            label.get_style_context().add_class(css)
+            label.get_style_context().add_class(klass)
             box.pack_start(label, False, False, 0)
             written = True
 
         for text in bits:
             if text:
-                add(str(text), "movie-meta")
+                add(str(text), css)
         if rating is not None:
-            add("★", "movie-rating-star")
-            add(f"{rating:g}", "movie-meta")
+            add("★", star_css)
+            add(f"{rating:g}", css)
         box.show_all()
 
     def _copy_link(self, item, feedback: Gtk.Label) -> None:
@@ -1957,9 +1952,9 @@ class MoviesWindow(Gtk.Box):
             rating_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
             if item.rating is not None:
                 star = Gtk.Label(label="★")
-                star.get_style_context().add_class("movie-rating-star")
+                star.get_style_context().add_class("movie-hero-rating")
                 value = Gtk.Label(label=f"{item.rating:g}")
-                value.get_style_context().add_class("movie-meta")
+                value.get_style_context().add_class("movie-hero-meta")
                 rating_row.pack_start(star, False, False, 0)
                 rating_row.pack_start(value, False, False, 0)
             content.pack_start(rating_row, False, False, 0)
@@ -1978,7 +1973,7 @@ class MoviesWindow(Gtk.Box):
                 ),
                 xalign=0,
             )
-            meta.get_style_context().add_class("movie-meta")
+            meta.get_style_context().add_class("movie-hero-sub")
             content.pack_start(meta, False, False, 0)
 
             overview = Gtk.Label(label=item.overview or "No synopsis yet.")
@@ -1987,7 +1982,7 @@ class MoviesWindow(Gtk.Box):
             overview.set_lines(2)
             overview.set_ellipsize(Pango.EllipsizeMode.END)
             overview.set_max_width_chars(64)
-            overview.get_style_context().add_class("movie-overview")
+            overview.get_style_context().add_class("movie-hero-overview")
             content.pack_start(overview, False, False, 0)
         else:
             title = Gtk.Label(label="Movies & TV", xalign=0)
@@ -1997,7 +1992,7 @@ class MoviesWindow(Gtk.Box):
             overview.set_xalign(0)
             overview.set_line_wrap(True)
             overview.set_max_width_chars(64)
-            overview.get_style_context().add_class("movie-overview")
+            overview.get_style_context().add_class("movie-hero-overview")
             content.pack_start(overview, False, False, 0)
 
         actions = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
@@ -2814,7 +2809,13 @@ class MoviesWindow(Gtk.Box):
         bits = [getattr(item, "year", "")]
         if getattr(item, "episodes", 0):
             bits.append(f"{item.episodes} episodes")
-        self._fill_meta(meta, [bit for bit in bits if bit], getattr(item, "rating", None))
+        self._fill_meta(
+            meta,
+            [bit for bit in bits if bit],
+            getattr(item, "rating", None),
+            css="movie-hero-meta",
+            star_css="movie-hero-rating",
+        )
         content.pack_start(meta, False, False, 0)
 
         actions = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
@@ -2833,7 +2834,7 @@ class MoviesWindow(Gtk.Box):
         )
 
         episode_label = Gtk.Label(label="Episode")
-        episode_label.get_style_context().add_class("movie-meta")
+        episode_label.get_style_context().add_class("movie-hero-meta")
         actions.pack_start(episode_label, False, False, 0)
         episode_count = self._anime_episode_count(item)
         episode_spin = Gtk.SpinButton.new_with_range(
@@ -3799,6 +3800,8 @@ class MoviesWindow(Gtk.Box):
             meta,
             [bit for bit in (item.year, _kind_noun(item.kind)) if bit],
             item.rating,
+            css="movie-hero-meta",
+            star_css="movie-hero-rating",
         )
         content.pack_start(meta, False, False, 0)
 
@@ -3849,7 +3852,7 @@ class MoviesWindow(Gtk.Box):
         # no trailer keeps the page quiet.
         self._trailer_note = Gtk.Label(label="")
         self._trailer_note.set_xalign(0)
-        self._trailer_note.get_style_context().add_class("movie-meta")
+        self._trailer_note.get_style_context().add_class("movie-hero-meta")
         self._trailer_note.set_no_show_all(True)
         content.pack_start(self._trailer_note, False, False, 0)
         overlay.add_overlay(content)

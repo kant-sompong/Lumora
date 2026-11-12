@@ -1979,6 +1979,13 @@ button.movie-arrow:disabled {
 
 .movie-detail-body { background-color: @bg; }
 
+/* Every label drawn on the hero uses this set, never the page tokens: it is
+ * light text on a dark gradient in both themes. */
+.movie-hero-sub,
+.movie-hero-meta { color: #d6dae0; }
+.movie-hero-overview { color: #f2f4f6; }
+.movie-hero-rating { color: #f5c518; }
+
 /* -- player: kept black in both themes (video area) ---------------------- */
 .movie-player-frame {
   background-color: @bg;
