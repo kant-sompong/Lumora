@@ -28,6 +28,32 @@ from PySide6.QtWidgets import (
 from . import platform_support
 from .qt_widgets import label
 
+# Qt refuses to load WebEngine once a QCoreApplication exists ("QtWebEngineWidgets
+# must be imported before a QCoreApplication instance is created"), and every
+# window is built after the QApplication, so the import has to happen here, at
+# module import, and not when the first video starts. Doing it late is exactly
+# how the Windows build ended up with no embedded player: the import raised, the
+# page fell back to its "open in browser" panel, and nothing said why.
+try:  # noqa: SIM105 - the failure is the flag
+    from PySide6.QtWebEngineCore import QWebEngineSettings  # type: ignore
+    from PySide6.QtWebEngineWidgets import QWebEngineView  # type: ignore
+
+    #: False in a build that ships PySide6-Essentials, where there is no WebEngine.
+    WEBENGINE_AVAILABLE = True
+except Exception:  # noqa: BLE001 - WebEngine is optional in this build
+    QWebEngineSettings = None  # type: ignore[assignment]
+    QWebEngineView = None  # type: ignore[assignment]
+    WEBENGINE_AVAILABLE = False
+
+def preload_webengine() -> bool:
+    """True when this build has WebEngine; importing this module already did it.
+
+    Called before the QApplication is created, purely so the intent is visible
+    at the call site: after that point Qt will not load WebEngine at all.
+    """
+    return WEBENGINE_AVAILABLE
+
+
 #: Builds the widget that renders a streaming page; ``None`` means "no view".
 ViewFactory = Callable[[QWidget], Any]
 
@@ -39,10 +65,7 @@ def webengine_view(parent: QWidget | None = None) -> Any:
     ``QtWebEngineWidgets`` at all, so the import failing is the normal case for
     such a build and must not fall back to opening a browser.
     """
-    try:
-        from PySide6.QtWebEngineCore import QWebEngineSettings  # type: ignore
-        from PySide6.QtWebEngineWidgets import QWebEngineView  # type: ignore
-    except Exception:  # noqa: BLE001 - WebEngine is optional in this build
+    if QWebEngineView is None or QWebEngineSettings is None:
         return None
     from PySide6.QtGui import QColor
 
@@ -383,4 +406,11 @@ def make_player(parent: QWidget | None = None, *,
     return EmbeddedPlayer(parent, view_factory=view_factory)
 
 
-__all__ = ["EmbeddedPlayer", "ViewFactory", "make_player", "webengine_view"]
+__all__ = [
+    "EmbeddedPlayer",
+    "ViewFactory",
+    "WEBENGINE_AVAILABLE",
+    "make_player",
+    "preload_webengine",
+    "webengine_view",
+]

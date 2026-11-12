@@ -349,3 +349,61 @@ def test_leaving_fullscreen_without_a_page_or_webengine_does_not_raise(app, monk
     pump(app)
     assert page.actions == []
     assert not harness.window.isFullScreen()
+
+
+def test_webengine_is_loaded_when_the_module_imports():
+    """Qt refuses to load WebEngine once a QCoreApplication exists.
+
+    The player is built after the QApplication, so the import has to happen at
+    module import or every build silently falls back to "open in browser".
+    """
+    import importlib
+
+    class Settings:
+        class WebAttribute:
+            FullScreenSupportEnabled = 1
+            PlaybackRequiresUserGesture = 2
+
+        def setAttribute(self, *_args):
+            pass
+
+    class Page:
+        def settings(self):
+            return Settings()
+
+        def setBackgroundColor(self, _colour):
+            pass
+
+    class View(QWidget):
+        def __init__(self, parent=None):
+            super().__init__(parent)
+            self._page = Page()
+            self.url = ""
+
+        def page(self):
+            return self._page
+
+        def setUrl(self, url):
+            self.url = str(url)
+
+    core = types.ModuleType("PySide6.QtWebEngineCore")
+    core.QWebEngineSettings = Settings
+    widgets = types.ModuleType("PySide6.QtWebEngineWidgets")
+    widgets.QWebEngineView = View
+
+    names = ("PySide6.QtWebEngineCore", "PySide6.QtWebEngineWidgets")
+    saved = {name: sys.modules.get(name) for name in names}
+    try:
+        sys.modules["PySide6.QtWebEngineCore"] = core
+        sys.modules["PySide6.QtWebEngineWidgets"] = widgets
+        reloaded = importlib.reload(qt_player)
+        assert reloaded.WEBENGINE_AVAILABLE is True
+        view = reloaded.webengine_view()
+        assert isinstance(view, View), "the preloaded view class must be used"
+    finally:
+        for name, module in saved.items():
+            if module is None:
+                sys.modules.pop(name, None)
+            else:
+                sys.modules[name] = module
+        importlib.reload(qt_player)
