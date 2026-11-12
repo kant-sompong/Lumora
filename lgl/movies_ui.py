@@ -84,603 +84,6 @@ _NAV_ITEMS = (
     ("history", "History"),
 )
 
-#: Applied to this window only, above the screen-wide token provider.  The
-#: movie window is deliberately dark in both app themes, so it cannot simply
-#: inherit light-theme tokens; the literal colours live here, in Python, and
-#: style.css stays token-only.
-_CINEMATIC_CSS = """
-.movie-window.background,
-.movie-window {
-  background-color: #0a0b0d;
-  color: #e8eaed;
-}
-
-headerbar.movie-nav {
-  background-color: #0a0b0d;
-  background-image: none;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
-  box-shadow: none;
-  min-height: 48px;
-  padding: 4px 12px;
-  color: #f5f6f7;
-}
-headerbar.movie-nav:backdrop {
-  background-color: #0a0b0d;
-  color: #f5f6f7;
-}
-headerbar.movie-nav button.titlebutton {
-  color: #e8eaed;
-  background-color: transparent;
-  background-image: none;
-  border: none;
-  box-shadow: none;
-}
-headerbar.movie-nav button.titlebutton:hover {
-  background-color: rgba(255, 255, 255, 0.10);
-}
-.movie-brand { color: #f5f6f7; font-weight: 700; font-size: 0.98em; }
-.movie-brand-mark { color: #f5c518; font-size: 0.85em; }
-
-button.movie-nav-item {
-  background-color: transparent;
-  background-image: none;
-  border: none;
-  border-image: none;
-  box-shadow: none;
-  text-shadow: none;
-  color: #9aa3af;
-  padding: 5px 10px;
-  min-height: 0;
-  min-width: 0;
-  border-radius: 7px;
-  font-weight: 600;
-  font-size: 0.9em;
-}
-button.movie-nav-item:hover {
-  color: #ffffff;
-  background-color: rgba(255, 255, 255, 0.07);
-}
-button.movie-nav-item.active {
-  color: #0a0b0d;
-  background-color: #f5f6f7;
-}
-button.movie-nav-item.active:hover {
-  background-color: #ffffff;
-  color: #0a0b0d;
-}
-button.movie-icon-button {
-  background-color: transparent;
-  background-image: none;
-  border: none;
-  box-shadow: none;
-  color: #c7ccd3;
-  padding: 4px;
-  min-width: 0;
-  min-height: 0;
-  border-radius: 7px;
-}
-button.movie-icon-button:hover {
-  color: #ffffff;
-  background-color: rgba(255, 255, 255, 0.09);
-}
-
-.movie-search {
-  background-color: #15181d;
-  background-image: none;
-  border: 1px solid rgba(255, 255, 255, 0.09);
-  border-radius: 999px;
-  color: #e8eaed;
-  padding: 1px 10px;
-  min-height: 30px;
-  box-shadow: none;
-}
-.movie-search entry {
-  background-color: transparent;
-  background-image: none;
-  border: none;
-  box-shadow: none;
-  color: #e8eaed;
-}
-.movie-search entry placeholder { color: #6b7280; }
-.movie-search image { color: #6b7280; }
-
-.movie-scroll,
-.movie-scroll viewport,
-.movie-window scrolledwindow {
-  background-color: transparent;
-}
-.movie-window scrollbar {
-  background-color: transparent;
-  border: none;
-}
-.movie-window scrollbar slider {
-  background-color: rgba(255, 255, 255, 0.16);
-  border: none;
-  border-radius: 8px;
-  min-width: 6px;
-  min-height: 6px;
-}
-.movie-window scrollbar slider:hover {
-  background-color: rgba(255, 255, 255, 0.28);
-}
-
-.movie-hero {
-  background-color: #111419;
-  background-image: linear-gradient(120deg, #171b22, #0b0d10 55%, #16130f);
-}
-.movie-hero-scrim {
-  background-image: linear-gradient(
-    to bottom,
-    rgba(10, 11, 13, 0.00) 0%,
-    rgba(10, 11, 13, 0.22) 38%,
-    rgba(10, 11, 13, 0.86) 76%,
-    #0a0b0d 100%
-  );
-}
-.movie-hero-badge {
-  background-color: rgba(255, 255, 255, 0.13);
-  color: #ffffff;
-  border-radius: 4px;
-  padding: 2px 8px;
-  font-size: 0.68em;
-  font-weight: 800;
-}
-.movie-hero-title {
-  color: #ffffff;
-  font-size: 2.5em;
-  font-weight: 800;
-}
-.movie-page-title {
-  color: #ffffff;
-  font-size: 1.65em;
-  font-weight: 800;
-}
-
-.movie-rating-star {
-  color: #f5c518;
-  font-weight: 700;
-}
-.movie-meta {
-  color: #a8b0ba;
-  font-size: 0.9em;
-}
-.movie-overview {
-  color: #c3c9d1;
-  font-size: 0.98em;
-}
-
-button.movie-btn-primary {
-  background-color: #f5f6f7;
-  background-image: none;
-  border: none;
-  border-image: none;
-  box-shadow: none;
-  text-shadow: none;
-  color: #0a0b0d;
-  border-radius: 8px;
-  padding: 9px 20px;
-  min-height: 0;
-  font-weight: 700;
-}
-button.movie-btn-primary:hover {
-  background-color: #ffffff;
-  color: #0a0b0d;
-}
-button.movie-btn-primary:active {
-  background-color: #d9dde2;
-}
-button.movie-btn-dark {
-  background-color: rgba(255, 255, 255, 0.10);
-  background-image: none;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-image: none;
-  box-shadow: none;
-  text-shadow: none;
-  color: #f5f6f7;
-  border-radius: 8px;
-  padding: 8px 16px;
-  min-height: 0;
-  font-weight: 600;
-}
-button.movie-btn-dark:hover {
-  background-color: rgba(255, 255, 255, 0.17);
-  color: #ffffff;
-}
-button.movie-btn-dark:checked {
-  background-color: rgba(245, 197, 24, 0.16);
-  border-color: rgba(245, 197, 24, 0.55);
-  color: #f5c518;
-}
-button.movie-btn-small {
-  padding: 4px 12px;
-  border-radius: 6px;
-  font-size: 0.85em;
-}
-
-button.movie-link {
-  background-color: transparent;
-  background-image: none;
-  border: none;
-  box-shadow: none;
-  color: #b9c0ca;
-  padding: 2px 6px;
-  min-height: 0;
-  font-weight: 600;
-  font-size: 0.86em;
-}
-button.movie-link:hover { color: #ffffff; }
-
-.movie-section-title {
-  color: #f5f6f7;
-  font-size: 1.15em;
-  font-weight: 700;
-}
-.movie-section-count {
-  background-color: rgba(255, 255, 255, 0.08);
-  color: #c7ccd3;
-  border-radius: 999px;
-  padding: 1px 8px;
-  font-size: 0.72em;
-  font-weight: 700;
-}
-.movie-section-sub {
-  color: #8b949e;
-  font-size: 0.82em;
-}
-
-button.movie-card {
-  background-color: transparent;
-  background-image: none;
-  border: none;
-  border-image: none;
-  box-shadow: none;
-  text-shadow: none;
-  padding: 0;
-  min-height: 0;
-  min-width: 0;
-  border-radius: 10px;
-}
-button.movie-card:hover .movie-card-title { color: #ffffff; }
-.movie-card-title {
-  color: #e8eaed;
-  font-size: 0.9em;
-  font-weight: 600;
-}
-.movie-card-meta {
-  color: #8b949e;
-  font-size: 0.78em;
-}
-.movie-card-poster {
-  background-color: #15181d;
-  border-radius: 10px;
-}
-.movie-card-rating {
-  background-color: rgba(10, 11, 13, 0.82);
-  color: #f5c518;
-  border-radius: 6px;
-  padding: 1px 6px;
-  font-size: 0.72em;
-  font-weight: 700;
-}
-.movie-poster-frame {
-  background-color: #15181d;
-  border-radius: 10px;
-}
-
-button.movie-arrow {
-  background-color: rgba(10, 11, 13, 0.72);
-  background-image: none;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-image: none;
-  box-shadow: none;
-  color: #ffffff;
-  border-radius: 999px;
-  padding: 0;
-  min-width: 32px;
-  min-height: 32px;
-}
-button.movie-arrow:hover {
-  background-color: rgba(255, 255, 255, 0.16);
-  color: #ffffff;
-}
-button.movie-arrow:disabled {
-  color: rgba(255, 255, 255, 0.25);
-  background-color: rgba(10, 11, 13, 0.45);
-}
-
-.movie-empty {
-  background-color: #111419;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 14px;
-  padding: 28px;
-  color: #8b949e;
-}
-.movie-empty-title {
-  color: #f5f6f7;
-  font-size: 1.05em;
-  font-weight: 700;
-}
-.movie-empty-icon { color: #5f6772; }
-.movie-status {
-  color: #8b949e;
-  font-size: 0.88em;
-}
-
-.movie-episode {
-  color: #e8eaed;
-  font-size: 0.94em;
-}
-.movie-adult-badge {
-  background-color: rgba(200, 38, 38, 0.92);
-  color: #ffffff;
-  border-radius: 5px;
-  padding: 1px 6px;
-  font-size: 0.7em;
-  font-weight: 800;
-}
-.movie-episode-row {
-  background-color: #111419;
-  border-radius: 8px;
-  padding: 6px 8px;
-}
-.movie-episode-row:hover { background-color: #171b21; }
-.movie-episode-list { background-color: transparent; }
-
-.movie-history-row {
-  background-color: #111419;
-  background-image: none;
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  border-image: none;
-  border-radius: 10px;
-  box-shadow: none;
-  padding: 8px;
-}
-.movie-history-row:hover {
-  background-color: #171b21;
-  border-color: rgba(255, 255, 255, 0.12);
-}
-.movie-history-title {
-  color: #f5f6f7;
-  font-weight: 600;
-  font-size: 0.95em;
-}
-.movie-detail-body { background-color: #0a0b0d; }
-.movie-player-frame {
-  background-color: #000000;
-  border-radius: 10px;
-}
-.movie-player-frame webkitwebview { background-color: #000000; }
-
-.movie-window separator {
-  background-color: rgba(255, 255, 255, 0.07);
-}
-
-/* -- media home feed ---------------------------------------------------- */
-/* lgl.gtk_feed names these; the colours stay here, with the window. */
-
-.movie-window .feed-row,
-.movie-window .feed-columns,
-.movie-window .feed-schedule {
-  background-color: transparent;
-}
-
-.movie-window .feed-title {
-  color: #f5f6f7;
-  font-size: 0.96em;
-  font-weight: 700;
-  letter-spacing: 0.2px;
-}
-.movie-window .feed-count {
-  background-color: rgba(255, 255, 255, 0.08);
-  color: #c7ccd3;
-  border-radius: 999px;
-  padding: 1px 8px;
-  font-size: 0.72em;
-  font-weight: 700;
-}
-.movie-window .feed-note,
-.movie-window .feed-placeholder,
-.movie-window .feed-empty {
-  color: #8b949e;
-  font-size: 0.82em;
-}
-.movie-window .feed-error {
-  color: #e0a3a3;
-  font-size: 0.82em;
-}
-
-.movie-window .feed-strip {
-  background-color: transparent;
-  padding: 2px 0;
-}
-.movie-window .feed-scroll,
-.movie-window .feed-scroll viewport {
-  background-color: transparent;
-  border: none;
-}
-
-button.feed-arrow {
-  background-color: rgba(10, 11, 13, 0.72);
-  background-image: none;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-image: none;
-  box-shadow: none;
-  color: #ffffff;
-  border-radius: 999px;
-  padding: 0;
-  min-width: 28px;
-  min-height: 28px;
-}
-button.feed-arrow:hover {
-  background-color: rgba(255, 255, 255, 0.16);
-  color: #ffffff;
-}
-
-button.feed-card {
-  background-color: transparent;
-  background-image: none;
-  border: 1px solid transparent;
-  border-image: none;
-  box-shadow: none;
-  border-radius: 8px;
-  padding: 4px;
-  min-width: 0;
-  min-height: 0;
-}
-button.feed-card:hover {
-  background-color: rgba(255, 255, 255, 0.05);
-  border-color: rgba(255, 255, 255, 0.10);
-}
-.movie-window .feed-poster {
-  background-color: #15181d;
-  border-radius: 6px;
-}
-.movie-window .feed-card-title {
-  color: #f5f6f7;
-  font-size: 0.88em;
-  font-weight: 600;
-}
-.movie-window .feed-card-meta {
-  color: #8b949e;
-  font-size: 0.78em;
-}
-
-.movie-window .feed-column-title {
-  color: #f5f6f7;
-  font-size: 0.74em;
-  font-weight: 700;
-  letter-spacing: 0.9px;
-}
-.movie-window .feed-column-error {
-  color: #e0a3a3;
-  font-size: 0.78em;
-}
-button.feed-column-row {
-  background-color: transparent;
-  background-image: none;
-  border: 1px solid transparent;
-  border-image: none;
-  box-shadow: none;
-  border-radius: 7px;
-  padding: 3px 5px;
-  min-height: 0;
-}
-button.feed-column-row:hover {
-  background-color: rgba(255, 255, 255, 0.06);
-  border-color: rgba(255, 255, 255, 0.08);
-}
-.movie-window .feed-column-row .poster-frame {
-  background-color: #15181d;
-  border-radius: 4px;
-}
-.movie-window .feed-column-row-title {
-  color: #e8eaed;
-  font-size: 0.88em;
-  font-weight: 600;
-}
-.movie-window .feed-column-row-meta {
-  color: #8b949e;
-  font-size: 0.78em;
-}
-button.feed-column-more {
-  background-color: transparent;
-  background-image: none;
-  border: none;
-  box-shadow: none;
-  color: #b9c0ca;
-  padding: 2px 0;
-  min-height: 0;
-  font-weight: 600;
-  font-size: 0.84em;
-}
-button.feed-column-more:hover { color: #ffffff; }
-
-.movie-window .feed-now {
-  color: #8b949e;
-  font-size: 0.8em;
-}
-.movie-window .feed-days {
-  background-color: transparent;
-}
-button.feed-day {
-  background-color: rgba(255, 255, 255, 0.04);
-  background-image: none;
-  border: 1px solid rgba(255, 255, 255, 0.10);
-  border-image: none;
-  box-shadow: none;
-  color: #c7ccd3;
-  border-radius: 8px;
-  padding: 5px 8px;
-  min-height: 0;
-  font-size: 0.84em;
-}
-button.feed-day:hover { background-color: rgba(255, 255, 255, 0.09); }
-button.feed-day:checked,
-button.feed-day.chip-on {
-  background-color: rgba(255, 255, 255, 0.16);
-  border-color: rgba(255, 255, 255, 0.22);
-  color: #ffffff;
-}
-button.feed-day.feed-today { color: #ffffff; font-weight: 700; }
-
-button.feed-schedule-row {
-  background-color: transparent;
-  background-image: none;
-  border: 1px solid transparent;
-  border-image: none;
-  box-shadow: none;
-  border-radius: 7px;
-  padding: 4px 6px;
-  min-height: 0;
-}
-button.feed-schedule-row:hover {
-  background-color: rgba(255, 255, 255, 0.06);
-  border-color: rgba(255, 255, 255, 0.08);
-}
-.movie-window .feed-schedule-time {
-  color: #8b949e;
-  font-size: 0.8em;
-}
-.movie-window .feed-schedule-title {
-  color: #e8eaed;
-  font-size: 0.9em;
-}
-.movie-window .feed-schedule-episode,
-.movie-window .feed-schedule-meta {
-  color: #8b949e;
-  font-size: 0.78em;
-}
-"""
-
-_CSS_PROVIDER = None
-_CSS_SCREEN_INSTALLED = False
-
-
-def _cinematic_provider():
-    """One parsed provider shared by every movie window.
-
-    Widget style contexts do not hand providers down to their children, so the
-    provider is installed on the screen.  Every selector in it is movie-scoped,
-    which keeps the rest of the app on its own tokens.
-    """
-    global _CSS_PROVIDER, _CSS_SCREEN_INSTALLED
-    if _CSS_PROVIDER is None:
-        provider = Gtk.CssProvider()
-        try:
-            provider.load_from_data(_CINEMATIC_CSS.encode("utf-8"))
-        except GLib.Error:
-            return None
-        _CSS_PROVIDER = provider
-    if not _CSS_SCREEN_INSTALLED:
-        screen = Gdk.Screen.get_default()
-        if screen is not None:
-            Gtk.StyleContext.add_provider_for_screen(
-                screen, _CSS_PROVIDER, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION + 1
-            )
-            _CSS_SCREEN_INSTALLED = True
-    return _CSS_PROVIDER
-
-
 def _webkit():
     """WebKit2 when this build has it; ``None`` means "open in a browser"."""
     for version in ("4.1", "4.0"):
@@ -1662,11 +1065,6 @@ class MoviesWindow(Gtk.Box):
 
         self._stack.connect("notify::visible-child-name", self._on_page_changed)
 
-        provider = _cinematic_provider()
-        if provider is not None:
-            priority = Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION + 1
-            self.get_style_context().add_provider(provider, priority)
-
         self._stack.set_visible_child_name("home")
         self._set_active_nav("home")
         self._update_back()
@@ -1688,12 +1086,6 @@ class MoviesWindow(Gtk.Box):
         header.set_show_close_button(False)
         header.get_style_context().add_class("movie-nav")
         header.set_title("Movies & TV")
-        provider = _cinematic_provider()
-        if provider is not None:
-            header.get_style_context().add_provider(
-                provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION + 1
-            )
-
         self._back = Gtk.Button.new_from_icon_name(
             "go-previous-symbolic", Gtk.IconSize.BUTTON
         )
@@ -2190,28 +1582,32 @@ class MoviesWindow(Gtk.Box):
             box.pack_start(button, False, False, 0)
         return box
 
-    def _fill_meta(self, box: Gtk.Box, bits, rating=None) -> None:
+    def _fill_meta(self, box: Gtk.Box, bits, rating=None, *,
+                   css: str = "movie-meta",
+                   star_css: str = "movie-rating-star") -> None:
+        """One meta line.  ``css``/``star_css`` name the classes, so a hero
+        label can use the light-on-artwork set instead of the page tokens."""
         for child in box.get_children():
             box.remove(child)
         written = False
 
-        def add(text: str, css: str) -> None:
+        def add(text: str, klass: str) -> None:
             nonlocal written
             if written:
                 dot = Gtk.Label(label="·")
-                dot.get_style_context().add_class("movie-meta")
+                dot.get_style_context().add_class(css)
                 box.pack_start(dot, False, False, 0)
             label = Gtk.Label(label=text)
-            label.get_style_context().add_class(css)
+            label.get_style_context().add_class(klass)
             box.pack_start(label, False, False, 0)
             written = True
 
         for text in bits:
             if text:
-                add(str(text), "movie-meta")
+                add(str(text), css)
         if rating is not None:
-            add("★", "movie-rating-star")
-            add(f"{rating:g}", "movie-meta")
+            add("★", star_css)
+            add(f"{rating:g}", css)
         box.show_all()
 
     def _copy_link(self, item, feedback: Gtk.Label) -> None:
@@ -2556,9 +1952,9 @@ class MoviesWindow(Gtk.Box):
             rating_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
             if item.rating is not None:
                 star = Gtk.Label(label="★")
-                star.get_style_context().add_class("movie-rating-star")
+                star.get_style_context().add_class("movie-hero-rating")
                 value = Gtk.Label(label=f"{item.rating:g}")
-                value.get_style_context().add_class("movie-meta")
+                value.get_style_context().add_class("movie-hero-meta")
                 rating_row.pack_start(star, False, False, 0)
                 rating_row.pack_start(value, False, False, 0)
             content.pack_start(rating_row, False, False, 0)
@@ -2577,7 +1973,7 @@ class MoviesWindow(Gtk.Box):
                 ),
                 xalign=0,
             )
-            meta.get_style_context().add_class("movie-meta")
+            meta.get_style_context().add_class("movie-hero-sub")
             content.pack_start(meta, False, False, 0)
 
             overview = Gtk.Label(label=item.overview or "No synopsis yet.")
@@ -2586,7 +1982,7 @@ class MoviesWindow(Gtk.Box):
             overview.set_lines(2)
             overview.set_ellipsize(Pango.EllipsizeMode.END)
             overview.set_max_width_chars(64)
-            overview.get_style_context().add_class("movie-overview")
+            overview.get_style_context().add_class("movie-hero-overview")
             content.pack_start(overview, False, False, 0)
         else:
             title = Gtk.Label(label="Movies & TV", xalign=0)
@@ -2596,7 +1992,7 @@ class MoviesWindow(Gtk.Box):
             overview.set_xalign(0)
             overview.set_line_wrap(True)
             overview.set_max_width_chars(64)
-            overview.get_style_context().add_class("movie-overview")
+            overview.get_style_context().add_class("movie-hero-overview")
             content.pack_start(overview, False, False, 0)
 
         actions = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
@@ -3413,7 +2809,13 @@ class MoviesWindow(Gtk.Box):
         bits = [getattr(item, "year", "")]
         if getattr(item, "episodes", 0):
             bits.append(f"{item.episodes} episodes")
-        self._fill_meta(meta, [bit for bit in bits if bit], getattr(item, "rating", None))
+        self._fill_meta(
+            meta,
+            [bit for bit in bits if bit],
+            getattr(item, "rating", None),
+            css="movie-hero-meta",
+            star_css="movie-hero-rating",
+        )
         content.pack_start(meta, False, False, 0)
 
         actions = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
@@ -3432,7 +2834,7 @@ class MoviesWindow(Gtk.Box):
         )
 
         episode_label = Gtk.Label(label="Episode")
-        episode_label.get_style_context().add_class("movie-meta")
+        episode_label.get_style_context().add_class("movie-hero-meta")
         actions.pack_start(episode_label, False, False, 0)
         episode_count = self._anime_episode_count(item)
         episode_spin = Gtk.SpinButton.new_with_range(
@@ -4398,6 +3800,8 @@ class MoviesWindow(Gtk.Box):
             meta,
             [bit for bit in (item.year, _kind_noun(item.kind)) if bit],
             item.rating,
+            css="movie-hero-meta",
+            star_css="movie-hero-rating",
         )
         content.pack_start(meta, False, False, 0)
 
@@ -4448,7 +3852,7 @@ class MoviesWindow(Gtk.Box):
         # no trailer keeps the page quiet.
         self._trailer_note = Gtk.Label(label="")
         self._trailer_note.set_xalign(0)
-        self._trailer_note.get_style_context().add_class("movie-meta")
+        self._trailer_note.get_style_context().add_class("movie-hero-meta")
         self._trailer_note.set_no_show_all(True)
         content.pack_start(self._trailer_note, False, False, 0)
         overlay.add_overlay(content)
