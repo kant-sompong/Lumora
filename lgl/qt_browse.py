@@ -74,6 +74,7 @@ from .qt_widgets import (
 )
 from .qt_downloads import FilePickDialog
 from .settings import ARCHIVE_SORT_KEYS
+from .qt_catalog_links import CatalogGamePane
 from .util import human_size
 
 #: How many results one page of the grid shows before "load more" kicks in.
@@ -642,6 +643,7 @@ class BrowseDetail(QFrame):
     open_external = Signal(str)
     files_requested = Signal(str, object)
     catalog_requested = Signal(str)
+    catalog_changed = Signal(str)
     external_requested = Signal(str, str)
     mirror_requested = Signal(str)
 
@@ -691,15 +693,29 @@ class BrowseDetail(QFrame):
         column.addWidget(self.sub)
         column.addSpacing(10)
 
+        #: The catalogue game page (facts, links, magnets).  It is built once
+        #: and re-pointed at whichever imported record is selected, so the two
+        #: frontends show one page rather than two that can drift apart.
+        self.catalog_host = QWidget()
+        self._catalog_layout = QVBoxLayout(self.catalog_host)
+        self._catalog_layout.setContentsMargins(0, 0, 0, 0)
+        self._catalog_layout.setSpacing(0)
+        self.catalog_pane: CatalogGamePane | None = None
+        self._catalog_deps: dict[str, object] = {}
+        column.addWidget(self.catalog_host)
+        self.catalog_host.hide()
+
         self._rows: dict[str, QLabel] = {}
+        self._row_widgets: dict[str, QWidget] = {}
         for key, title in (
             ("size", "SIZE"), ("year", "RELEASED"), ("downloads", "DOWNLOADS"),
             ("license", "LICENCE"), ("files", "FILES"),
         ):
-            column.addLayout(self._row(key, title))
+            column.addWidget(self._row(key, title))
 
         column.addSpacing(12)
-        column.addWidget(label("ABOUT", "kvKey"))
+        self.about_head = label("ABOUT", "kvKey")
+        column.addWidget(self.about_head)
         self.about = label("", "detailNote", wrap=True)
         column.addWidget(self.about)
         column.addSpacing(12)
@@ -778,8 +794,10 @@ class BrowseDetail(QFrame):
         self.open_btn.clicked.connect(self._open_site)
         column.addWidget(self.open_btn)
 
-    def _row(self, key: str, title: str) -> QHBoxLayout:
-        row = QHBoxLayout()
+    def _row(self, key: str, title: str) -> QWidget:
+        holder = QWidget()
+        row = QHBoxLayout(holder)
+        row.setContentsMargins(0, 0, 0, 0)
         row.setSpacing(10)
         head = label(title, "kvKey")
         head.setFixedWidth(92)
@@ -787,7 +805,8 @@ class BrowseDetail(QFrame):
         value = label("—", "kvVal", wrap=True)
         row.addWidget(value, 1)
         self._rows[key] = value
-        return row
+        self._row_widgets[key] = holder
+        return holder
 
     def _put(self, key: str, text: str, kind: str = "kvVal") -> None:
         value = self._rows[key]
@@ -829,6 +848,7 @@ class BrowseDetail(QFrame):
         self.download.setEnabled(True)
         if pix is not None:
             self.cover.set_pixmap(pix)
+        self._apply_catalog_mode()
 
     def show_item(self, item: ArchiveItem) -> None:
         self._item = item
@@ -848,6 +868,64 @@ class BrowseDetail(QFrame):
             )
         else:
             self.files_note.setText("No downloadable game files were listed.")
+
+    # catalogue page -------------------------------------------------------
+    def _apply_catalog_mode(self) -> None:
+        """An imported game shows the catalogue page, not the archive rows."""
+        on = bool(self._is_catalog)
+        for widget in self._row_widgets.values():
+            widget.setVisible(not on)
+        for widget in (self.about_head, self.files_head, self.files_note,
+                       self.download, self.copy_btn, self.open_btn):
+            widget.setVisible(not on)
+        self.catalog_host.setVisible(on)
+        if on:
+            for widget in (self.files_btn, self.mirror_btn, self.jd_btn, self.ab_btn):
+                widget.hide()
+            self.shots_head.hide()
+            self.shots_host.hide()
+        else:
+            self.shots_head.setVisible(bool(self._shots))
+            self.shots_host.setVisible(bool(self._shots))
+
+    def show_catalog(self, record: object, source_name: str = "",
+                     deps: dict | None = None) -> None:
+        """Show one imported record: facts, links and magnets, like Linux."""
+        self._is_catalog = True
+        self._catalog_deps = dict(deps or {})
+        self._identifier = f"catalog:{getattr(record, 'key', '')}"
+        self._site_url = str(getattr(record, "source_url", "") or "")
+        self._item = None
+        title = str(getattr(record, "title", "") or getattr(record, "game_id", ""))
+        self.title.setText(title)
+        bits = [
+            value for value in (
+                str(getattr(record, "year", "") or ""),
+                str(getattr(record, "developer", "") or ""),
+                source_name,
+            ) if value
+        ]
+        self.sub.setText(
+            " · ".join(bits) or "No further metadata was reported by the source."
+        )
+        self.about.setText("")
+        self._apply_catalog_mode()
+        if self.catalog_pane is None:
+            self.catalog_pane = CatalogGamePane(parent=self.catalog_host,
+                                                 **self._catalog_deps)
+            self.catalog_pane.title.hide()
+            self.catalog_pane.subtitle.hide()
+            self.catalog_pane.changed.connect(
+                lambda: self.catalog_changed.emit(self._identifier)
+            )
+            self._catalog_layout.addWidget(self.catalog_pane)
+        self.catalog_pane.show_record(record, source_name)
+        self.catalog_host.show()
+
+    def refresh_catalog(self) -> None:
+        """Re-read the selected record's links after a check or an import."""
+        if self.catalog_pane is not None:
+            self.catalog_pane.refresh()
 
     # actions ---------------------------------------------------------------
     def _download_clicked(self) -> None:
@@ -924,6 +1002,8 @@ class BrowsePage(QWidget):
     selection_changed = Signal(bool)
     count_changed = Signal(int)
     catalog_download_requested = Signal(str)
+    #: A catalogue link changed state (checked, queued) and Browse should follow.
+    catalog_changed = Signal(str)
     #: A poster in one of the discovery rows was clicked.
     item_requested = Signal(object)
 
@@ -1074,6 +1154,7 @@ class BrowsePage(QWidget):
         self.detail.open_external.connect(self._open_url)
         self.detail.files_requested.connect(self._download_files)
         self.detail.catalog_requested.connect(self.catalog_download_requested)
+        self.detail.catalog_changed.connect(self.catalog_changed)
         self.detail.external_requested.connect(self._send_external)
         self.detail.mirror_requested.connect(self._check_mirrors)
         root.addWidget(self.detail)
@@ -1121,6 +1202,8 @@ class BrowsePage(QWidget):
         """
         self._catalog_entries = self._catalog_summaries()
         self._merge_catalog()
+        if self._selected.startswith("catalog:") and self.game(self._selected) is not None:
+            self.select(self._selected)
         count = len(self._catalog_entries)
         if announce and count:
             self._update_footer()
@@ -1532,13 +1615,46 @@ class BrowsePage(QWidget):
         self.selection_changed.emit(True)
         self._load_item(game)
 
+    def _catalog_deps(self) -> dict:
+        """What the catalogue page needs from the window that owns it."""
+        window = self.window()
+        toast = getattr(window, "toast", None)
+
+        def message(text: str, error: bool = False) -> None:
+            if toast is not None and hasattr(toast, "show_message"):
+                toast.show_message(text, error=error)
+
+        def queued(identifier: str, title: str) -> None:
+            handler = getattr(window, "_catalog_queued", None)
+            if callable(handler):
+                handler(identifier, title)
+
+        return {
+            "store": self.catalog,
+            "manager": getattr(window, "manager", None),
+            "torrents": getattr(window, "torrents", None),
+            "download_dir": getattr(window, "download_dir", None),
+            "on_message": message,
+            "on_queued": queued,
+        }
+
     def _load_item(self, game: GameSummary) -> None:
         if game.is_catalog:
-            self.detail.download.setEnabled(True)
-            self.detail.about.setText(
-                "Imported catalogue record. Choose “Download from catalogue…” to "
-                "queue its verified links, or the ☰ menu → “Download from "
-                "catalogue…” for every record."
+            record = None
+            key = str(getattr(game, "catalog_key", "") or "")
+            if self.catalog is not None and key:
+                try:
+                    record = self.catalog.get_game(key)
+                except Exception:  # noqa: BLE001 - a store issue is not a crash
+                    record = None
+            if record is None:
+                self.detail.about.setText(
+                    "This imported record is no longer in the catalogue."
+                )
+                return
+            self.detail.show_catalog(
+                record, str(getattr(game, "catalog_source", "") or ""),
+                self._catalog_deps(),
             )
             return
         if self.client is None:

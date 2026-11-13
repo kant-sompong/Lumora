@@ -154,6 +154,7 @@ class Window(QMainWindow):
         self.browse.download_requested.connect(self._download_requested)
         self.browse.files_download_requested.connect(self._files_download_requested)
         self.browse.catalog_download_requested.connect(self._catalog_download_requested)
+        self.browse.catalog_changed.connect(self._catalog_link_changed)
         self.browse.count_changed.connect(self._browse_count_changed)
         self.browse.reload_catalog()
         self.stack.addWidget(self.browse)
@@ -603,13 +604,30 @@ class Window(QMainWindow):
         ).exec()
 
     def show_kryoto_catalog(self) -> None:
-        from .qt_catalog import KRYOTO_NOTE, KRYOTO_URL, CatalogDialog
+        """The Kryoto catalogue: browse, refresh, resume and check links."""
+        from .qt_catalog import KRYOTO_NOTE, KRYOTO_URL, CatalogDialog, KryotoCatalogDialog
 
-        CatalogDialog(
-            self, title="Kryoto Catalog", url=KRYOTO_URL, note=KRYOTO_NOTE,
-            action="Import all", catalog=self.catalog,
-            on_imported=self._catalog_imported, enrich=True,
+        browse = getattr(self, "browse", None)
+        if browse is None:
+            # A caller with only a catalogue (an embedding, or a test double)
+            # still gets an import that asks for links rather than a crash.
+            CatalogDialog(
+                self, title="Kryoto Catalog", url=KRYOTO_URL, note=KRYOTO_NOTE,
+                action="Import all", catalog=getattr(self, "catalog", None), enrich=True,
+            ).exec()
+            return
+        KryotoCatalogDialog(
+            self, catalog=self.catalog, manager=getattr(self, "manager", None),
+            torrents=getattr(self, "torrents", None),
+            download_dir=getattr(self, "download_dir", None),
+            on_imported=lambda _count: self._catalog_imported(self.catalog.count_games()),
+            on_queued=self._catalog_queued,
         ).exec()
+        browse.reload_catalog()
+
+    def _catalog_link_changed(self, identifier: str) -> None:
+        """A catalogue link was checked or queued: keep Browse in step."""
+        self.browse.reload_catalog()
 
     def _catalog_imported(self, count: int) -> None:
         """Show what an import added, the way the GTK build does after Kryoto."""
@@ -892,9 +910,13 @@ class Window(QMainWindow):
             self.toast.show_message("Downloads are not available.", error=True)
             return
         if game.is_catalog:
+            # A catalogue record downloads per link, on its own game page: the
+            # button never opens the all-records dialog, and nothing is queued
+            # from here.
+            self.browse.select(identifier)
             self.toast.show_message(
-                "Downloads from imported catalogs are not available in this build yet.",
-                error=True,
+                "Choose a source link on the game page to download this game.",
+                ms=4000,
             )
             return
         client = self.client
