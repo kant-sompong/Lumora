@@ -24,7 +24,6 @@ from PySide6.QtGui import (
     QPixmap,
 )
 from PySide6.QtWidgets import (
-    QComboBox,
     QGraphicsDropShadowEffect,
     QDialog,
     QFrame,
@@ -55,6 +54,7 @@ from .qt_icons import icon
 from .qt_feed import PosterRow, ScheduleStrip, ThreeColumnList
 from .qt_library import ArtworkBackdrop
 from .qt_player import EmbeddedPlayer, make_player
+from .qt_season_picker import SeasonPicker
 from .qt_widgets import (
     CoverArt,
     ElideLabel,
@@ -1306,6 +1306,12 @@ class MediaPage(QWidget):
         self._history_grid = grid
 
     # detail ----------------------------------------------------------------
+    def _theme_name(self) -> str:
+        """The resolved theme name, for widgets that paint their own colours."""
+        from .qt_widgets import THEME_STATE
+
+        return str(THEME_STATE.get("resolved") or "dark")
+
     def _build_detail(self, column: QVBoxLayout) -> None:
         top = QHBoxLayout()
         self.detail_back = QPushButton("‹  Back")
@@ -1348,11 +1354,11 @@ class MediaPage(QWidget):
         picker.setSpacing(8)
         self.season_label = label("Season", "detailNote")
         picker.addWidget(self.season_label)
-        self.season_combo = QComboBox()
-        self.season_combo.setObjectName("seasonPicker")
-        self.season_combo.setMinimumWidth(220)
-        self.season_combo.setCursor(Qt.PointingHandCursor)
-        self.season_combo.setVisible(False)
+        # The header says what is selected; the panel behind it shows the
+        # artwork and the episode counts for every season.
+        self.season_combo = SeasonPicker(
+            self._theme_name(), self, image_loader=self._load_image,
+        )
         self.season_combo.currentIndexChanged.connect(self._season_changed)
         picker.addWidget(self.season_combo)
         picker.addStretch(1)
@@ -1957,26 +1963,18 @@ class MediaPage(QWidget):
             ]
             self._detail_seasons = tuple(seasons)
             self.episode_head.count.setText(f"{len(seasons)} seasons")
-            self.season_combo.blockSignals(True)
-            self.season_combo.clear()
-            for season in seasons:
-                number = int(getattr(season, "number", 0) or 0)
-                self.season_combo.addItem(
-                    f"Season {number} · {getattr(season, 'episode_count', 0)} episodes",
-                    number,
-                )
+            self.season_combo.set_seasons(seasons, card.poster_url)
             self.season_combo.setVisible(bool(seasons))
             if not seasons:
-                self.season_combo.blockSignals(False)
                 self.episode_column.addWidget(label("No episodes listed.", "mediaNote"))
                 return
-            self.season_combo.setCurrentIndex(0)
-            self.season_combo.blockSignals(False)
-            self._show_season(card, int(self.season_combo.itemData(0)))
+            number = int(self.season_combo.currentData() or seasons[0].number)
+            self.season_combo.set_current_number(number)
+            self._show_season(card, number)
 
         run_async(work, done, lambda exc: self._note_error(exc))
 
-    def _season_changed(self, _index: int) -> None:
+    def _season_changed(self, _number: int = 0) -> None:
         card = getattr(self, "_detail_card", None)
         number = self.season_combo.currentData()
         if card is None or number is None:
