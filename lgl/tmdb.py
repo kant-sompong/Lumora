@@ -277,6 +277,30 @@ class Season:
     episode_count: int = 0
     air_date: str = ""
     episodes: tuple[Episode, ...] = ()
+    #: TMDB's poster path for this season (``/abc.jpg``), not a URL.
+    poster: str = ""
+
+
+def season_poster_url(
+    season: Season, show_poster: str = "", *, size: str = "w185"
+) -> str:
+    """The artwork for one season: its own poster, else the show's.
+
+    ``show_poster`` accepts either a TMDB path or an already-built https URL, so
+    a caller holding ``MediaDetails.poster_url`` does not have to disassemble it.
+    With neither, the empty string tells the caller to draw its placeholder.
+    """
+    own = str(getattr(season, "poster", "") or "").strip()
+    if own:
+        return own if own.startswith("https://image.tmdb.org/") else poster_url(own, size=size)
+    show = str(show_poster or "").strip()
+    if not show:
+        return ""
+    if show.startswith("https://image.tmdb.org/"):
+        return show
+    if show.startswith(("https://", "http://")):
+        return show
+    return poster_url(show, size=size)
 
 
 def following_episode(
@@ -343,6 +367,8 @@ class MediaDetails:
     release_date: str = ""
     seasons: tuple[Season, ...] = ()
     tagline: str = ""
+    #: TMDB's ``external_ids.imdb_id``, when the details call asked for it.
+    imdb_id: str = ""
 
     @property
     def key(self) -> str:
@@ -354,6 +380,13 @@ class MediaDetails:
             return ""
         hours, minutes = divmod(int(self.runtime), 60)
         return f"{hours} h {minutes} min" if hours else f"{minutes} min"
+
+
+def _imdb_id(raw: Any) -> str:
+    """``tt0133093`` from ``external_ids``; anything else is no id at all."""
+    value = raw.get("imdb_id") if isinstance(raw, Mapping) else None
+    text = str(value or "").strip()
+    return text if re.fullmatch(r"tt\d{5,12}", text) else ""
 
 
 def _year(value: Any) -> str:
@@ -521,7 +554,9 @@ class TmdbClient:
 
     def details(self, kind: str, tmdb_id: int) -> MediaDetails:
         chosen = "tv" if str(kind).lower() == "tv" else "movie"
-        data = self._get(f"/{chosen}/{int(tmdb_id)}")
+        data = self._get(
+            f"/{chosen}/{int(tmdb_id)}", {"append_to_response": "external_ids"}
+        )
         return self._details(data, chosen, int(tmdb_id))
 
     def images(self, kind: str, tmdb_id: int) -> MediaImages:
@@ -627,6 +662,7 @@ class TmdbClient:
                             name=" ".join(str(entry.get("name") or "").split()),
                             episode_count=int(entry.get("episode_count") or 0),
                             air_date=str(entry.get("air_date") or ""),
+                            poster=str(entry.get("poster_path") or ""),
                         )
                     )
         return MediaDetails(
@@ -643,6 +679,7 @@ class TmdbClient:
             release_date=str(data.get("release_date") or data.get("first_air_date") or ""),
             seasons=tuple(seasons),
             tagline=" ".join(str(data.get("tagline") or "").split())[:300],
+            imdb_id=_imdb_id(data.get("external_ids")),
         )
 
     @staticmethod
@@ -681,6 +718,7 @@ class TmdbClient:
             episode_count=len(episodes) or int(data.get("episode_count") or 0),
             air_date=str(data.get("air_date") or ""),
             episodes=tuple(episodes),
+            poster=str(data.get("poster_path") or ""),
         )
 
 
@@ -757,6 +795,7 @@ __all__ = [
     "normalise_title",
     "poster_url",
     "project_dotenv",
+    "season_poster_url",
     "read_dotenv",
     "tmdb_backdrop_for_title",
 ]
