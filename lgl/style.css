@@ -1954,6 +1954,34 @@ button.movie-arrow:disabled {
 
 .movie-episode-row:hover { background-color: @hover; }
 
+/* The hero logo stands in for the text title once TMDB has one. */
+.movie-hero-logo {
+  margin-top: 2px;
+  margin-bottom: 4px;
+}
+
+/* Streaming-style rows: a large number, a 16:9 still with its rating pill,
+ * then the facts and a short synopsis. Palette tokens only. */
+.movie-episode-number {
+  color: @fg;
+  font-size: 1.45em;
+  font-weight: 800;
+  min-width: 34px;
+}
+
+.movie-episode-meta { color: @muted; font-size: 0.86em; }
+
+.movie-episode-overview { color: @muted; font-size: 0.88em; }
+
+.movie-episode-rating {
+  background-color: alpha(@bg, 0.82);
+  color: @warning;
+  border-radius: 6px;
+  padding: 1px 7px;
+  font-size: 0.76em;
+  font-weight: 700;
+}
+
 .movie-episode-list { background-color: transparent; }
 
 .movie-history-row {

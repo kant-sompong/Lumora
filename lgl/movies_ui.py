@@ -514,6 +514,183 @@ class Poster(Gtk.DrawingArea):
         return False
 
 
+#: Required by TMDB wherever its data is shown; both frontends display it.
+TMDB_ATTRIBUTION = (
+    "This product uses the TMDB API but is not endorsed or certified by TMDB."
+)
+LOGO_SIZE = (500, 200)
+#: The logo may take this much of the hero's width and this many pixels of height.
+HERO_LOGO_HEIGHT = 110
+HERO_LOGO_SHARE = 0.45
+
+
+def _episode_meta_text(runtime, air_date) -> str:
+    """``66 min · Sep 1, 2022`` with whichever half exists."""
+    bits: list[str] = []
+    try:
+        minutes = int(runtime or 0)
+    except (TypeError, ValueError):
+        minutes = 0
+    if minutes > 0:
+        bits.append(f"{minutes} min")
+    text = str(air_date or "").strip()
+    if text:
+        try:
+            from datetime import date
+
+            parsed = date.fromisoformat(text[:10])
+            bits.append(f"{parsed.strftime('%b')} {parsed.day}, {parsed.year}")
+        except ValueError:
+            bits.append(text)
+    return " · ".join(bits)
+
+
+def _paint_soft_poster(cr, pixbuf, width: int, height: int) -> None:
+    """A poster stretched and softened, for a hero with no wide art.
+
+    Painting it into a tiny surface and stretching that back up is the cheap
+    blur: it keeps the colours and the mood without pretending the crop is
+    real artwork.
+    """
+    if pixbuf is None or width < 4 or height < 4:
+        return
+    scale = max(width / max(1, pixbuf.get_width()), height / max(1, pixbuf.get_height()))
+    drawn_w = max(4, int(pixbuf.get_width() * scale))
+    drawn_h = max(4, int(pixbuf.get_height() * scale))
+    small_w = max(2, drawn_w // 18)
+    small_h = max(2, drawn_h // 18)
+    surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, small_w, small_h)
+    context = cairo.Context(surface)
+    Gdk.cairo_set_source_pixbuf(context, pixbuf, 0, 0)
+    context.scale(small_w / drawn_w, small_h / drawn_h)
+    context.paint()
+    cr.save()
+    cr.scale(width / small_w, height / small_h)
+    cr.set_source_surface(surface, 0, 0)
+    cr.get_source().set_filter(cairo.FILTER_BILINEAR)
+    cr.paint()
+    cr.restore()
+    cr.set_source_rgba(0, 0, 0, 0.45)
+    cr.rectangle(0, 0, width, height)
+    cr.fill()
+
+
+def _logo_with_shadow(pixbuf):
+    """The logo with a soft shadow underneath, so it reads on bright art."""
+    pad = 6
+    width = max(1, pixbuf.get_width()) + pad * 2
+    height = max(1, pixbuf.get_height()) + pad * 2
+    surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, width, height)
+    cr = cairo.Context(surface)
+    tiny_w = max(2, width // 10)
+    tiny_h = max(2, height // 10)
+    tiny = cairo.ImageSurface(cairo.FORMAT_ARGB32, tiny_w, tiny_h)
+    tctx = cairo.Context(tiny)
+    Gdk.cairo_set_source_pixbuf(tctx, pixbuf, 0, 0)
+    tctx.scale(tiny_w / pixbuf.get_width(), tiny_h / pixbuf.get_height())
+    tctx.paint()
+    # Black inside the mark's own outline only: a silhouette, not a box.
+    tctx.set_operator(cairo.OPERATOR_IN)
+    tctx.set_source_rgba(0, 0, 0, 0.62)
+    tctx.paint()
+    cr.save()
+    cr.translate(pad - 2, pad + 2)
+    cr.scale(width / tiny_w * 0.9, height / tiny_h * 0.9)
+    cr.set_source_surface(tiny, 0, 0)
+    cr.get_source().set_filter(cairo.FILTER_BILINEAR)
+    cr.paint()
+    cr.restore()
+    Gdk.cairo_set_source_pixbuf(cr, pixbuf, pad, pad)
+    cr.paint()
+    return Gdk.pixbuf_get_from_surface(surface, 0, 0, width, height)
+
+
+def _rounded_pixbuf(pixbuf, width: int, height: int, radius: float):
+    """``pixbuf`` scaled to fill ``width`` x ``height`` with rounded corners."""
+    scaled = pixbuf.scale_simple(width, height, GdkPixbuf.InterpType.BILINEAR)
+    if scaled is None:
+        return pixbuf
+    surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, width, height)
+    cr = cairo.Context(surface)
+    _rounded_path(cr, 0, 0, width, height, radius)
+    cr.clip()
+    Gdk.cairo_set_source_pixbuf(cr, scaled, 0, 0)
+    cr.paint()
+    return Gdk.pixbuf_get_from_surface(surface, 0, 0, width, height)
+
+
+class HeroLogo(Gtk.Image):
+    """A title's TMDB logo, scaled to the hero and hidden until one loads.
+
+    The text title underneath stays the truth: it is shown whenever there is no
+    logo, and the logo keeps the title as its tooltip and accessible name.
+    """
+
+    def __init__(self, hero: Gtk.Widget | None = None) -> None:
+        super().__init__()
+        self._hero = hero
+        self._source = None
+        self._title = None
+        self.set_halign(Gtk.Align.START)
+        self.set_valign(Gtk.Align.END)
+        self.set_no_show_all(True)
+        self.get_style_context().add_class("movie-hero-logo")
+        self.connect("size-allocate", self._on_size)
+
+    def load_source(self, pixbuf, title=None) -> None:
+        """Show ``pixbuf`` and hide the text title it stands for."""
+        self._source = pixbuf
+        self._title = title
+        name = ""
+        if title is not None:
+            try:
+                name = title.get_text()
+            except AttributeError:
+                name = ""
+        self.set_tooltip_text(name)
+        try:
+            self.get_accessible().set_name(name)
+        except AttributeError:  # pragma: no cover - a stub without accessibility
+            pass
+        self._resize()
+        self.show()
+        if title is not None:
+            title.hide()
+
+    def reset(self, title=None) -> None:
+        """Back to the text title: no logo, or one that failed to load."""
+        self._source = None
+        self.clear()
+        self.hide()
+        if title is not None:
+            title.show()
+
+    def _on_size(self, _widget, _allocation) -> None:
+        self._resize()
+
+    def _resize(self) -> None:
+        source = self._source
+        if source is None:
+            return
+        hero = self._hero
+        width = hero.get_allocated_width() if hero is not None else 0
+        max_width = int(width * HERO_LOGO_SHARE) if width else 520
+        max_width = max(180, max_width)
+        scale = min(
+            HERO_LOGO_HEIGHT / max(1, source.get_height()),
+            max_width / max(1, source.get_width()),
+            1.0,
+        )
+        target_w = max(1, int(source.get_width() * scale))
+        target_h = max(1, int(source.get_height() * scale))
+        scaled = source.scale_simple(
+            target_w, target_h, GdkPixbuf.InterpType.BILINEAR
+        )
+        if scaled is None:
+            return
+        self.set_from_pixbuf(_logo_with_shadow(scaled))
+
+
 class Backdrop(Gtk.DrawingArea):
     """Wide artwork, cropped to fill the hero area."""
 
@@ -521,6 +698,7 @@ class Backdrop(Gtk.DrawingArea):
         super().__init__()
         self._radius = radius
         self._pixbuf = None
+        self._fallback = False
         self.set_size_request(-1, height)
         self.set_hexpand(True)
         self.get_style_context().add_class("movie-hero")
@@ -528,6 +706,11 @@ class Backdrop(Gtk.DrawingArea):
 
     def set_pixbuf(self, pixbuf) -> None:
         self._pixbuf = pixbuf
+        self.queue_draw()
+
+    def set_fallback(self, active: bool) -> None:
+        """True when the picture is a poster standing in for wide art."""
+        self._fallback = bool(active)
         self.queue_draw()
 
     def _on_draw(self, widget, cr) -> bool:
@@ -542,7 +725,10 @@ class Backdrop(Gtk.DrawingArea):
             cr.rectangle(0, 0, width, height)
             cr.fill()
             return False
-        _paint_cover(cr, self._pixbuf, width, height, self._radius)
+        if self._fallback:
+            _paint_soft_poster(cr, self._pixbuf, width, height)
+        else:
+            _paint_cover(cr, self._pixbuf, width, height, self._radius)
         return False
 
 
@@ -2035,13 +2221,46 @@ class MoviesWindow(Gtk.Box):
         self._hero_feedback.hide()
 
         if item is not None:
-            url = item.backdrop_url or item.poster_url
-            self._images.load(url, BACKDROP_SIZE, lambda pixbuf: self._apply_hero_image(pixbuf, token))
+            self._load_home_hero_art(item, token)
 
-    def _apply_hero_image(self, pixbuf, token: int) -> bool:
+    def _load_home_hero_art(self, item: MediaItem, token: int) -> None:
+        """Wide art beats the poster on the home hero too."""
+        if item.backdrop_url:
+            self._images.load(
+                item.backdrop_url, BACKDROP_SIZE,
+                lambda pixbuf: self._apply_hero_image(pixbuf, token),
+            )
+        elif item.poster_url:
+            self._images.load(
+                item.poster_url, BACKDROP_SIZE,
+                lambda pixbuf: self._apply_hero_image(pixbuf, token, True),
+            )
+        if item.kind in ("movie", "tv") and item.tmdb_id > 0:
+            def work() -> None:
+                try:
+                    found = self._client.images(item.kind, item.tmdb_id)
+                except Exception:  # noqa: BLE001 - art must never break home
+                    return
+                GLib.idle_add(self._apply_home_hero_images, found, token)
+
+            threading.Thread(target=work, daemon=True, name="lgl-tmdb-hero").start()
+
+    def _apply_home_hero_images(self, found, token: int) -> bool:
+        if token != self._hero_image_token:
+            return False
+        url = str(getattr(found, "backdrop_url", "") or "")
+        if url:
+            self._images.load(
+                url, BACKDROP_SIZE,
+                lambda pixbuf: self._apply_hero_image(pixbuf, token),
+            )
+        return False
+
+    def _apply_hero_image(self, pixbuf, token: int, fallback: bool = False) -> bool:
         if token != self._hero_image_token:
             return False
         try:
+            self._hero_backdrop.set_fallback(fallback)
             self._hero_backdrop.set_pixbuf(pixbuf)
         except Exception:  # noqa: BLE001 - the window may be closing
             pass
@@ -2931,7 +3150,7 @@ class MoviesWindow(Gtk.Box):
         )
         if isinstance(item, anipm.AniTitle):
             self._build_ani_episode_section(body, item)
-        self._load_detail_image(getattr(item, "poster_url", ""), backdrop, self._anime_detail_token)
+        self._load_detail_art(item, backdrop, None, title, kind="anime")
         state["backdrop"] = backdrop
         page.show_all()
         return page
@@ -3768,13 +3987,6 @@ class MoviesWindow(Gtk.Box):
         overlay.set_size_request(-1, 420)
         backdrop = Backdrop(420)
         overlay.add(backdrop)
-        # The row that opened this page already has its art: show it now instead
-        # of leaving the hero blank until the details request answers, and keep
-        # the poster as the fallback for a title with no backdrop.
-        self._load_detail_image(
-            getattr(item, "backdrop_url", "") or getattr(item, "poster_url", ""),
-            backdrop,
-        )
         scrim = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         scrim.set_hexpand(True)
         scrim.set_vexpand(True)
@@ -3792,6 +4004,10 @@ class MoviesWindow(Gtk.Box):
         badge.get_style_context().add_class("movie-hero-badge")
         content.pack_start(badge, False, False, 0)
 
+        # The logo takes the title's place and hides it once one loads.
+        logo = HeroLogo(overlay)
+        content.pack_start(logo, False, False, 0)
+
         title = Gtk.Label(label=item.title, xalign=0)
         title.set_line_wrap(True)
         title.set_lines(2)
@@ -3799,6 +4015,7 @@ class MoviesWindow(Gtk.Box):
         title.set_max_width_chars(40)
         title.get_style_context().add_class("movie-hero-title")
         content.pack_start(title, False, False, 0)
+        self._load_detail_art(item, backdrop, logo, title)
 
         meta = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         self._fill_meta(
@@ -3864,6 +4081,14 @@ class MoviesWindow(Gtk.Box):
 
         page.pack_start(overlay, False, False, 0)
 
+        # TMDB's terms ask for this wherever its data is shown.
+        attribution = Gtk.Label(label=TMDB_ATTRIBUTION, xalign=0)
+        attribution.set_margin_start(46)
+        attribution.set_margin_end(46)
+        attribution.set_margin_top(12)
+        attribution.get_style_context().add_class("movie-meta")
+        page.pack_start(attribution, False, False, 0)
+
         body = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=16)
         body.set_margin_start(46)
         body.set_margin_end(46)
@@ -3918,6 +4143,140 @@ class MoviesWindow(Gtk.Box):
             return False
 
         self._images.load(url, DETAIL_BACKDROP_SIZE, apply)
+
+    # -- detail art ---------------------------------------------------------
+    def _load_detail_art(self, item, backdrop, logo=None, title=None, kind="") -> int:
+        """Wide art first, a poster only as a marked fallback, then the logo.
+
+        The list result's backdrop is shown at once so the page is never bare;
+        ``/images`` is asked for every card, because a list result often
+        carries no backdrop and a textless one is what a hero wants.
+        """
+        token = getattr(self, "_art_token", 0) + 1
+        self._art_token = token
+        chosen = kind or str(getattr(item, "kind", "") or "movie")
+        if logo is not None:
+            logo.reset(title)
+        backdrop.set_fallback(False)
+        url = str(getattr(item, "backdrop_url", "") or "")
+        if url:
+            self._images.load(
+                url, DETAIL_BACKDROP_SIZE,
+                lambda pixbuf: self._apply_art_backdrop(pixbuf, backdrop, token),
+            )
+        else:
+            self._load_poster_fallback(item, backdrop, token)
+        tmdb_id = int(getattr(item, "tmdb_id", 0) or 0)
+        if chosen in ("movie", "tv") and tmdb_id > 0:
+            self._fetch_art_images(chosen, tmdb_id, backdrop, logo, title, token)
+        elif chosen == "anime":
+            self._fetch_anime_art(item, backdrop, logo, title, token)
+        return token
+
+    def _load_poster_fallback(self, item, backdrop, token: int) -> None:
+        """Last resort: the poster, softened, darkened and marked as one."""
+        url = str(getattr(item, "poster_url", "") or "")
+        if not url:
+            backdrop.set_pixbuf(None)
+            backdrop.set_fallback(False)
+            return
+        backdrop.set_fallback(True)
+
+        def apply(pixbuf) -> bool:
+            if token != getattr(self, "_art_token", 0):
+                return False
+            backdrop.set_fallback(True)
+            try:
+                backdrop.set_pixbuf(pixbuf)
+            except Exception:  # noqa: BLE001 - the page may have been replaced
+                pass
+            return False
+
+        self._images.load(url, BACKDROP_SIZE, apply)
+
+    def _apply_art_backdrop(self, pixbuf, backdrop, token: int) -> bool:
+        if token != getattr(self, "_art_token", 0) or pixbuf is None:
+            return False
+        try:
+            backdrop.set_fallback(False)
+            backdrop.set_pixbuf(pixbuf)
+        except Exception:  # noqa: BLE001 - the page may have been replaced
+            pass
+        return False
+
+    def _fetch_art_images(self, kind: str, tmdb_id: int, backdrop, logo,
+                          title, token: int) -> None:
+        def work() -> None:
+            try:
+                found = self._client.images(kind, tmdb_id)
+            except Exception:  # noqa: BLE001 - art must never break a page
+                return
+            GLib.idle_add(self._apply_art_images, found, backdrop, logo, title, token)
+
+        threading.Thread(target=work, daemon=True, name="lgl-tmdb-images").start()
+
+    def _apply_art_images(self, found, backdrop, logo, title, token: int) -> bool:
+        if token != getattr(self, "_art_token", 0):
+            return False
+        url = str(getattr(found, "backdrop_url", "") or "")
+        if url:
+            self._images.load(
+                url, DETAIL_BACKDROP_SIZE,
+                lambda pixbuf: self._apply_art_backdrop(pixbuf, backdrop, token),
+            )
+        logo_url = str(getattr(found, "logo_url", "") or "")
+        if logo_url and logo is not None:
+            self._images.load(
+                logo_url, LOGO_SIZE,
+                lambda pixbuf: self._apply_hero_logo(pixbuf, logo, title, token),
+            )
+        return False
+
+    def _apply_episode_still(self, pixbuf, image) -> bool:
+        """Show a 16:9 still in a row's 200x112 frame, corners rounded."""
+        if pixbuf is None:
+            return False
+        try:
+            rounded = _rounded_pixbuf(pixbuf, 200, 112, 8)
+            image.set_from_pixbuf(rounded)
+        except Exception:  # noqa: BLE001 - the list may have been rebuilt
+            pass
+        return False
+
+    def _apply_hero_logo(self, pixbuf, logo, title, token: int) -> bool:
+        if token != getattr(self, "_art_token", 0) or pixbuf is None:
+            return False
+        try:
+            logo.load_source(pixbuf, title)
+        except Exception:  # noqa: BLE001 - a replaced page keeps its text title
+            pass
+        return False
+
+    def _fetch_anime_art(self, item, backdrop, logo, title, token: int) -> None:
+        """Anime titles have no TMDB id, so the name is looked up instead."""
+
+        def work() -> None:
+            try:
+                url = tmdb.tmdb_backdrop_for_title(
+                    str(getattr(item, "title", "") or ""),
+                    str(getattr(item, "year", "") or ""),
+                    client=self._client,
+                )
+            except Exception:  # noqa: BLE001 - art must never break a page
+                return
+            if url:
+                GLib.idle_add(self._apply_anime_backdrop, url, backdrop, token)
+
+        threading.Thread(target=work, daemon=True, name="lgl-tmdb-anime-art").start()
+
+    def _apply_anime_backdrop(self, url: str, backdrop, token: int) -> bool:
+        if token != getattr(self, "_art_token", 0):
+            return False
+        self._images.load(
+            url, DETAIL_BACKDROP_SIZE,
+            lambda pixbuf: self._apply_art_backdrop(pixbuf, backdrop, token),
+        )
+        return False
 
     def _load_details(self, item: MediaItem, token: int) -> None:
         def work() -> None:
@@ -4194,18 +4553,45 @@ class MoviesWindow(Gtk.Box):
         for episode in season.episodes:
             row = Gtk.ListBoxRow()
             row.get_style_context().add_class("movie-episode-row")
-            line = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
-            line.set_margin_top(5)
-            line.set_margin_bottom(5)
-            line.set_margin_start(6)
-            line.set_margin_end(6)
+            line = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=14)
+            line.set_margin_top(8)
+            line.set_margin_bottom(8)
+            line.set_margin_start(10)
+            line.set_margin_end(10)
 
-            number = Gtk.Label(label=f"{episode.number:02d}", xalign=0)
-            number.get_style_context().add_class("movie-meta")
+            number = Gtk.Label(label=f"{episode.number:02d}", xalign=0.5)
             number.set_width_chars(3)
+            number.set_valign(Gtk.Align.CENTER)
+            number.get_style_context().add_class("movie-episode-number")
             line.pack_start(number, False, False, 0)
 
-            text = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+            # The still, with the rating pill in its bottom-left corner.
+            still_box = Gtk.Overlay()
+            still_box.set_size_request(200, 112)
+            still = Gtk.Image()
+            still.get_style_context().add_class("movie-episode-still")
+            still_box.add(still)
+            rating = getattr(episode, "rating", None)
+            pill = Gtk.Label(label=f"★ {float(rating):.1f}" if rating else "")
+            pill.set_halign(Gtk.Align.START)
+            pill.set_valign(Gtk.Align.END)
+            pill.set_margin_start(8)
+            pill.set_margin_bottom(8)
+            pill.set_no_show_all(True)
+            pill.get_style_context().add_class("movie-episode-rating")
+            still_box.add_overlay(pill)
+            # No pill and no placeholder art for an unrated episode.
+            if rating:
+                pill.show()
+            still_url = str(getattr(episode, "still_url", "") or "")
+            if still_url:
+                self._images.load(
+                    still_url, (320, 180),
+                    lambda pixbuf, image=still: self._apply_episode_still(pixbuf, image),
+                )
+            line.pack_start(still_box, False, False, 0)
+
+            text = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=3)
             label = Gtk.Label(
                 label=view_prefs.episode_title(self._settings, episode.title),
                 xalign=0,
@@ -4213,16 +4599,34 @@ class MoviesWindow(Gtk.Box):
             label.set_ellipsize(Pango.EllipsizeMode.END)
             label.get_style_context().add_class("movie-episode")
             text.pack_start(label, False, False, 0)
-            if episode.air_date:
-                air = Gtk.Label(label=episode.air_date, xalign=0)
-                air.get_style_context().add_class("movie-card-meta")
-                text.pack_start(air, False, False, 0)
+
+            facts = _episode_meta_text(
+                getattr(episode, "runtime", 0), episode.air_date
+            )
+            if facts:
+                meta = Gtk.Label(label=facts, xalign=0)
+                meta.get_style_context().add_class("movie-episode-meta")
+                text.pack_start(meta, False, False, 0)
+
+            overview_text = str(getattr(episode, "overview", "") or "").strip()
+            if overview_text:
+                overview = Gtk.Label(label=overview_text, xalign=0)
+                overview.set_line_wrap(True)
+                overview.set_lines(3)
+                overview.set_ellipsize(Pango.EllipsizeMode.END)
+                overview.set_max_width_chars(70)
+                overview.get_style_context().add_class("movie-episode-overview")
+                text.pack_start(overview, False, False, 0)
             line.pack_start(text, True, True, 0)
 
             play = Gtk.Button(label="Play")
             play.set_relief(Gtk.ReliefStyle.NONE)
+            play.set_valign(Gtk.Align.CENTER)
             play.get_style_context().add_class("movie-btn-dark")
             play.get_style_context().add_class("movie-btn-small")
+            play.set_tooltip_text(
+                f"Play S{season.number:02d}E{episode.number:02d}"
+            )
             play.connect(
                 "clicked",
                 lambda _b, s=season.number, e=episode: self._play_episode(s, e),
