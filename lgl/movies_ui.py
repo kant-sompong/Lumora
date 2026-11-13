@@ -1166,6 +1166,232 @@ def _gem_poster_url(entry: dict) -> str:
     )
 
 
+class SeasonPicker(Gtk.MenuButton):
+    """The season header: a name, a chevron and a popover list.
+
+    Contract section 2: header text at 22 px semibold with a chevron that turns
+    over when the panel opens, then a 300 px overlay panel (radius 14, 1 px
+    border, soft shadow, 420 px at most, scrolling inside) of 76 px rows, each
+    with a 44x64 portrait thumbnail, the season name and its episode count.
+    """
+
+    PANEL_WIDTH = 300
+    PANEL_HEIGHT = 420
+    ROW_HEIGHT = 76
+    THUMB = (44, 64)
+    FADE_MS = 120
+
+    def __init__(self, on_choose) -> None:
+        super().__init__()
+        self._on_choose = on_choose
+        self._seasons: list = []
+        self._rows: dict[int, Gtk.ListBoxRow] = {}
+        self._images = None
+        self._show_poster = ""
+        self._current: int | None = None
+
+        self.set_relief(Gtk.ReliefStyle.NONE)
+        self.set_valign(Gtk.Align.CENTER)
+        self.get_style_context().add_class("season-picker-button")
+        head = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        self._label = Gtk.Label(label="Season")
+        self._label.get_style_context().add_class("season-picker-title")
+        self._chevron = Gtk.Image.new_from_icon_name(
+            "pan-down-symbolic", Gtk.IconSize.BUTTON
+        )
+        self._chevron.get_style_context().add_class("season-chevron")
+        head.pack_start(self._label, False, False, 0)
+        head.pack_start(self._chevron, False, False, 0)
+        self.add(head)
+
+        self._revealer = Gtk.Revealer()
+        self._revealer.set_transition_type(Gtk.RevealerTransitionType.CROSSFADE)
+        self._revealer.set_transition_duration(self.FADE_MS)
+        panel = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        panel.set_size_request(self.PANEL_WIDTH, -1)
+        panel.get_style_context().add_class("season-panel")
+        scroller = Gtk.ScrolledWindow()
+        scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        scroller.set_max_content_height(self.PANEL_HEIGHT)
+        scroller.set_propagate_natural_height(True)
+        scroller.get_style_context().add_class("season-scroll")
+        self._list = Gtk.ListBox()
+        self._list.set_selection_mode(Gtk.SelectionMode.SINGLE)
+        self._list.get_style_context().add_class("season-list")
+        self._list.connect("row-activated", self._row_activated)
+        self._list.connect("key-press-event", self._on_key_press)
+        scroller.add(self._list)
+        panel.pack_start(scroller, True, True, 0)
+        self._revealer.add(panel)
+        # The popover is not part of the window's show_all, so show the panel
+        # here; the revealer keeps it invisible until the panel opens.
+        self._revealer.show_all()
+
+        self._popover = Gtk.Popover()
+        self._popover.get_style_context().add_class("season-popover")
+        self._popover.set_position(Gtk.PositionType.BOTTOM)
+        self._popover.add(self._revealer)
+        self.set_popover(self._popover)
+        self.connect("toggled", self._on_toggled)
+        self._popover.connect("closed", self._on_closed)
+
+    # -- content ------------------------------------------------------------
+    def load(self, seasons, images, show_poster: str = "") -> None:
+        """Fill the panel with ``seasons`` and select the first one."""
+        self._images = images
+        self._show_poster = str(show_poster or "")
+        self._seasons = sorted(
+            seasons, key=lambda season: int(getattr(season, "number", 0) or 0)
+        )
+        for child in self._list.get_children():
+            self._list.remove(child)
+        self._rows = {}
+        for season in self._seasons:
+            self._list.add(self._build_row(season))
+        self._list.show_all()
+        if self._seasons:
+            self.choose(int(self._seasons[0].number))
+
+    def choose(self, number: int, *, notify: bool = True) -> None:
+        """Select ``number``, move the check mark and tell the page."""
+        season = next(
+            (item for item in self._seasons if int(item.number) == number), None
+        )
+        if season is None:
+            return
+        self._current = number
+        for key, row in self._rows.items():
+            context = row.get_style_context()
+            if key == number:
+                context.add_class("season-row-on")
+            else:
+                context.remove_class("season-row-on")
+            row.check.set_visible(key == number)
+        self._label.set_text(season.name or f"Season {number}")
+        if notify:
+            self._fade_out()
+            self._on_choose(season)
+
+    # -- rows ---------------------------------------------------------------
+    def _build_row(self, season) -> Gtk.ListBoxRow:
+        number = int(getattr(season, "number", 0) or 0)
+        row = Gtk.ListBoxRow()
+        row.season_number = number
+        row.set_size_request(self.PANEL_WIDTH - 14, self.ROW_HEIGHT)
+        row.get_style_context().add_class("season-row")
+
+        line = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        line.set_margin_start(12)
+        line.set_margin_end(12)
+        line.set_valign(Gtk.Align.CENTER)
+
+        url = tmdb.season_poster_url(season, self._show_poster)
+        if url and self._images is not None:
+            thumb = Gtk.Image()
+            thumb.set_size_request(*self.THUMB)
+            thumb.get_style_context().add_class("season-thumb")
+            size = (self.THUMB[0] * 2, self.THUMB[1] * 2)
+            self._images.load(
+                url, size,
+                lambda pixbuf, image=thumb: self._apply_thumb(pixbuf, image),
+            )
+        else:
+            # No artwork anywhere: the season number, never an empty hole.
+            thumb = Gtk.Label(label=str(number))
+            thumb.set_size_request(*self.THUMB)
+            thumb.get_style_context().add_class("season-placeholder")
+        line.pack_start(thumb, False, False, 0)
+
+        text = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        text.set_valign(Gtk.Align.CENTER)
+        name = Gtk.Label(label=season.name or f"Season {number}", xalign=0)
+        name.set_ellipsize(Pango.EllipsizeMode.END)
+        name.get_style_context().add_class("season-name")
+        count = season.episode_count or len(getattr(season, "episodes", ()) or ())
+        words = f"{count} episode" + ("" if count == 1 else "s")
+        count_label = Gtk.Label(label=words, xalign=0)
+        count_label.get_style_context().add_class("season-count")
+        text.pack_start(name, False, False, 0)
+        text.pack_start(count_label, False, False, 0)
+        line.pack_start(text, True, True, 0)
+
+        # A drawn tick rather than an icon, so the panel never depends on the
+        # desktop's icon theme.
+        check = Gtk.Label(label="✓")
+        check.get_style_context().add_class("season-check")
+        check.set_no_show_all(True)
+        check.set_valign(Gtk.Align.CENTER)
+        row.check = check
+        line.pack_end(check, False, False, 0)
+
+        row.add(line)
+        row.show_all()
+        check.hide()
+        self._rows[number] = row
+        return row
+
+    def _apply_thumb(self, pixbuf, image) -> bool:
+        if pixbuf is None:
+            return False
+        try:
+            image.set_from_pixbuf(
+                _rounded_pixbuf(pixbuf, self.THUMB[0], self.THUMB[1], 6)
+            )
+        except Exception:  # noqa: BLE001 - the panel may have been rebuilt
+            pass
+        return False
+
+    # -- panel behaviour ----------------------------------------------------
+    def _on_toggled(self, _button) -> None:
+        opened = self.get_active()
+        self._chevron.set_from_icon_name(
+            "pan-up-symbolic" if opened else "pan-down-symbolic", Gtk.IconSize.BUTTON
+        )
+        if opened:
+            self._revealer.set_reveal_child(True)
+            current = self._rows.get(self._current or -1)
+            if current is not None:
+                self._list.select_row(current)
+                current.grab_focus()
+
+    def _on_closed(self, _popover) -> None:
+        self._revealer.set_reveal_child(False)
+        self._chevron.set_from_icon_name("pan-down-symbolic", Gtk.IconSize.BUTTON)
+
+    def _fade_out(self) -> None:
+        """Close the panel through one fade, then pop it down for real."""
+        self._revealer.set_reveal_child(False)
+        GLib.timeout_add(self.FADE_MS, self._popdown_later)
+
+    def _popdown_later(self) -> bool:
+        self._popover.popdown()
+        return False
+
+    def _row_activated(self, _list, row) -> None:
+        self.choose(int(getattr(row, "season_number", 0)))
+
+    def _on_key_press(self, _list, event) -> bool:
+        key = event.keyval
+        rows = list(self._rows.values())
+        if not rows:
+            return False
+        selected = self._list.get_selected_row() or rows[0]
+        index = rows.index(selected)
+        if key == Gdk.KEY_Down:
+            self._list.select_row(rows[min(index + 1, len(rows) - 1)])
+            return True
+        if key == Gdk.KEY_Up:
+            self._list.select_row(rows[max(index - 1, 0)])
+            return True
+        if key in (Gdk.KEY_Return, Gdk.KEY_KP_Enter, Gdk.KEY_space):
+            self.choose(int(getattr(selected, "season_number", 0)))
+            return True
+        if key == Gdk.KEY_Escape:
+            self._fade_out()
+            return True
+        return False
+
+
 class MoviesWindow(Gtk.Box):
     """The cinematic Movies & TV surface, embedded in the main window."""
 
@@ -4459,44 +4685,20 @@ class MoviesWindow(Gtk.Box):
             hint.get_style_context().add_class("movie-meta")
             box.pack_start(hint, False, False, 0)
 
-        tabs_scroller = Gtk.ScrolledWindow()
-        tabs_scroller.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.NEVER)
-        tabs_scroller.set_overlay_scrolling(False)
-        tabs_scroller.set_size_request(-1, 44)
-        tabs_scroller.get_style_context().add_class("movie-scroll")
-        tabs = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        tabs_scroller.add(tabs)
-        buttons: list[Gtk.ToggleButton] = []
-
         episodes = Gtk.ListBox()
         episodes.set_selection_mode(Gtk.SelectionMode.NONE)
         episodes.get_style_context().add_class("movie-episode-list")
 
-        def select(number: int, chosen: Gtk.ToggleButton) -> None:
-            for button in buttons:
-                button.set_active(button is chosen)
-            self._load_season(details.tmdb_id, number, episodes)
+        def select(season) -> None:
+            self._load_season(details.tmdb_id, int(season.number), episodes)
 
-        for season in details.seasons:
-            label = season.name or f"Season {season.number}"
-            button = Gtk.ToggleButton(label=label)
-            button.set_relief(Gtk.ReliefStyle.NONE)
-            button.get_style_context().add_class("movie-btn-dark")
-            button.get_style_context().add_class("movie-btn-small")
-            button.set_tooltip_text(f"{season.episode_count} episodes")
-            button.connect(
-                "clicked",
-                lambda current, number=season.number: select(number, current),
-            )
-            tabs.pack_start(button, False, False, 0)
-            buttons.append(button)
+        picker = SeasonPicker(select)
+        picker.load(details.seasons, self._images, details.poster_url)
+        self._season_picker = picker
 
-        box.pack_start(tabs_scroller, False, False, 0)
+        box.pack_start(picker, False, False, 0)
         box.pack_start(episodes, False, False, 0)
         box.show_all()
-        if buttons:
-            buttons[0].set_active(True)
-            select(details.seasons[0].number, buttons[0])
 
     def _load_season(self, tmdb_id: int, number: int, box: Gtk.ListBox) -> None:
         self._season_token += 1

@@ -62,6 +62,8 @@ DARK: dict[str, str] = {
     "danger_text": "#ef4444",
     "favorite": FAVORITE,
     "shadow": "rgba(0, 0, 0, 0.55)",
+    #: The hero sits on a dark scrim in both modes, so this one never switches.
+    "hero_text": "#f2f4f6",
 }
 
 LIGHT: dict[str, str] = {
@@ -87,6 +89,7 @@ LIGHT: dict[str, str] = {
     "danger_text": "#b91c1c",
     "favorite": FAVORITE,
     "shadow": "rgba(15, 23, 42, 0.12)",
+    "hero_text": "#f2f4f6",
 }
 
 PALETTES: dict[str, dict[str, str]] = {"dark": DARK, "light": LIGHT}
