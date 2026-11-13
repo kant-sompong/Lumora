@@ -63,14 +63,18 @@ def link_is_file(record: object) -> bool:
     )
 
 
-def already_verified(record: object) -> bool:
-    """Has a check already answered for this link?
+def needs_reclassification(record: object) -> bool:
+    """A stored ``verified`` that never came with a file classification.
 
-    A record imported with ``verified`` behind it is not probed again on every
-    Download: the answer is already stored, and asking the same host twice
-    made the button look stuck while a second request went out.
+    ``verified`` is only meaningful next to ``url_kind == "file"``; the pair
+    is what a probe writes.  A record holding the word alone cannot be
+    downloaded and is not quietly re-probed from the Download button either -
+    the user is asked to run Check, which records both fields again.
     """
-    return link_is_file(record) or str(getattr(record, "check_status", "")) == "verified"
+    return (
+        str(getattr(record, "check_status", "")) == "verified"
+        and not link_is_file(record)
+    )
 
 
 def http_links(store: CatalogStore, game_key: str) -> list[MirrorRecord]:
@@ -193,7 +197,7 @@ def download_mirror(
     """
 
     def proceed() -> None:
-        if already_verified(record):
+        if link_is_file(record):
             if not confirm_download(parent, record, download_dir):
                 return
             error = queue_mirror(manager, download_dir, identifier, record)
@@ -209,8 +213,16 @@ def download_mirror(
             True,
         )
 
-    if already_verified(record):
+    if link_is_file(record):
         proceed()
+        return
+
+    if needs_reclassification(record):
+        on_message(
+            "That link is marked verified but was never classified as a file. "
+            "Press Check to probe it again.",
+            True,
+        )
         return
 
     on_message(f"Checking {getattr(record, 'host', '') or 'the link'} before downloading…", False)
@@ -689,6 +701,7 @@ __all__ = [
     "CatalogMagnetsSection",
     "NOT_AFFILIATED",
     "check_mirror",
+    "needs_reclassification",
     "confirm_download",
     "download_mirror",
     "http_links",
