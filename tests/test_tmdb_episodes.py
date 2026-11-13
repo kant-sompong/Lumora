@@ -98,3 +98,87 @@ def test_an_empty_loaded_season_keeps_the_summary():
     merged = seasons_with_episodes(show, {1: Season(number=1)})
 
     assert merged[0].episode_count == 3
+
+
+# --------------------------------------------------------------------------
+# season artwork and the IMDb id (shared contract, section 5)
+# --------------------------------------------------------------------------
+
+
+def _client(fetch):
+    from lgl.tmdb import TmdbClient
+
+    return TmdbClient("a" * 32, fetch=fetch)
+
+
+TV_PAYLOAD = {
+    "name": "The Show",
+    "first_air_date": "2019-03-01",
+    "poster_path": "/show.jpg",
+    "seasons": [
+        {"season_number": 0, "name": "Specials", "episode_count": 2, "poster_path": "/s0.jpg"},
+        {"season_number": 1, "name": "Season 1", "episode_count": 8, "poster_path": "/s1.jpg"},
+        {"season_number": 2, "name": "Season 2", "episode_count": 6},
+    ],
+    "external_ids": {"imdb_id": "tt1234567"},
+}
+
+
+def test_details_asks_for_external_ids_and_keeps_the_imdb_id():
+    seen = {}
+
+    def fetch(path, params):
+        seen["path"], seen["params"] = path, dict(params)
+        return TV_PAYLOAD
+
+    details = _client(fetch).details("tv", 42)
+
+    assert seen["path"] == "/tv/42"
+    assert seen["params"].get("append_to_response") == "external_ids"
+    assert details.imdb_id == "tt1234567"
+
+
+def test_a_malformed_imdb_id_is_dropped():
+    def fetch(path, params):
+        return {**TV_PAYLOAD, "external_ids": {"imdb_id": "not-an-id"}}
+
+    assert _client(fetch).details("tv", 42).imdb_id == ""
+
+
+def test_details_keeps_each_season_poster_path():
+    def fetch(path, params):
+        return TV_PAYLOAD
+
+    seasons = {season.number: season for season in _client(fetch).details("tv", 42).seasons}
+
+    assert seasons[1].poster == "/s1.jpg"
+    assert seasons[2].poster == ""
+
+
+def test_a_fetched_season_keeps_its_poster_path():
+    def fetch(path, params):
+        return {"name": "Season 1", "poster_path": "/s1.jpg", "episodes": []}
+
+    season = _client(fetch).season(42, 1)
+
+    assert season.poster == "/s1.jpg"
+
+
+def test_season_poster_prefers_the_season_then_the_show():
+    from lgl.tmdb import Season, poster_url, season_poster_url
+
+    own = Season(number=1, poster="/s1.jpg")
+    assert season_poster_url(own, "/show.jpg") == poster_url("/s1.jpg", size="w185")
+
+    bare = Season(number=2)
+    assert season_poster_url(bare, "/show.jpg") == poster_url("/show.jpg", size="w185")
+    assert season_poster_url(bare, "https://image.tmdb.org/t/p/w500/show.jpg") == (
+        "https://image.tmdb.org/t/p/w500/show.jpg"
+    )
+
+
+def test_season_poster_is_empty_with_neither_poster():
+    from lgl.tmdb import Season, season_poster_url
+
+    assert season_poster_url(Season(number=3)) == ""
+    assert season_poster_url(Season(number=3, poster="not a path")) == ""

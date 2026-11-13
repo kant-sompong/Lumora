@@ -36,8 +36,21 @@ from . import (
     view_prefs,
 )
 from .qt_widgets import label, run_async
+from . import ratings
 from .settings import Settings
 from .sources import RawgSource
+
+def _omdb_probe(url: str, timeout: float) -> object:
+    """One OMDb read for the Save & test button; never raises out of the row."""
+    import json
+    import urllib.request
+
+    request = urllib.request.Request(
+        url, headers={"User-Agent": "Lumora (provider test)"}
+    )
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        return json.loads(response.read(256 * 1024).decode("utf-8", "replace"))
+
 
 TABS = (("general", "General"), ("locations", "Locations"),
         ("providers", "Providers"), ("media", "Media"), ("shortcuts", "Shortcuts"))
@@ -429,6 +442,11 @@ class SettingsDialog(QDialog):
              "descriptions, ratings, posters, and backdrops. It does not provide video "
              "files; playback is handled separately.",
              "TMDB API key (blank = use the saved key)"),
+            ("omdb", "OMDb — IMDb & Rotten Tomatoes scores",
+             "OMDb supplies the IMDb rating and the Rotten Tomatoes score shown "
+             "beside each movie and show. It is optional: without a key the TMDB "
+             "user score is still shown. A free key covers personal use.",
+             "OMDb API key (blank = use the saved key)"),
             ("mal", "MyAnimeList — anime metadata",
              "MyAnimeList supplies anime titles, synopsis, episode counts, airing "
              "status, genres, scores, release dates, and cover artwork. Only the public "
@@ -474,7 +492,7 @@ class SettingsDialog(QDialog):
             column.addWidget(buttons)
             status = label(
                 "A key is saved in the owner-only settings file. It has not been tested "
-                "in this session." if self.settings.has_api_key(key)
+                "in this session." if self._has_key(key)
                 else "No key is saved yet.",
                 "settDesc", wrap=True,
             )
@@ -482,6 +500,16 @@ class SettingsDialog(QDialog):
             column.addWidget(status)
         column.addStretch(1)
         return body
+
+    def _has_key(self, key: str) -> bool:
+        """Whether a key for this provider is already saved.
+
+        OMDb is stored under its own settings name (the contract's
+        ``omdb_api_key``), not in the API-key map the other providers use.
+        """
+        if key == "omdb":
+            return bool(ratings.read_omdb_key(self.settings, {}))
+        return self.settings.has_api_key(key)
 
     def _save_provider(self, key: str) -> None:
         field = self._provider_fields[key]
@@ -491,7 +519,10 @@ class SettingsDialog(QDialog):
             status.setText("Nothing was typed, so the saved key was left unchanged.")
             return
         try:
-            self.settings.set_api_key(key, value)
+            if key == "omdb":
+                self.settings.set(ratings.OMDB_SETTING, value)
+            else:
+                self.settings.set_api_key(key, value)
         except Exception as exc:  # noqa: BLE001 - reported in the row
             status.setText(f"The key was not saved: {exc}")
             return
@@ -500,6 +531,18 @@ class SettingsDialog(QDialog):
         timeout = float(self.settings.network_timeout)
 
         def work() -> str:
+            if key == "omdb":
+                scores = ratings.fetch_ratings(
+                    "tt0133093", None, 0, key=value, cache_dir=None,
+                    fetcher=lambda url: _omdb_probe(url, timeout),
+                )
+                if scores.imdb is None and scores.rotten is None:
+                    return "Saved, but OMDb returned no score for the test title."
+                return (
+                    "OMDb connection succeeded; the test title reports "
+                    f"IMDb {scores.imdb or '—'} and Rotten Tomatoes "
+                    f"{scores.rotten if scores.rotten is not None else '—'}."
+                )
             if key == "tmdb":
                 return tmdb.TmdbClient(value, timeout=timeout).test_connection()
             if key == "mal":
@@ -528,7 +571,10 @@ class SettingsDialog(QDialog):
                 box.blockSignals(False)
 
     def _clear_provider(self, key: str) -> None:
-        self.settings.clear_api_key(key)
+        if key == "omdb":
+            self.settings.set(ratings.OMDB_SETTING, "")
+        else:
+            self.settings.clear_api_key(key)
         self._provider_fields[key].clear()
         self._provider_status[key].setText("The saved key was removed.")
 

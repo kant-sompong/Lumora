@@ -12,8 +12,28 @@ other.
 
 from __future__ import annotations
 
-from . import theme
-from .theme import RADIUS, TYPE
+from . import design_tokens, theme
+from .design_tokens import RADIUS as RADIUS_STEPS
+from .design_tokens import SPACING, TEXT_SIZES, TOKENS
+
+#: Radii from the shared contract: 6, 10, 14 for cards, panels and dialogs.
+RADIUS: dict[str, int] = {
+    "sm": RADIUS_STEPS[0], "md": RADIUS_STEPS[1], "lg": RADIUS_STEPS[2], "pill": 999,
+}
+#: Text sizes from the shared contract.
+TYPE: dict[str, int] = {
+    "caption": TEXT_SIZES["caption"],
+    "small": TEXT_SIZES["caption"],
+    "body": TEXT_SIZES["body"],
+    "label": TEXT_SIZES["label"],
+    "title": TEXT_SIZES["title"],
+    "page": TEXT_SIZES["header"],
+}
+#: Spacing steps from the shared contract, named by their pixel value.
+SPACE: dict[str, int] = {
+    "xxs": SPACING[0], "xs": SPACING[1], "sm": SPACING[2],
+    "md": SPACING[3], "lg": SPACING[4], "xl": SPACING[5],
+}
 
 
 def alpha(color: str, opacity: float) -> str:
@@ -26,6 +46,47 @@ def alpha(color: str, opacity: float) -> str:
         body = "".join(ch * 2 for ch in body)
     red, green, blue = (int(body[i : i + 2], 16) for i in (0, 2, 4))
     return f"rgba({red}, {green}, {blue}, {max(0.0, min(1.0, opacity)):.3f})"
+
+
+def palette(resolved: str, accent: str | None = None) -> dict[str, str]:
+    """The Qt palette for ``dark``/``light``, built from the shared tokens.
+
+    Every colour in the stylesheet comes from here, and every value in here is
+    a design token.  Three keys are derived rather than listed, because the
+    token set has three surfaces where the QSS wants a hover shade and a faint
+    text step: ``raised`` is the overlay surface, ``hover`` is the text colour at
+    7 % and ``faint`` is the muted colour, both composited by Qt.
+    """
+    tokens = TOKENS.get(resolved) or TOKENS["dark"]
+    text = str(tokens["text"])
+    colours = {
+        "bg": str(tokens["bg"]),
+        "surface": str(tokens["surface"]),
+        "raised": str(tokens["overlay"]),
+        "hover": alpha(text, 0.07),
+        "divider": str(tokens["border"]),
+        "border": str(tokens["border"]),
+        "text": text,
+        "text2": str(tokens["text2"]),
+        "muted": str(tokens["muted"]),
+        "faint": str(tokens["muted"]),
+        "accent": str(tokens["accent"]),
+        "accent_hover": str(tokens["accent_hover"]),
+        "accent_fill": str(tokens["accent"]),
+        "accent_fill_hover": str(tokens["accent_hover"]),
+        "accent_soft": design_tokens.accent_soft(resolved),
+        "accent_text": str(tokens["accent"]),
+        "on_accent": "#ffffff",
+        "success": str(tokens["success"]),
+        "warning": str(tokens["warning"]),
+        "danger": str(tokens["danger"]),
+        # Not in the token table: a favourite star's gold and the shadow ink.
+        "favorite": "#b8863b",
+        "shadow": "rgba(0, 0, 0, 0.55)" if resolved == "dark" else "rgba(15, 23, 42, 0.12)",
+    }
+    if accent:
+        colours = theme.with_accent(colours, accent)
+    return colours
 
 
 def font_family() -> str:
@@ -42,9 +103,7 @@ def build_stylesheet(
     and ``compact`` appends the denser padding block used by compact mode.  Both
     default to the shipped look, so existing callers are unaffected.
     """
-    c = dict(theme.palette(resolved))
-    if accent:
-        c = theme.with_accent(c, accent)
+    c = palette(resolved, accent)
     fg = c["text"]
     sm, md, lg = RADIUS["sm"], RADIUS["md"], RADIUS["lg"]
     body, small, title, page = TYPE["body"], TYPE["small"], TYPE["title"], TYPE["page"]
@@ -63,6 +122,9 @@ QToolTip {{
 }}
 
 /* ---- window header -------------------------------------------------- */
+QWidget#rail {{ background: {c['bg']}; border-right: 1px solid {alpha(fg, 0.05)}; }}
+QWidget#rail QToolTip {{ font-size: {small}px; }}
+
 QFrame#headerBar {{
     background: {c['bg']};
     border-bottom: 1px solid {alpha(fg, 0.05)};
