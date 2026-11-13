@@ -49,11 +49,12 @@ from . import (
     trailers,
     view_prefs,
 )
-from . import recently_viewed
+from . import ratings, recently_viewed
 from .qt_icons import icon
 from .qt_feed import PosterRow, ScheduleStrip, ThreeColumnList
 from .qt_library import ArtworkBackdrop
 from .qt_player import EmbeddedPlayer, make_player
+from .qt_ratings import RatingsRow
 from .qt_season_picker import SeasonPicker
 from .qt_widgets import (
     CoverArt,
@@ -1323,6 +1324,11 @@ class MediaPage(QWidget):
         column.addLayout(top)
         self.detail_hero = HeroPanel()
         column.addWidget(self.detail_hero)
+        # Under the title and the year line, as the contract places it.
+        self.ratings_row = RatingsRow(
+            self, theme=self._theme_name(), cache_dir=platform_support.cache_dir(),
+        )
+        column.addWidget(self.ratings_row)
         # Hidden until TMDB says this title has a trailer we can embed. It
         # sits in the hero action row with Watch Now and My List, not beside
         # Back, where a viewing action does not belong.
@@ -1768,6 +1774,7 @@ class MediaPage(QWidget):
             poster_url=card.poster_url,
         )
         self.detail_hero.show_card(card, in_list=self._in_list(card.key))
+        self.ratings_row.setVisible(False)
         self.detail_hero.details.setText("TMDB page")
         self.detail_hero.details.setVisible(card.kind != "anime")
         rating = rating_text(card.rating)
@@ -1782,6 +1789,7 @@ class MediaPage(QWidget):
         self.trailer_btn.setVisible(False)
         self.trailer_note.setVisible(False)
         self._load_episodes(card)
+        self._load_ratings(card)
         self._load_trailer(card)
 
     def _fullest_card(self, card: Card) -> Card:
@@ -1962,6 +1970,7 @@ class MediaPage(QWidget):
                 if int(getattr(season, "number", 0) or 0) > 0
             ]
             self._detail_seasons = tuple(seasons)
+            self._apply_ratings(card, result, ratings.read_omdb_key(self.settings))
             self.episode_head.count.setText(f"{len(seasons)} seasons")
             self.season_combo.set_seasons(seasons, card.poster_url)
             self.season_combo.setVisible(bool(seasons))
@@ -1973,6 +1982,42 @@ class MediaPage(QWidget):
             self._show_season(card, number)
 
         run_async(work, done, lambda exc: self._note_error(exc))
+
+    # ratings ----------------------------------------------------------------
+    def _load_ratings(self, card: Card) -> None:
+        """Ask for the IMDb id and vote count, then the three scores.
+
+        A TV page already fetches its details for the season list, so it feeds
+        this row from that answer instead of asking twice.
+        """
+        client = getattr(self, "_tmdb", None)
+        self.ratings_row.setVisible(False)
+        if client is None or card.tmdb_id <= 0 or card.kind not in ("movie", "tv"):
+            return
+        key = ratings.read_omdb_key(self.settings)
+        if card.kind == "tv":
+            # ``_load_episodes`` owns this request; it calls back into
+            # ``_apply_ratings`` when the details arrive.
+            return
+
+        def work() -> object:
+            return client.details(card.kind, card.tmdb_id)
+
+        def done(result: object) -> None:
+            self._apply_ratings(card, result, key)
+
+        run_async(work, done, lambda _exc: None)
+
+    def _apply_ratings(self, card: Card, details: object, key: str = "") -> None:
+        if card is not getattr(self, "_detail_card", None):
+            return
+        imdb_id = str(getattr(details, "imdb_id", "") or "")
+        vote = getattr(details, "rating", None) or card.rating
+        votes = getattr(details, "vote_count", 0) or 0
+        self.ratings_row.set_context(
+            imdb_id=imdb_id, tmdb_vote=vote, tmdb_votes=votes, key=key,
+        )
+        self.ratings_row.load()
 
     def _season_changed(self, _number: int = 0) -> None:
         card = getattr(self, "_detail_card", None)
