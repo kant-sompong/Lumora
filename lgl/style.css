@@ -1,11 +1,51 @@
-/* Lumora
- *
- * Flat, quiet styling layered over the active GTK theme.  Rules of the house:
- * hairline separators only where they clarify structure, no gradients, no
- * decorative borders, one warm accent used for progress and selection.
- * Containers that own a GdkWindow always get a solid background so nothing
- * shows through as black on X11 or in screenshots.
+/* -- design tokens ------------------------------------------------------
+ * Names and values are the shared contract (lgl/design_tokens.py on the
+ * shared-logic branch).  The block below is the DARK palette and is what this
+ * sheet resolves to when it is loaded on its own (tests, screenshots); the app
+ * installs its token provider above it and swaps these for the active mode.
  */
+@define-color bg #0f1014;
+@define-color surface #16181d;
+@define-color overlay #1d2027;
+@define-color border #2a2d36;
+@define-color text #e8e9ee;
+@define-color text2 #a4a7b3;
+@define-color muted #7c8090;
+@define-color accent #8b5cf6;
+@define-color accent_hover #9d74f8;
+@define-color accent_soft rgba(139, 92, 246, 0.18);
+@define-color success #22c55e;
+@define-color warning #f59e0b;
+@define-color danger #ef4444;
+@define-color warning_text #f59e0b;
+@define-color danger_text #ef4444;
+/* derived tokens the rules below name, never literal values */
+@define-color accent_fill #7c3aed;
+@define-color accent_fill_hover #6d28d9;
+@define-color accent_text #a78bfa;
+@define-color on_accent #ffffff;
+@define-color hover #262b34;
+@define-color favorite #f5c518;
+@define-color shadow rgba(0, 0, 0, 0.55);
+
+/* LIGHT palette, kept here so the sync test can check both modes.  It is inert
+ * on purpose: the app's token provider installs these values at runtime.
+@define-color bg #f4f5f8;
+@define-color surface #ffffff;
+@define-color overlay #ffffff;
+@define-color border #dcdfe6;
+@define-color text #14161c;
+@define-color text2 #4a4f5c;
+@define-color muted #6b7080;
+@define-color accent #7c3aed;
+@define-color accent_hover #6d28d9;
+@define-color accent_soft rgba(124, 58, 237, 0.18);
+@define-color success #22c55e;
+@define-color warning #f59e0b;
+@define-color danger #ef4444;
+@define-color warning_text #b45309;
+@define-color danger_text #b91c1c;
+*/
 
 /* -- base --------------------------------------------------------------- */
 
@@ -40,16 +80,16 @@ window {
   font-size: 0.68em;
   font-weight: 700;
   letter-spacing: 0.9px;
-  color: alpha(@fg, 0.42);
+  color: alpha(@text, 0.42);
 }
 
 .count-label {
   font-size: 0.80em;
-  color: alpha(@fg, 0.50);
+  color: alpha(@text, 0.50);
 }
 
 .dim {
-  color: alpha(@fg, 0.62);
+  color: alpha(@text, 0.62);
 }
 
 .small {
@@ -59,16 +99,16 @@ window {
 .mono {
   font-family: "Iosevka NF", "DejaVu Sans Mono", monospace;
   font-size: 0.84em;
-  color: alpha(@fg, 0.62);
+  color: alpha(@text, 0.62);
 }
 
 .error-text {
-  color: @danger;
+  color: @danger_text;
   font-size: 0.84em;
 }
 
 .rule {
-  background-color: alpha(@fg, 0.08);
+  background-color: alpha(@text, 0.08);
   min-height: 1px;
   border: none;
 }
@@ -86,7 +126,7 @@ window {
   font-weight: 500;
   padding: 3px 12px;
   border-radius: 6px;
-  color: alpha(@fg, 0.62);
+  color: alpha(@text, 0.62);
   background-color: transparent;
   background-image: none;
   box-shadow: none;
@@ -94,12 +134,12 @@ window {
 }
 
 .view-switcher button:hover {
-  background-color: alpha(@fg, 0.05);
+  background-color: alpha(@text, 0.05);
 }
 
 .view-switcher button:checked {
-  color: alpha(@fg, 0.95);
-  background-color: alpha(@fg, 0.09);
+  color: alpha(@text, 0.95);
+  background-color: alpha(@text, 0.09);
 }
 
 .badge {
@@ -114,7 +154,7 @@ window {
 /* -- archive sidebar ---------------------------------------------------- */
 
 .sidebar {
-  border-right: 1px solid alpha(@fg, 0.08);
+  border-right: 1px solid alpha(@text, 0.08);
 }
 
 .sidebar-header {
@@ -124,8 +164,8 @@ window {
 .sidebar-footer {
   padding: 6px 16px 8px 16px;
   font-size: 0.74em;
-  color: alpha(@fg, 0.40);
-  border-top: 1px solid alpha(@fg, 0.06);
+  color: alpha(@text, 0.40);
+  border-top: 1px solid alpha(@text, 0.06);
 }
 
 .sidebar-filters {
@@ -138,12 +178,12 @@ row.game-row {
 }
 
 row.game-row:hover {
-  background-color: alpha(@fg, 0.04);
+  background-color: alpha(@text, 0.04);
 }
 
 row.game-row:selected {
   border-left-color: @accent;
-  background-color: alpha(@fg, 0.05);
+  background-color: alpha(@text, 0.05);
 }
 
 .game-title {
@@ -153,7 +193,7 @@ row.game-row:selected {
 
 .game-meta {
   font-size: 0.78em;
-  color: alpha(@fg, 0.46);
+  color: alpha(@text, 0.46);
 }
 
 .sort-direction {
@@ -214,31 +254,31 @@ menubutton.picker > button label {
 
 .meta-line {
   font-size: 0.86em;
-  color: alpha(@fg, 0.60);
+  color: alpha(@text, 0.60);
 }
 
 .subject-pill {
-  background-color: alpha(@fg, 0.06);
-  color: alpha(@fg, 0.80);
+  background-color: alpha(@text, 0.06);
+  color: alpha(@text, 0.80);
   border-radius: 999px;
   padding: 2px 9px;
   font-size: 0.77em;
 }
 
 .poster-frame {
-  background-color: alpha(@fg, 0.035);
+  background-color: alpha(@text, 0.035);
   border: none;
   border-radius: 6px;
 }
 
 .poster-empty-text {
   font-size: 0.79em;
-  color: alpha(@fg, 0.42);
+  color: alpha(@text, 0.42);
 }
 
 .description-frame {
-  background-color: alpha(@fg, 0.025);
-  border: 1px solid alpha(@fg, 0.05);
+  background-color: alpha(@text, 0.025);
+  border: 1px solid alpha(@text, 0.05);
   border-radius: 6px;
 }
 
@@ -249,18 +289,18 @@ menubutton.picker > button label {
 
 .description-text {
   font-size: 0.92em;
-  color: alpha(@fg, 0.86);
+  color: alpha(@text, 0.86);
 }
 
 .note-box {
-  background-color: alpha(@fg, 0.03);
+  background-color: alpha(@text, 0.03);
   border-radius: 6px;
   padding: 9px 12px;
 }
 
 .note-text {
   font-size: 0.81em;
-  color: alpha(@fg, 0.58);
+  color: alpha(@text, 0.58);
 }
 
 .warning-box {
@@ -272,12 +312,12 @@ menubutton.picker > button label {
 
 .warning-text {
   font-size: 0.85em;
-  color: alpha(@fg, 0.82);
+  color: alpha(@text, 0.82);
 }
 
 .file-frame {
-  background-color: alpha(@fg, 0.018);
-  border: 1px solid alpha(@fg, 0.06);
+  background-color: alpha(@text, 0.018);
+  border: 1px solid alpha(@text, 0.06);
   border-radius: 6px;
 }
 
@@ -286,40 +326,40 @@ menubutton.picker > button label {
 }
 
 .file-frame treeview.view:hover {
-  background-color: alpha(@fg, 0.04);
+  background-color: alpha(@text, 0.04);
 }
 
 .file-frame treeview.view:selected,
 .file-frame treeview.view:selected:focus {
   background-color: alpha(@accent, 0.22);
-  color: @fg;
+  color: @text;
 }
 
 .file-frame treeview.view header button {
   background-color: transparent;
   border: none;
-  border-bottom: 1px solid alpha(@fg, 0.07);
+  border-bottom: 1px solid alpha(@text, 0.07);
   border-radius: 0;
   font-size: 0.77em;
   font-weight: 600;
-  color: alpha(@fg, 0.52);
+  color: alpha(@text, 0.52);
   padding: 5px 8px;
   box-shadow: none;
 }
 
 .file-summary {
   font-size: 0.79em;
-  color: alpha(@fg, 0.46);
+  color: alpha(@text, 0.46);
 }
 
 .selection-count {
   font-size: 0.82em;
-  color: alpha(@fg, 0.55);
+  color: alpha(@text, 0.55);
 }
 
 .local-frame {
-  background-color: alpha(@fg, 0.018);
-  border: 1px solid alpha(@fg, 0.06);
+  background-color: alpha(@text, 0.018);
+  border: 1px solid alpha(@text, 0.06);
   border-radius: 6px;
 }
 
@@ -333,7 +373,7 @@ menubutton.picker > button label {
 }
 
 .screenshot-thumb {
-  background-color: alpha(@fg, 0.04);
+  background-color: alpha(@text, 0.04);
   border: none;
   border-radius: 6px;
   padding: 0;
@@ -341,28 +381,28 @@ menubutton.picker > button label {
 }
 
 .screenshot-thumb:hover {
-  background-color: alpha(@fg, 0.09);
+  background-color: alpha(@text, 0.09);
 }
 
 /* -- directory bar / downloads ----------------------------------------- */
 
 .dir-bar {
-  border-top: 1px solid alpha(@fg, 0.07);
+  border-top: 1px solid alpha(@text, 0.07);
   padding: 6px 12px 6px 14px;
 }
 
 .dir-label {
   font-size: 0.82em;
-  color: alpha(@fg, 0.60);
+  color: alpha(@text, 0.60);
 }
 
 .downloads-panel {
-  border-top: 1px solid alpha(@fg, 0.08);
+  border-top: 1px solid alpha(@text, 0.08);
 }
 
 .downloads-header {
   padding: 6px 12px 6px 16px;
-  border-bottom: 1px solid alpha(@fg, 0.05);
+  border-bottom: 1px solid alpha(@text, 0.05);
 }
 
 .small-button {
@@ -389,15 +429,15 @@ menubutton.picker > button label {
 
 row.task-row {
   padding: 8px 14px 9px 16px;
-  border-bottom: 1px solid alpha(@fg, 0.05);
+  border-bottom: 1px solid alpha(@text, 0.05);
 }
 
 row.task-row:hover {
-  background-color: alpha(@fg, 0.035);
+  background-color: alpha(@text, 0.035);
 }
 
 row.task-row:selected {
-  background-color: alpha(@fg, 0.055);
+  background-color: alpha(@text, 0.055);
 }
 
 .task-file {
@@ -407,12 +447,12 @@ row.task-row:selected {
 
 .task-game {
   font-size: 0.78em;
-  color: alpha(@fg, 0.45);
+  color: alpha(@text, 0.45);
 }
 
 .task-detail {
   font-size: 0.77em;
-  color: alpha(@fg, 0.48);
+  color: alpha(@text, 0.48);
 }
 
 .status-pill {
@@ -420,8 +460,8 @@ row.task-row:selected {
   font-weight: 600;
   padding: 1px 7px;
   border-radius: 999px;
-  background-color: alpha(@fg, 0.07);
-  color: alpha(@fg, 0.70);
+  background-color: alpha(@text, 0.07);
+  color: alpha(@text, 0.70);
 }
 
 .status-running {
@@ -437,7 +477,7 @@ row.task-row:selected {
 }
 
 .status-paused {
-  background-color: alpha(@muted, 0.16);
+  background-color: alpha(@text2, 0.16);
 }
 
 progressbar.download-progress trough,
@@ -445,7 +485,7 @@ progressbar.verify-progress trough {
   min-height: 3px;
   border: none;
   border-radius: 999px;
-  background-color: alpha(@fg, 0.09);
+  background-color: alpha(@text, 0.09);
 }
 
 progressbar.download-progress progress,
@@ -460,7 +500,7 @@ progressbar.verify-progress progress {
 
 .torrent-separator {
   min-height: 1px;
-  background-color: alpha(@fg, 0.07);
+  background-color: alpha(@text, 0.07);
   border: none;
 }
 
@@ -475,17 +515,17 @@ progressbar.verify-progress progress {
 
 .torrent-engine {
   font-size: 0.76em;
-  color: alpha(@fg, 0.38);
+  color: alpha(@text, 0.38);
   padding-left: 4px;
 }
 
 row.torrent-row {
   padding: 5px 14px 6px 16px;
-  border-bottom: 1px solid alpha(@fg, 0.04);
+  border-bottom: 1px solid alpha(@text, 0.04);
 }
 
 row.torrent-row:hover {
-  background-color: alpha(@fg, 0.035);
+  background-color: alpha(@text, 0.035);
 }
 
 row.torrent-row:selected {
@@ -502,13 +542,13 @@ row.torrent-row:selected {
 
 .banner-text {
   font-size: 0.86em;
-  color: alpha(@fg, 0.80);
+  color: alpha(@text, 0.80);
 }
 
 .toast {
   background-color: alpha(@bg, 0.97);
-  border: 1px solid alpha(@fg, 0.12);
-  border-radius: 8px;
+  border: 1px solid alpha(@text, 0.12);
+  border-radius: 10px;
   padding: 8px 14px;
   box-shadow: 0 3px 12px @shadow;
 }
@@ -528,12 +568,12 @@ row.torrent-row:selected {
 
 .empty-text {
   font-size: 0.89em;
-  color: alpha(@fg, 0.50);
+  color: alpha(@text, 0.50);
 }
 
 .selection-dock {
   background-color: alpha(@bg, 0.96);
-  border-top: 1px solid alpha(@fg, 0.07);
+  border-top: 1px solid alpha(@text, 0.07);
   padding: 7px 16px;
 }
 
@@ -542,7 +582,7 @@ row.torrent-row:selected {
 }
 
 .duplicate-group {
-  background-color: alpha(@fg, 0.02);
+  background-color: alpha(@text, 0.02);
   border-radius: 6px;
   padding: 9px 12px;
 }
@@ -551,7 +591,7 @@ row.torrent-row:selected {
 
 .library-toolbar {
   padding: 7px 12px 6px 12px;
-  border-bottom: 1px solid alpha(@fg, 0.07);
+  border-bottom: 1px solid alpha(@text, 0.07);
 }
 
 .library-toolbar entry {
@@ -564,12 +604,12 @@ row.torrent-row:selected {
 
 .library-meta {
   padding: 4px 14px 6px 14px;
-  border-bottom: 1px solid alpha(@fg, 0.05);
+  border-bottom: 1px solid alpha(@text, 0.05);
 }
 
 .usage-label {
   font-size: 0.77em;
-  color: alpha(@fg, 0.46);
+  color: alpha(@text, 0.46);
 }
 
 .library-flow {
@@ -578,7 +618,7 @@ row.torrent-row:selected {
 
 flowboxchild.library-tile {
   padding: 0;
-  border-radius: 8px;
+  border-radius: 10px;
   outline: none;
   background-color: transparent;
   background-image: none;
@@ -594,14 +634,14 @@ flowboxchild.library-tile:focus-visible,
 
 .cover-card {
   padding: 0;
-  border-radius: 8px;
+  border-radius: 10px;
   border: none;
   background-color: transparent;
   background-image: none;
 }
 
 flowboxchild.library-tile:hover .cover-card {
-  background-color: alpha(@fg, 0.035);
+  background-color: alpha(@text, 0.035);
 }
 
 flowboxchild.library-tile:selected .cover-card {
@@ -610,7 +650,7 @@ flowboxchild.library-tile:selected .cover-card {
 
 .tile-cover {
   border-radius: 6px;
-  background-color: alpha(@fg, 0.04);
+  background-color: alpha(@text, 0.04);
   min-height: 110px;
   min-width: 150px;
 }
@@ -620,19 +660,19 @@ flowboxchild.library-tile:selected .cover-card {
   font-weight: 600;
   margin-top: 7px;
   margin-left: 2px;
-  color: alpha(@fg, 0.92);
+  color: alpha(@text, 0.92);
 }
 
 .tile-meta {
   font-size: 0.78em;
   margin-left: 2px;
-  color: alpha(@fg, 0.48);
+  color: alpha(@text, 0.48);
 }
 
 .tile-compat {
   font-size: 0.76em;
   margin-left: 2px;
-  color: alpha(@fg, 0.38);
+  color: alpha(@text, 0.38);
 }
 
 .tile-badge {
@@ -640,7 +680,7 @@ flowboxchild.library-tile:selected .cover-card {
   font-weight: 700;
   padding: 1px 6px;
   border-radius: 999px;
-  color: alpha(@fg, 0.92);
+  color: alpha(@text, 0.92);
 }
 
 .badge-incomplete {
@@ -648,7 +688,7 @@ flowboxchild.library-tile:selected .cover-card {
 }
 
 .badge-missing {
-  background-color: alpha(@muted, 0.72);
+  background-color: alpha(@text2, 0.72);
 }
 
 .badge-failed {
@@ -657,8 +697,8 @@ flowboxchild.library-tile:selected .cover-card {
 
 .badge-copies {
   background-color: alpha(@bg, 0.80);
-  color: alpha(@fg, 0.70);
-  border: 1px solid alpha(@fg, 0.14);
+  color: alpha(@text, 0.70);
+  border: 1px solid alpha(@text, 0.14);
 }
 
 button.favorite-star {
@@ -667,7 +707,7 @@ button.favorite-star {
   min-width: 22px;
   border-radius: 999px;
   background-color: alpha(@bg, 0.55);
-  color: alpha(@fg, 0.38);
+  color: alpha(@text, 0.38);
   border: none;
   box-shadow: none;
   opacity: 0;
@@ -688,7 +728,7 @@ button.favorite-star:checked {
 }
 
 .library-detail {
-  border-left: 1px solid alpha(@fg, 0.08);
+  border-left: 1px solid alpha(@text, 0.08);
 }
 
 .panel-title {
@@ -700,7 +740,7 @@ button.favorite-star:checked {
   font-size: 0.72em;
   font-weight: 700;
   letter-spacing: 0.6px;
-  color: alpha(@fg, 0.58);
+  color: alpha(@text, 0.58);
 }
 
 .fact-value {
@@ -708,7 +748,7 @@ button.favorite-star:checked {
 }
 
 .start-frame {
-  background-color: alpha(@fg, 0.02);
+  background-color: alpha(@text, 0.02);
   border-radius: 6px;
 }
 
@@ -720,12 +760,12 @@ button.favorite-star:checked {
   font-size: 0.72em;
   font-weight: 700;
   letter-spacing: 0.8px;
-  color: alpha(@fg, 0.45);
+  color: alpha(@text, 0.45);
 }
 
 .field-label {
   font-size: 0.84em;
-  color: alpha(@fg, 0.60);
+  color: alpha(@text, 0.60);
 }
 
 .integrity-ok {
@@ -733,11 +773,11 @@ button.favorite-star:checked {
 }
 
 .integrity-warn {
-  color: @warning;
+  color: @warning_text;
 }
 
 .integrity-bad {
-  color: @danger;
+  color: @danger_text;
 }
 
 .queue-banner {
@@ -776,19 +816,19 @@ dialog flowboxchild {
   font-family: "Iosevka NF", "DejaVu Sans Mono", monospace;
   font-size: 0.82em;
   font-weight: 600;
-  color: @fg;
+  color: @text;
   padding: 2px 8px;
   min-height: 22px;
   border-radius: 5px;
-  border: 1px solid alpha(@fg, 0.18);
-  background-color: @raised;
+  border: 1px solid alpha(@text, 0.18);
+  background-color: @overlay;
   background-image: none;
 }
 
 /* -- scrollbars --------------------------------------------------------- */
 
 scrollbar slider {
-  background-color: alpha(@fg, 0.20);
+  background-color: alpha(@text, 0.20);
   border-radius: 999px;
   min-width: 5px;
   min-height: 5px;
@@ -797,7 +837,7 @@ scrollbar slider {
 }
 
 scrollbar slider:hover {
-  background-color: alpha(@fg, 0.32);
+  background-color: alpha(@text, 0.32);
 }
 
 scrollbar trough {
@@ -807,8 +847,8 @@ scrollbar trough {
 /* -- popovers ----------------------------------------------------------- */
 
 popover {
-  border-radius: 8px;
-  border: 1px solid alpha(@fg, 0.10);
+  border-radius: 10px;
+  border: 1px solid alpha(@text, 0.10);
 }
 
 /* -- stock widget surfaces ---------------------------------------------- */
@@ -816,7 +856,7 @@ popover {
  * the desktop theme has no dark variant of its own. */
 
 /* Three surfaces only: @bg for the window and page content, @surface for bars,
- * rails and side panels, @raised for cards and popovers. */
+ * rails and side panels, @overlay for cards and popovers. */
 headerbar,
 .titlebar,
 menubar,
@@ -824,17 +864,17 @@ dialog,
 decoration {
   background-color: @surface;
   background-image: none;
-  color: @fg;
+  color: @text;
 }
 
 .background {
   background-color: @bg;
   background-image: none;
-  color: @fg;
+  color: @text;
 }
 
 headerbar {
-  border-bottom: 1px solid @divider;
+  border-bottom: 1px solid @border;
   box-shadow: none;
 }
 
@@ -847,18 +887,18 @@ popover.background,
 window.tooltip,
 tooltip,
 tooltip.background {
-  background-color: @raised;
+  background-color: @overlay;
   background-image: none;
-  color: @fg;
-  border: 1px solid alpha(@fg, 0.10);
-  border-radius: 12px;
+  color: @text;
+  border: 1px solid alpha(@text, 0.10);
+  border-radius: 14px;
   box-shadow: 0 8px 24px @shadow;
 }
 
 menuitem {
   padding: 6px 12px;
-  border-radius: 8px;
-  color: @fg;
+  border-radius: 10px;
+  color: @text;
 }
 
 menuitem:hover {
@@ -866,13 +906,13 @@ menuitem:hover {
 }
 
 menuitem:disabled {
-  color: @faint;
+  color: @muted;
 }
 
 window.tooltip,
 tooltip,
 tooltip.background {
-  border-radius: 8px;
+  border-radius: 10px;
   padding: 6px 10px;
   box-shadow: 0 4px 14px @shadow;
 }
@@ -880,10 +920,10 @@ tooltip.background {
 entry,
 spinbutton,
 combobox button {
-  background-color: @raised;
+  background-color: @overlay;
   background-image: none;
-  color: @fg;
-  border: 1px solid @divider;
+  color: @text;
+  border: 1px solid @border;
   border-radius: 999px;
   padding: 6px 12px;
   box-shadow: none;
@@ -899,22 +939,22 @@ combobox button:focus {
 
 entry:disabled,
 combobox button:disabled {
-  color: @faint;
+  color: @muted;
   background-color: @surface;
 }
 
 entry selection,
 textview text selection {
   background-color: alpha(@accent, 0.40);
-  color: @fg;
+  color: @text;
 }
 
 button {
-  background-color: @raised;
+  background-color: @overlay;
   background-image: none;
-  color: @fg;
+  color: @text;
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: 10px;
   box-shadow: none;
   transition: background-color 150ms ease, color 150ms ease;
 }
@@ -927,7 +967,7 @@ button:checked {
 
 button:disabled {
   background-color: @surface;
-  color: @faint;
+  color: @muted;
 }
 
 button.suggested-action {
@@ -946,8 +986,8 @@ button.suggested-action:disabled {
 
 checkbutton check,
 radiobutton radio {
-  background-color: @raised;
-  border: 1px solid @divider;
+  background-color: @overlay;
+  border: 1px solid @border;
   color: @on_accent;
 }
 
@@ -959,7 +999,7 @@ radiobutton radio:checked {
 
 switch {
   background-color: @hover;
-  border: 1px solid @divider;
+  border: 1px solid @border;
 }
 
 switch:checked {
@@ -974,7 +1014,7 @@ switch slider {
 treeview.view,
 list row {
   background-color: transparent;
-  color: @fg;
+  color: @text;
 }
 
 treeview.view:hover,
@@ -985,7 +1025,7 @@ list row:hover {
 treeview.view:selected,
 list row:selected {
   background-color: alpha(@accent, 0.26);
-  color: @fg;
+  color: @text;
 }
 
 treeview.view:focus {
@@ -993,7 +1033,7 @@ treeview.view:focus {
 }
 
 separator {
-  background-color: @divider;
+  background-color: @border;
 }
 
 /* -- notebooks, dialogs and their action areas --------------------------- */
@@ -1014,14 +1054,14 @@ dialog box,
 dialog content {
   background-color: @surface;
   background-image: none;
-  color: @fg;
+  color: @text;
   border: none;
   box-shadow: none;
 }
 
 dialog .dialog-action-area,
 dialog actionbar {
-  border-top: 1px solid @divider;
+  border-top: 1px solid @border;
   padding: 10px 12px;
 }
 
@@ -1029,14 +1069,14 @@ notebook {
   background-color: @surface;
   background-image: none;
   border: none;
-  color: @fg;
+  color: @text;
 }
 
 notebook > header {
   background-color: @surface;
   background-image: none;
   border: none;
-  border-bottom: 1px solid @divider;
+  border-bottom: 1px solid @border;
   padding: 4px 6px 0 6px;
 }
 
@@ -1049,17 +1089,17 @@ notebook > header tab {
   background-color: transparent;
   background-image: none;
   box-shadow: none;
-  color: @muted;
+  color: @text2;
 }
 
 notebook > header tab:hover {
   background-color: @hover;
-  color: @fg;
+  color: @text;
 }
 
 notebook > header tab:checked {
   background-color: @surface;
-  color: @fg;
+  color: @text;
 }
 
 notebook > header tab:checked label {
@@ -1085,7 +1125,7 @@ scrolledwindow > viewport,
 scrolledwindow > viewport > box {
   background-color: @surface;
   background-image: none;
-  color: @fg;
+  color: @text;
   border: none;
   box-shadow: none;
 }
@@ -1099,7 +1139,7 @@ dialog box > box,
 dialog > box > box {
   background-color: @surface;
   background-image: none;
-  color: @fg;
+  color: @text;
   border: none;
   box-shadow: none;
 }
@@ -1122,7 +1162,7 @@ list.view,
 list box {
   background-color: transparent;
   background-image: none;
-  color: @fg;
+  color: @text;
 }
 
 .downloads-panel,
@@ -1141,7 +1181,7 @@ filechooserwidget placessidebar,
 filechooserwidget .sidebar {
   background-color: @bg;
   background-image: none;
-  color: @fg;
+  color: @text;
 }
 
 filechooser treeview.view:hover,
@@ -1152,11 +1192,11 @@ filechooserwidget treeview.view:hover {
 filechooser treeview.view:selected,
 filechooserwidget treeview.view:selected {
   background-color: alpha(@accent, 0.26);
-  color: @fg;
+  color: @text;
 }
 
 progressbar trough {
-  background-color: alpha(@fg, 0.10);
+  background-color: alpha(@text, 0.10);
   border-radius: 999px;
 }
 
@@ -1177,17 +1217,17 @@ progressbar progress {
 .page-title {
   font-size: 1.30em;
   font-weight: 700;
-  color: @fg;
+  color: @text;
 }
 
 .page-count {
   font-size: 0.78em;
-  color: @muted;
+  color: @text2;
 }
 
 .browse-filters {
   background-color: @surface;
-  border-right: 1px solid alpha(@fg, 0.06);
+  border-right: 1px solid alpha(@text, 0.06);
 }
 
 .filter-body {
@@ -1197,7 +1237,7 @@ progressbar progress {
 .filter-title {
   font-size: 0.74em;
   font-weight: 700;
-  color: @muted;
+  color: @text2;
 }
 
 .filter-row {
@@ -1206,7 +1246,7 @@ progressbar progress {
 
 .filter-check {
   font-size: 0.80em;
-  color: @muted;
+  color: @text2;
   padding: 1px 0;
 }
 
@@ -1214,7 +1254,7 @@ progressbar progress {
   min-width: 13px;
   min-height: 13px;
   border-radius: 4px;
-  border: 1px solid alpha(@fg, 0.22);
+  border: 1px solid alpha(@text, 0.22);
   background-color: transparent;
 }
 
@@ -1225,7 +1265,7 @@ progressbar progress {
 
 .filter-count {
   font-size: 0.74em;
-  color: @faint;
+  color: @muted;
   margin-left: 6px;
 }
 
@@ -1234,10 +1274,10 @@ progressbar progress {
   padding: 0 8px;
   margin: 0;
   border-radius: 999px;
-  border: 1px solid alpha(@fg, 0.12);
+  border: 1px solid alpha(@text, 0.12);
   background-color: transparent;
   font-size: 0.74em;
-  color: @muted;
+  color: @text2;
 }
 
 /* The year fields sit under the decade chips, so they take the chips' own text
@@ -1264,13 +1304,13 @@ progressbar progress {
 
 .chip:hover {
   background-color: @hover;
-  color: @fg;
+  color: @text;
 }
 
 .chip-on {
-  background-color: @raised;
-  border-color: alpha(@fg, 0.28);
-  color: @fg;
+  background-color: @overlay;
+  border-color: alpha(@text, 0.28);
+  color: @text;
 }
 
 .browse-grid {
@@ -1279,7 +1319,7 @@ progressbar progress {
 
 .browse-tile {
   padding: 0;
-  border-radius: 8px;
+  border-radius: 10px;
   background-color: transparent;
   background-image: none;
   outline: none;
@@ -1293,12 +1333,12 @@ progressbar progress {
 .tile-title {
   font-size: 0.80em;
   font-weight: 600;
-  color: @fg;
+  color: @text;
 }
 
 .tile-meta {
   font-size: 0.73em;
-  color: @faint;
+  color: @muted;
 }
 
 .game-page,
@@ -1323,13 +1363,13 @@ progressbar progress {
 
 .crumb {
   font-size: 0.86em;
-  color: @muted;
+  color: @text2;
 }
 
 flowboxchild.browse-tile:selected {
   background-color: transparent;
   box-shadow: inset 0 0 0 2px @accent;
-  border-radius: 8px;
+  border-radius: 10px;
 }
 
 flowboxchild.browse-tile:hover .cover-card {
@@ -1343,28 +1383,51 @@ flowboxchild.browse-tile:hover .cover-card {
 
 .app-rail {
   background-color: @surface;
-  border-right: 1px solid alpha(@fg, 0.06);
-  padding: 8px 6px 10px 6px;
+  border-right: 1px solid @border;
+  /* Vertical only: the 8 px side margin lives on the items, so the rail's own
+   * allocation stays exactly the contract's 72 px. */
+  padding: 8px 0;
 }
 
+/* Sidebar: 72 px wide, 56 px items, 8 px apart (set on the widget too), an
+ * accent-soft pill with a 3 px accent bar when active, and a 2 px focus ring. */
 .rail-button {
   background-color: transparent;
   background-image: none;
   border: none;
+  border-left: 3px solid transparent;
   box-shadow: none;
-  padding: 9px 4px;
-  border-radius: 8px;
+  padding: 6px 0;
+  margin: 0 8px;
+  min-height: 0;
+  border-radius: 10px;
   color: @muted;
+  transition: background-color 140ms ease, color 140ms ease,
+              border-color 140ms ease, box-shadow 140ms ease;
 }
 
 .rail-button:hover {
-  background-color: @hover;
-  color: @fg;
+  background-color: alpha(@text, 0.06);
+  color: @text;
 }
 
 .rail-button.rail-on {
-  background-color: @raised;
-  color: @accent_text;
+  background-color: @accent_soft;
+  border-left-color: @accent;
+  color: @accent;
+}
+
+.rail-button.rail-on:hover {
+  background-color: @accent_soft;
+  color: @accent_hover;
+}
+
+.rail-button.rail-on .rail-label {
+  color: @accent;
+}
+
+.rail-button:focus {
+  box-shadow: inset 0 0 0 2px @accent;
 }
 
 .rail-label {
@@ -1385,7 +1448,7 @@ flowboxchild.browse-tile:hover .cover-card {
 
 .app-header {
   background-color: @surface;
-  border-bottom: 1px solid alpha(@fg, 0.06);
+  border-bottom: 1px solid alpha(@text, 0.06);
   padding: 5px 8px;
 }
 
@@ -1397,12 +1460,12 @@ flowboxchild.browse-tile:hover .cover-card {
   min-width: 26px;
   min-height: 26px;
   padding: 2px;
-  color: @muted;
+  color: @text2;
 }
 
 .search-pill {
-  background-color: @raised;
-  border: 1px solid alpha(@fg, 0.08);
+  background-color: @overlay;
+  border: 1px solid alpha(@text, 0.08);
   border-radius: 999px;
   padding: 1px 8px 1px 6px;
   min-height: 30px;
@@ -1414,13 +1477,13 @@ flowboxchild.browse-tile:hover .cover-card {
   border: none;
   box-shadow: none;
   font-size: 0.88em;
-  color: @fg;
+  color: @text;
 }
 
 .key-hint {
   font-size: 0.72em;
-  color: @faint;
-  background-color: alpha(@fg, 0.06);
+  color: @muted;
+  background-color: alpha(@text, 0.06);
   border-radius: 4px;
   padding: 1px 5px;
 }
@@ -1430,7 +1493,7 @@ flowboxchild.browse-tile:hover .cover-card {
 /* Rule for this whole section: palette tokens only.
  *
  * Every Media and home-feed rule below is written with the app palette
- * (@bg, @surface, @raised, @fg, @muted, @faint, @accent, @warning, @danger), so
+ * (@bg, @surface, @overlay, @text, @text2, @muted, @accent, @warning, @danger), so
  * the page follows the dark/light setting exactly like the rest of the app.
  *
  * Literal colours are allowed in two places only, each marked "kept dark":
@@ -1445,7 +1508,7 @@ flowboxchild.browse-tile:hover .cover-card {
 .movie-window.background,
 .movie-window {
   background-color: @bg;
-  color: @fg;
+  color: @text;
 }
 
 .movie-window stack {
@@ -1467,16 +1530,16 @@ flowboxchild.browse-tile:hover .cover-card {
 headerbar.movie-nav {
   background-color: @surface;
   background-image: none;
-  border-bottom: 1px solid alpha(@fg, 0.07);
+  border-bottom: 1px solid alpha(@text, 0.07);
   box-shadow: none;
   min-height: 48px;
   padding: 4px 12px;
-  color: @fg;
+  color: @text;
 }
 
 headerbar.movie-nav:backdrop {
   background-color: @surface;
-  color: @fg;
+  color: @text;
 }
 
 headerbar.movie-nav button.titlebutton {
@@ -1484,15 +1547,15 @@ headerbar.movie-nav button.titlebutton {
   background-image: none;
   border: none;
   box-shadow: none;
-  color: @fg;
+  color: @text;
 }
 
 headerbar.movie-nav button.titlebutton:hover {
-  background-color: alpha(@fg, 0.10);
+  background-color: alpha(@text, 0.10);
 }
 
-.movie-brand { color: @fg; font-weight: 700; font-size: 0.98em; }
-.movie-brand-mark { color: @warning; font-size: 0.85em; }
+.movie-brand { color: @text; font-weight: 700; font-size: 0.98em; }
+.movie-brand-mark { color: @warning_text; font-size: 0.85em; }
 
 button.movie-nav-item {
   background-color: transparent;
@@ -1501,23 +1564,23 @@ button.movie-nav-item {
   border-image: none;
   box-shadow: none;
   text-shadow: none;
-  color: @muted;
+  color: @text2;
   padding: 5px 10px;
   min-height: 0;
   min-width: 0;
-  border-radius: 7px;
+  border-radius: 6px;
   font-weight: 600;
   font-size: 0.9em;
 }
 
 button.movie-nav-item:hover {
-  color: @fg;
-  background-color: alpha(@fg, 0.07);
+  color: @text;
+  background-color: alpha(@text, 0.07);
 }
 
 button.movie-nav-item.active {
   color: @bg;
-  background-color: @fg;
+  background-color: @text;
   background-image: none;
   border-color: transparent;
   box-shadow: none;
@@ -1526,11 +1589,11 @@ button.movie-nav-item.active {
 
 button.movie-nav-item.active:hover {
   color: @bg;
-  background-color: @fg;
+  background-color: @text;
 }
 
 button.movie-nav-item:disabled {
-  color: @faint;
+  color: @muted;
   background-color: transparent;
 }
 
@@ -1539,7 +1602,7 @@ button.movie-nav-item:disabled {
  * its own colour pair and cancels the theme's image, shadow and border. */
 headerbar.movie-nav button.movie-nav-item.active,
 button.movie-nav-item.active {
-  background-color: @fg;
+  background-color: @text;
   background-image: none;
   border: 1px solid transparent;
   border-color: transparent;
@@ -1552,7 +1615,7 @@ headerbar.movie-nav button.movie-nav-item.active:hover,
 headerbar.movie-nav button.movie-nav-item.active:active,
 button.movie-nav-item.active:hover,
 button.movie-nav-item.active:active {
-  background-color: @fg;
+  background-color: @text;
   background-image: none;
   border-color: transparent;
   box-shadow: none;
@@ -1562,7 +1625,7 @@ button.movie-nav-item.active:active {
 
 headerbar.movie-nav button.movie-nav-item.active:backdrop,
 button.movie-nav-item.active:backdrop {
-  background-color: @fg;
+  background-color: @text;
   background-image: none;
   border-color: transparent;
   box-shadow: none;
@@ -1572,12 +1635,12 @@ button.movie-nav-item.active:backdrop {
 
 headerbar.movie-nav button.movie-nav-item.active:disabled,
 button.movie-nav-item.active:disabled {
-  background-color: alpha(@fg, 0.10);
+  background-color: alpha(@text, 0.10);
   background-image: none;
   border-color: transparent;
   box-shadow: none;
   text-shadow: none;
-  color: @muted;
+  color: @text2;
 }
 
 headerbar.movie-nav button.movie-nav-item:backdrop,
@@ -1586,7 +1649,7 @@ button.movie-nav-item:backdrop {
   background-image: none;
   box-shadow: none;
   text-shadow: none;
-  color: @muted;
+  color: @text2;
 }
 
 button.movie-btn-primary,
@@ -1601,15 +1664,15 @@ button.movie-btn-primary:backdrop {
 }
 
 button.movie-btn-primary:backdrop {
-  background-color: @fg;
+  background-color: @text;
   border-color: transparent;
   color: @bg;
 }
 
 button.movie-btn-primary:disabled {
-  background-color: alpha(@fg, 0.12);
+  background-color: alpha(@text, 0.12);
   border-color: transparent;
-  color: @muted;
+  color: @text2;
 }
 
 button.movie-btn-dark,
@@ -1625,9 +1688,9 @@ button.movie-btn-dark:backdrop {
 }
 
 button.movie-btn-dark:backdrop {
-  background-color: alpha(@fg, 0.10);
-  border-color: alpha(@fg, 0.14);
-  color: @fg;
+  background-color: alpha(@text, 0.10);
+  border-color: alpha(@text, 0.14);
+  color: @text;
 }
 
 button.movie-icon-button {
@@ -1635,25 +1698,25 @@ button.movie-icon-button {
   background-image: none;
   border: none;
   box-shadow: none;
-  color: @muted;
+  color: @text2;
   padding: 4px;
   min-width: 0;
   min-height: 0;
-  border-radius: 7px;
+  border-radius: 6px;
 }
 
 button.movie-icon-button:hover {
-  color: @fg;
-  background-color: alpha(@fg, 0.09);
+  color: @text;
+  background-color: alpha(@text, 0.09);
 }
 
 .movie-search {
-  background-color: @raised;
+  background-color: @overlay;
   background-image: none;
-  border: 1px solid @divider;
+  border: 1px solid @border;
   border-radius: 999px;
   box-shadow: none;
-  color: @fg;
+  color: @text;
   padding: 1px 10px;
   min-height: 30px;
 }
@@ -1663,11 +1726,11 @@ button.movie-icon-button:hover {
   background-image: none;
   border: none;
   box-shadow: none;
-  color: @fg;
+  color: @text;
 }
 
-.movie-search entry placeholder { color: @faint; }
-.movie-search image { color: @faint; }
+.movie-search entry placeholder { color: @muted; }
+.movie-search image { color: @muted; }
 
 .movie-window scrollbar {
   background-color: transparent;
@@ -1675,19 +1738,19 @@ button.movie-icon-button:hover {
 }
 
 .movie-window scrollbar slider {
-  background-color: alpha(@fg, 0.16);
+  background-color: alpha(@text, 0.16);
   border: none;
-  border-radius: 8px;
+  border-radius: 10px;
   min-width: 6px;
   min-height: 6px;
 }
 
 .movie-window scrollbar slider:hover {
-  background-color: alpha(@fg, 0.28);
+  background-color: alpha(@text, 0.28);
 }
 
 .movie-window separator {
-  background-color: alpha(@fg, 0.07);
+  background-color: alpha(@text, 0.07);
 }
 
 /* -- hero: kept dark in both themes (white text over artwork) ------------ */
@@ -1721,13 +1784,13 @@ button.movie-icon-button:hover {
   font-weight: 800;
 }
 
-.movie-page-title { color: @fg; font-size: 1.65em; font-weight: 800; }
-.movie-rating-star { color: @warning; font-weight: 700; }
-.movie-meta { color: @muted; font-size: 0.9em; }
-.movie-overview { color: @fg; font-size: 0.98em; }
+.movie-page-title { color: @text; font-size: 1.65em; font-weight: 800; }
+.movie-rating-star { color: @warning_text; font-weight: 700; }
+.movie-meta { color: @text2; font-size: 0.9em; }
+.movie-overview { color: @text; font-size: 0.98em; }
 
 button.movie-btn-primary {
-  background-color: @fg;
+  background-color: @text;
   background-image: none;
   border: 1px solid transparent;
   border-image: none;
@@ -1735,7 +1798,7 @@ button.movie-btn-primary {
   box-shadow: none;
   text-shadow: none;
   color: @bg;
-  border-radius: 8px;
+  border-radius: 10px;
   padding: 9px 20px;
   min-height: 0;
   font-weight: 700;
@@ -1743,65 +1806,65 @@ button.movie-btn-primary {
 
 button.movie-btn-primary:hover {
   background-color: @hover;
-  color: @fg;
-  border-color: alpha(@fg, 0.12);
+  color: @text;
+  border-color: alpha(@text, 0.12);
 }
 
 button.movie-btn-primary:active {
   background-color: @hover;
-  color: @fg;
-  border-color: alpha(@fg, 0.18);
+  color: @text;
+  border-color: alpha(@text, 0.18);
   box-shadow: none;
 }
 
 button.movie-btn-primary:disabled {
-  background-color: alpha(@fg, 0.12);
+  background-color: alpha(@text, 0.12);
   background-image: none;
-  color: @muted;
+  color: @text2;
   border-color: transparent;
   box-shadow: none;
 }
 
 button.movie-btn-primary:backdrop {
-  background-color: alpha(@fg, 0.85);
+  background-color: alpha(@text, 0.85);
   color: @bg;
 }
 
 button.movie-btn-dark {
-  background-color: alpha(@fg, 0.10);
+  background-color: alpha(@text, 0.10);
   background-image: none;
-  border: 1px solid alpha(@fg, 0.14);
+  border: 1px solid alpha(@text, 0.14);
   border-image: none;
-  border-color: alpha(@fg, 0.14);
+  border-color: alpha(@text, 0.14);
   box-shadow: none;
   text-shadow: none;
-  color: @fg;
-  border-radius: 8px;
+  color: @text;
+  border-radius: 10px;
   padding: 8px 16px;
   min-height: 0;
   font-weight: 600;
 }
 
 button.movie-btn-dark:hover {
-  background-color: alpha(@fg, 0.17);
-  color: @fg;
+  background-color: alpha(@text, 0.17);
+  color: @text;
 }
 
 button.movie-btn-dark:active {
-  background-color: alpha(@fg, 0.22);
-  color: @fg;
+  background-color: alpha(@text, 0.22);
+  color: @text;
 }
 
 button.movie-btn-dark:disabled {
-  background-color: alpha(@fg, 0.06);
-  color: @faint;
-  border-color: alpha(@fg, 0.08);
+  background-color: alpha(@text, 0.06);
+  color: @muted;
+  border-color: alpha(@text, 0.08);
 }
 
 button.movie-btn-dark:checked {
   background-color: alpha(@warning, 0.16);
   border-color: alpha(@warning, 0.55);
-  color: @warning;
+  color: @warning_text;
 }
 
 button.movie-btn-small {
@@ -1815,24 +1878,24 @@ button.movie-link {
   background-image: none;
   border: none;
   box-shadow: none;
-  color: @muted;
+  color: @text2;
   padding: 2px 6px;
   min-height: 0;
   font-weight: 600;
   font-size: 0.86em;
 }
 
-button.movie-link:hover { color: @fg; }
+button.movie-link:hover { color: @text; }
 
 .movie-section-title {
-  color: @fg;
+  color: @text;
   font-size: 1.15em;
   font-weight: 700;
 }
 
 .movie-section-count {
-  background-color: alpha(@fg, 0.08);
-  color: @muted;
+  background-color: alpha(@text, 0.08);
+  color: @text2;
   border-radius: 999px;
   padding: 1px 8px;
   font-size: 0.72em;
@@ -1840,7 +1903,7 @@ button.movie-link:hover { color: @fg; }
 }
 
 .movie-section-sub {
-  color: @muted;
+  color: @text2;
   font-size: 0.82em;
 }
 
@@ -1857,7 +1920,7 @@ button.movie-card {
   border-radius: 10px;
 }
 
-button.movie-card:hover .movie-card-title { color: @fg; }
+button.movie-card:hover .movie-card-title { color: @text; }
 
 .movie-card-poster {
   background-color: @surface;
@@ -1865,19 +1928,19 @@ button.movie-card:hover .movie-card-title { color: @fg; }
 }
 
 .movie-card-title {
-  color: @fg;
+  color: @text;
   font-size: 0.9em;
   font-weight: 600;
 }
 
 .movie-card-meta {
-  color: @muted;
+  color: @text2;
   font-size: 0.78em;
 }
 
 .movie-card-rating {
   background-color: alpha(@bg, 0.82);
-  color: @warning;
+  color: @warning_text;
   border-radius: 6px;
   padding: 1px 6px;
   font-size: 0.72em;
@@ -1889,15 +1952,15 @@ button.movie-card:hover .movie-card-title { color: @fg; }
   border-radius: 10px;
 }
 
-.movie-title { color: @fg; font-weight: 600; }
+.movie-title { color: @text; font-weight: 600; }
 
 button.movie-arrow {
   background-color: alpha(@bg, 0.72);
   background-image: none;
-  border: 1px solid alpha(@fg, 0.14);
+  border: 1px solid alpha(@text, 0.14);
   border-image: none;
   box-shadow: none;
-  color: @fg;
+  color: @text;
   border-radius: 999px;
   padding: 0;
   min-width: 32px;
@@ -1905,38 +1968,38 @@ button.movie-arrow {
 }
 
 button.movie-arrow:hover {
-  background-color: alpha(@fg, 0.16);
-  color: @fg;
+  background-color: alpha(@text, 0.16);
+  color: @text;
 }
 
 button.movie-arrow:disabled {
-  color: @faint;
+  color: @muted;
   background-color: alpha(@bg, 0.45);
 }
 
 .movie-empty {
   background-color: @surface;
-  border: 1px solid alpha(@fg, 0.08);
+  border: 1px solid alpha(@text, 0.08);
   border-radius: 14px;
   padding: 28px;
-  color: @muted;
+  color: @text2;
 }
 
 .movie-empty-title {
-  color: @fg;
+  color: @text;
   font-size: 1.05em;
   font-weight: 700;
 }
 
-.movie-empty-icon { color: @faint; }
+.movie-empty-icon { color: @muted; }
 
 .movie-status {
-  color: @muted;
+  color: @text2;
   font-size: 0.88em;
 }
 
 .movie-adult-badge {
-  background-color: @danger;
+  background-color: @danger_text;
   color: @on_accent;
   border-radius: 5px;
   padding: 1px 6px;
@@ -1944,11 +2007,11 @@ button.movie-arrow:disabled {
   font-weight: 800;
 }
 
-.movie-episode { color: @fg; font-size: 0.94em; }
+.movie-episode { color: @text; font-size: 0.94em; }
 
 .movie-episode-row {
   background-color: @surface;
-  border-radius: 8px;
+  border-radius: 10px;
   padding: 6px 8px;
 }
 
@@ -1963,19 +2026,19 @@ button.movie-arrow:disabled {
 /* Streaming-style rows: a large number, a 16:9 still with its rating pill,
  * then the facts and a short synopsis. Palette tokens only. */
 .movie-episode-number {
-  color: @fg;
+  color: @text;
   font-size: 1.45em;
   font-weight: 800;
   min-width: 34px;
 }
 
-.movie-episode-meta { color: @muted; font-size: 0.86em; }
+.movie-episode-meta { color: @text2; font-size: 0.86em; }
 
-.movie-episode-overview { color: @muted; font-size: 0.88em; }
+.movie-episode-overview { color: @text2; font-size: 0.88em; }
 
 .movie-episode-rating {
   background-color: alpha(@bg, 0.82);
-  color: @warning;
+  color: @warning_text;
   border-radius: 6px;
   padding: 1px 7px;
   font-size: 0.76em;
@@ -1987,7 +2050,7 @@ button.movie-arrow:disabled {
 .movie-history-row {
   background-color: @surface;
   background-image: none;
-  border: 1px solid alpha(@fg, 0.06);
+  border: 1px solid alpha(@text, 0.06);
   border-image: none;
   border-radius: 10px;
   box-shadow: none;
@@ -1996,11 +2059,11 @@ button.movie-arrow:disabled {
 
 .movie-history-row:hover {
   background-color: @hover;
-  border-color: alpha(@fg, 0.12);
+  border-color: alpha(@text, 0.12);
 }
 
 .movie-history-title {
-  color: @fg;
+  color: @text;
   font-weight: 600;
   font-size: 0.95em;
 }
@@ -2038,15 +2101,15 @@ button.movie-arrow:disabled {
 }
 
 .movie-window .feed-title {
-  color: @fg;
+  color: @text;
   font-size: 0.96em;
   font-weight: 700;
   letter-spacing: 0.2px;
 }
 
 .movie-window .feed-count {
-  background-color: alpha(@fg, 0.08);
-  color: @muted;
+  background-color: alpha(@text, 0.08);
+  color: @text2;
   border-radius: 999px;
   padding: 1px 8px;
   font-size: 0.72em;
@@ -2056,12 +2119,12 @@ button.movie-arrow:disabled {
 .movie-window .feed-note,
 .movie-window .feed-placeholder,
 .movie-window .feed-empty {
-  color: @muted;
+  color: @text2;
   font-size: 0.82em;
 }
 
 .movie-window .feed-error {
-  color: @danger;
+  color: @danger_text;
   font-size: 0.82em;
 }
 
@@ -2070,10 +2133,10 @@ button.movie-arrow:disabled {
 button.feed-arrow {
   background-color: alpha(@bg, 0.72);
   background-image: none;
-  border: 1px solid alpha(@fg, 0.14);
+  border: 1px solid alpha(@text, 0.14);
   border-image: none;
   box-shadow: none;
-  color: @fg;
+  color: @text;
   border-radius: 999px;
   padding: 0;
   min-width: 28px;
@@ -2081,8 +2144,8 @@ button.feed-arrow {
 }
 
 button.feed-arrow:hover {
-  background-color: alpha(@fg, 0.16);
-  color: @fg;
+  background-color: alpha(@text, 0.16);
+  color: @text;
 }
 
 button.feed-card {
@@ -2091,15 +2154,15 @@ button.feed-card {
   border: 1px solid transparent;
   border-image: none;
   box-shadow: none;
-  border-radius: 8px;
+  border-radius: 10px;
   padding: 4px;
   min-width: 0;
   min-height: 0;
 }
 
 button.feed-card:hover {
-  background-color: alpha(@fg, 0.05);
-  border-color: alpha(@fg, 0.10);
+  background-color: alpha(@text, 0.05);
+  border-color: alpha(@text, 0.10);
 }
 
 .movie-window .feed-poster {
@@ -2108,25 +2171,25 @@ button.feed-card:hover {
 }
 
 .movie-window .feed-card-title {
-  color: @fg;
+  color: @text;
   font-size: 0.88em;
   font-weight: 600;
 }
 
 .movie-window .feed-card-meta {
-  color: @muted;
+  color: @text2;
   font-size: 0.78em;
 }
 
 .movie-window .feed-column-title {
-  color: @fg;
+  color: @text;
   font-size: 0.74em;
   font-weight: 700;
   letter-spacing: 0.9px;
 }
 
 .movie-window .feed-column-error {
-  color: @danger;
+  color: @danger_text;
   font-size: 0.78em;
 }
 
@@ -2136,14 +2199,14 @@ button.feed-column-row {
   border: 1px solid transparent;
   border-image: none;
   box-shadow: none;
-  border-radius: 7px;
+  border-radius: 6px;
   padding: 3px 5px;
   min-height: 0;
 }
 
 button.feed-column-row:hover {
-  background-color: alpha(@fg, 0.06);
-  border-color: alpha(@fg, 0.08);
+  background-color: alpha(@text, 0.06);
+  border-color: alpha(@text, 0.08);
 }
 
 .movie-window .feed-column-row .poster-frame {
@@ -2152,13 +2215,13 @@ button.feed-column-row:hover {
 }
 
 .movie-window .feed-column-row-title {
-  color: @fg;
+  color: @text;
   font-size: 0.88em;
   font-weight: 600;
 }
 
 .movie-window .feed-column-row-meta {
-  color: @muted;
+  color: @text2;
   font-size: 0.78em;
 }
 
@@ -2167,47 +2230,47 @@ button.feed-column-more {
   background-image: none;
   border: none;
   box-shadow: none;
-  color: @muted;
+  color: @text2;
   padding: 2px 0;
   min-height: 0;
   font-weight: 600;
   font-size: 0.84em;
 }
 
-button.feed-column-more:hover { color: @fg; }
+button.feed-column-more:hover { color: @text; }
 
 .movie-window .feed-now {
-  color: @muted;
+  color: @text2;
   font-size: 0.8em;
 }
 
 button.feed-day {
-  background-color: alpha(@fg, 0.04);
+  background-color: alpha(@text, 0.04);
   background-image: none;
-  border: 1px solid alpha(@fg, 0.10);
+  border: 1px solid alpha(@text, 0.10);
   border-image: none;
   box-shadow: none;
-  color: @muted;
-  border-radius: 8px;
+  color: @text2;
+  border-radius: 10px;
   padding: 5px 8px;
   min-height: 0;
   font-size: 0.84em;
 }
 
 button.feed-day:hover {
-  background-color: alpha(@fg, 0.09);
-  color: @fg;
+  background-color: alpha(@text, 0.09);
+  color: @text;
 }
 
 button.feed-day:checked,
 button.feed-day.chip-on {
-  background-color: alpha(@fg, 0.16);
-  border-color: alpha(@fg, 0.22);
-  color: @fg;
+  background-color: alpha(@text, 0.16);
+  border-color: alpha(@text, 0.22);
+  color: @text;
 }
 
 button.feed-day.feed-today {
-  color: @fg;
+  color: @text;
   font-weight: 700;
 }
 
@@ -2217,29 +2280,29 @@ button.feed-schedule-row {
   border: 1px solid transparent;
   border-image: none;
   box-shadow: none;
-  border-radius: 7px;
+  border-radius: 6px;
   padding: 4px 6px;
   min-height: 0;
 }
 
 button.feed-schedule-row:hover {
-  background-color: alpha(@fg, 0.06);
-  border-color: alpha(@fg, 0.08);
+  background-color: alpha(@text, 0.06);
+  border-color: alpha(@text, 0.08);
 }
 
 .movie-window .feed-schedule-time {
-  color: @muted;
+  color: @text2;
   font-size: 0.8em;
 }
 
 .movie-window .feed-schedule-title {
-  color: @fg;
+  color: @text;
   font-size: 0.9em;
 }
 
 .movie-window .feed-schedule-episode,
 .movie-window .feed-schedule-meta {
-  color: @muted;
+  color: @text2;
   font-size: 0.78em;
 }
 

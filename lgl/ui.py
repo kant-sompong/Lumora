@@ -6782,9 +6782,10 @@ class MainWindow(Gtk.ApplicationWindow):
 
     def _build_rail(self) -> Gtk.Widget:
         """The icon rail on the far left, in :mod:`lgl.nav_layout` order."""
-        rail = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        rail = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         rail.get_style_context().add_class("app-rail")
-        rail.set_size_request(68, -1)
+        # The contract's sidebar: 72 px wide, 56 px items, 8 px apart.
+        rail.set_size_request(72, -1)
 
         self._rail_buttons: dict[str, Gtk.Button] = {}
         for stack_name, icon, label, tooltip in rail_entries():
@@ -6820,8 +6821,11 @@ class MainWindow(Gtk.ApplicationWindow):
         button = Gtk.Button()
         button.get_style_context().add_class("rail-button")
         button.set_relief(Gtk.ReliefStyle.NONE)
+        button.set_size_request(-1, 56)
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
-        box.pack_start(Gtk.Image.new_from_icon_name(icon, _ICON), False, False, 0)
+        glyph = Gtk.Image.new_from_icon_name(icon, _ICON)
+        glyph.set_pixel_size(22)
+        box.pack_start(glyph, False, False, 0)
         text = Gtk.Label(label=label)
         text.get_style_context().add_class("rail-label")
         box.pack_start(text, False, False, 0)

@@ -19,61 +19,70 @@ from typing import Mapping
 MODES = ("system", "dark", "light")
 DEFAULT_MODE = "system"
 
-#: Chart blue.  Used for fills, outlines and selection in both palettes.
-ACCENT = "#3b82f6"
-#: The same blue, one step deeper, for *filled* surfaces that carry white
-#: labels.  White on #3b82f6 is only 3.7:1 (below AA for body-size text); this
-#: shade is 5.1:1 and still reads as the same accent next to it.
-ACCENT_FILL = "#2563eb"
-ACCENT_FILL_HOVER = "#1d4ed8"
+#: The accent family, shared with the Windows frontend.
+ACCENT = "#8b5cf6"
+#: The accent for *filled* surfaces that carry white labels: white on #8b5cf6 is
+#: only 3.7:1, while this shade is 5.6:1 and still reads as the same colour.
+ACCENT_FILL = "#7c3aed"
+ACCENT_FILL_HOVER = "#6d28d9"
 #: The one warm colour kept from the previous design: the favourite star.
-FAVORITE = "#b8863b"
+FAVORITE = "#f5c518"
+#: Accent at 18% opacity, for selected pills and quiet highlights.  GTK's
+#: ``@define-color`` cannot compute alpha() portably, so the value is spelled
+#: out and kept in step with the accent above.
+ACCENT_SOFT_DARK = "rgba(139, 92, 246, 0.18)"
+ACCENT_SOFT_LIGHT = "rgba(124, 58, 237, 0.18)"
 
 DARK: dict[str, str] = {
-    "bg": "#101216",
-    "surface": "#171a20",
-    "raised": "#1e222a",
+    "bg": "#0f1014",
+    "surface": "#16181d",
+    "raised": "#1d2027",
     "hover": "#262b34",
-    "divider": "#262b34",
-    "text": "#e8eaed",
-    "muted": "#9aa3af",
-    "faint": "#6b7280",
+    "divider": "#2a2d36",
+    "text": "#e8e9ee",
+    "muted": "#a4a7b3",
+    "faint": "#7c8090",
     "accent": ACCENT,
-    "accent_hover": "#5b9bff",
+    "accent_hover": "#9d74f8",
+    "accent_soft": ACCENT_SOFT_DARK,
     "accent_fill": ACCENT_FILL,
     "accent_fill_hover": ACCENT_FILL_HOVER,
     #: Accent dark enough (or light enough) to read as *text*; the fill accent
     #: itself is only 3.7:1 on white, so links and inline accent text use this.
-    "accent_text": "#7db2ff",
+    "accent_text": "#a78bfa",
     "on_accent": "#ffffff",
     "success": "#22c55e",
     "warning": "#f59e0b",
     "danger": "#ef4444",
+    #: The same hues as *text*: the contract's warning/danger are tuned for
+    #: fills, and light mode needs a deeper shade to clear 4.5:1 on the page.
+    "warning_text": "#f59e0b",
+    "danger_text": "#ef4444",
     "favorite": FAVORITE,
     "shadow": "rgba(0, 0, 0, 0.55)",
 }
 
 LIGHT: dict[str, str] = {
-    "bg": "#f5f6f8",
+    "bg": "#f4f5f8",
     "surface": "#ffffff",
     "raised": "#ffffff",
     "hover": "#eceef2",
-    "divider": "#e5e7eb",
-    "text": "#111827",
-    #: One step darker than the brief's #6b7280 so muted text clears 4.5:1 on
-    #: the #f5f6f8 page background, not just on white.
-    "muted": "#5f6673",
-    "faint": "#9ca3af",
-    "accent": ACCENT,
-    "accent_hover": "#2563eb",
+    "divider": "#dcdfe6",
+    "text": "#14161c",
+    "muted": "#4a4f5c",
+    "faint": "#6b7080",
+    "accent": "#7c3aed",
+    "accent_hover": "#6d28d9",
+    "accent_soft": ACCENT_SOFT_LIGHT,
     "accent_fill": ACCENT_FILL,
     "accent_fill_hover": ACCENT_FILL_HOVER,
-    "accent_text": "#1d4ed8",
+    "accent_text": "#6d28d9",
     "on_accent": "#ffffff",
-    "success": "#15803d",
-    "warning": "#b45309",
-    #: One step deeper than #dc2626, which is 4.47:1 on the page background.
-    "danger": "#c02626",
+    "success": "#22c55e",
+    "warning": "#f59e0b",
+    "danger": "#ef4444",
+    "warning_text": "#b45309",
+    "danger_text": "#b91c1c",
     "favorite": FAVORITE,
     "shadow": "rgba(15, 23, 42, 0.12)",
 }
@@ -85,9 +94,15 @@ TEXT_TOKENS = ("text", "muted")
 #: Tokens that are label text on a filled background instead.
 FILL_TEXT_TOKENS = ("on_accent",)
 
-#: CSS name for each token.  ``text`` is published as ``@fg`` because
-#: ``@text`` reads like a property name at every use site.
-CSS_NAMES: dict[str, str] = {"text": "fg"}
+#: CSS name for each token.  The shared contract fixes these names: the palette
+#: keeps its internal keys (``muted``/``faint``) while the CSS sees the contract
+#: names (``text2``/``muted``), so a rule reads the same as the design brief.
+CSS_NAMES: dict[str, str] = {
+    "raised": "overlay",
+    "divider": "border",
+    "muted": "text2",
+    "faint": "muted",
+}
 
 #: WCAG 2.1 AA for normal text, and AA for large text / UI components.
 CONTRAST_TEXT = 4.5
