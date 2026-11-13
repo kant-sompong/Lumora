@@ -31,15 +31,6 @@ def app():
     return QApplication.instance() or QApplication([])
 
 
-@pytest.fixture(autouse=True)
-def _drain_workers():
-    """Let a stubbed check finish before the suite's worker guard runs."""
-    yield
-    from PySide6.QtCore import QThreadPool
-
-    QThreadPool.globalInstance().waitForDone(8000)
-
-
 def wait_for(app: QApplication, predicate, timeout: float = 5.0) -> bool:
     """Run the event loop until a background worker lands, or give up."""
     end = time.time() + timeout
@@ -280,7 +271,6 @@ def test_a_refused_confirmation_queues_nothing(app, tmp_path, monkeypatch):
     pane.show_record(store.get_game("kryoto:w-w-d-d"), "Kryoto")
     verified = pane.links.rows[0].record
     verified.check_status = "verified"
-    verified.url_kind = "file"
     monkeypatch.setattr(
         qt_catalog_links, "confirm_download", lambda parent, record, folder: False
     )
@@ -298,32 +288,45 @@ def test_a_refused_confirmation_queues_nothing(app, tmp_path, monkeypatch):
 
 def test_browse_shows_the_catalogue_page_for_an_imported_game(app, tmp_path):
     """The placeholder is gone: Browse builds the same page Linux does."""
-    from lgl.archive import GameSummary
-    from lgl.qt_browse import BrowseDetail
+    from lgl import qt_main
+    from lgl.settings import Settings
 
-    store = _store(tmp_path)
-    detail = BrowseDetail()
-    detail.resize(420, 800)
-    detail.show()
-    record = store.get_game("kryoto:w-w-d-d")
-    game = GameSummary(
-        identifier="catalog:kryoto:w-w-d-d", title="W.W.D.D.", year="2024",
-        downloads=0, item_size=None,
-        catalog_key="kryoto:w-w-d-d", catalog_source="kryoto",
+    qt_main.apply_theme(app, "dark")
+    window = qt_main.Window(
+        None, None, None, tmp_path, Settings(tmp_path / "config.json", keyring=False)
     )
+    window.resize(1280, 820)
+    window.show()
+    app.processEvents()
+    # Keep the test off the real per-user store the window opens by default.
+    window.catalog = CatalogStore(tmp_path / "catalog.json")
+    window.browse.catalog = window.catalog
+    window.catalog.upsert_game(
+        SourceGame(
+            source_id="kryoto", game_id="w-w-d-d", title="W.W.D.D.",
+            year="2024", developer="Studio Nine",
+            source_url="https://kryo.to/games/w-w-d-d",
+        )
+    )
+    window.catalog.add_mirror(
+        MirrorRecord(
+            source_id="kryoto", game_key="kryoto:w-w-d-d",
+            url="https://kryo.to/dl/WWDD-setup.zip",
+            filename="WWDD-setup.zip", host="kryo.to",
+        )
+    )
+    window.catalog.save()
+    window.browse.reload_catalog()
+    window.show_view("browse")
 
-    detail.show_game(game)
-    detail.show_catalog(record, "kryoto", {
-        "store": store, "manager": Recorder(), "torrents": Torrents(),
-        "download_dir": tmp_path,
-        "on_message": lambda text, error=False: None,
-    })
+    window.browse.select("catalog:kryoto:w-w-d-d")
     app.processEvents()
 
+    detail = window.browse.detail
     assert detail.catalog_host.isVisible() is True
     assert detail.catalog_pane is not None
-    assert len(detail.catalog_pane.links.rows) == 2
+    assert len(detail.catalog_pane.links.rows) == 1
     shown = " ".join(_texts(detail))
     assert "https://kryo.to/dl/WWDD-setup.zip" in shown
     assert "Imported catalogue record" not in shown
-    detail.close()
+    window.close()

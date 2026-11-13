@@ -63,6 +63,16 @@ def link_is_file(record: object) -> bool:
     )
 
 
+def already_verified(record: object) -> bool:
+    """Has a check already answered for this link?
+
+    A record imported with ``verified`` behind it is not probed again on every
+    Download: the answer is already stored, and asking the same host twice
+    made the button look stuck while a second request went out.
+    """
+    return link_is_file(record) or str(getattr(record, "check_status", "")) == "verified"
+
+
 def http_links(store: CatalogStore, game_key: str) -> list[MirrorRecord]:
     """The recorded http(s) links of one game, in the order the importer stored."""
     try:
@@ -183,7 +193,7 @@ def download_mirror(
     """
 
     def proceed() -> None:
-        if link_is_file(record):
+        if already_verified(record):
             if not confirm_download(parent, record, download_dir):
                 return
             error = queue_mirror(manager, download_dir, identifier, record)
@@ -199,7 +209,7 @@ def download_mirror(
             True,
         )
 
-    if link_is_file(record):
+    if already_verified(record):
         proceed()
         return
 
