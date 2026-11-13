@@ -37,8 +37,9 @@ def test_a_gem_card_keeps_the_cover_art_the_api_sent():
          "poster_url": "https://img.anilist.test/7.jpg"}
     )
     assert card.poster_url == "https://img.anilist.test/7.jpg"
-    # The feed has no wide art, so the detail hero uses the poster.
-    assert card.backdrop_url == "https://img.anilist.test/7.jpg"
+    # The feed has no wide art: the detail page looks one up, and falls back
+    # to this poster (blurred and darkened) only when nothing exists.
+    assert card.backdrop_url == ""
     assert card.kind == "anime"
     assert card.rating == 8.5
 

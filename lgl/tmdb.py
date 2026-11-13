@@ -35,6 +35,11 @@ MAX_KEY_LENGTH = 256
 #: v3 keys are 32 hex characters; v4 read tokens are long bearer-safe strings.
 _KEY_RE = re.compile(r"^[A-Za-z0-9._\-]{8,256}$")
 _KEY_QUERY = re.compile(r"api_key=([^&\s]+)")
+#: Sizes TMDB serves.  Anything else is refused rather than guessed at.
+_SIZE_RE = re.compile(r"^(?:w|h)\d{2,4}$|^original$")
+#: Logo files these pages can render; TMDB also stores them as .jpg/.webp.
+_LOGO_SUFFIXES = (".png", ".svg")
+_IMAGE_SUFFIXES = (".jpg", ".jpeg", ".png", ".webp")
 _BEARER = re.compile(r"(Bearer\s+)[^\s,;\"']+", re.IGNORECASE)
 _REDACTED = "api_key=***"
 DOTENV_NAME = ".env"
@@ -173,6 +178,8 @@ def _image_url(path: Any, size: str) -> str:
         return ""
     if not re.fullmatch(r"[A-Za-z0-9._\-/]+", text[1:]):
         return ""
+    if not _SIZE_RE.match(str(size or "")):
+        return ""
     return f"{IMAGE_BASE}/{size}{text}"
 
 
@@ -257,6 +264,10 @@ class Episode:
     air_date: str = ""
     overview: str = ""
     still_url: str = ""
+    #: TMDB's vote_average, or ``None`` when nobody has rated it.
+    rating: float | None = None
+    #: Minutes, or ``0`` when TMDB does not say.
+    runtime: int = 0
 
 
 @dataclass(frozen=True)
@@ -307,6 +318,14 @@ def seasons_with_episodes(
         else season
         for season in sorted(seasons or (), key=lambda item: item.number)
     )
+
+
+@dataclass(frozen=True)
+class MediaImages:
+    """The wide art a detail page wants: a logo and a textless backdrop."""
+
+    logo_url: str = ""
+    backdrop_url: str = ""
 
 
 @dataclass(frozen=True)
@@ -363,6 +382,63 @@ def _genres(payload: Mapping[str, Any]) -> tuple[str, ...]:
     return tuple(names[:8])
 
 
+def _vote_average(entry: Mapping[str, Any]) -> float:
+    try:
+        return float(entry.get("vote_average") or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _best_logo(raw: Any) -> str:
+    """The English logo, else a language-neutral one, else ``""``.
+
+    TMDB stores far more artwork than a page can render: only PNG and SVG
+    logos are used, because the rest are photographs of a logo.
+    """
+    if not isinstance(raw, Sequence):
+        return ""
+    ranked: dict[str | None, list[Mapping[str, Any]]] = {"en": [], None: []}
+    for entry in raw:
+        if not isinstance(entry, Mapping):
+            continue
+        path = str(entry.get("file_path") or "")
+        language = entry.get("iso_639_1")
+        if language not in ranked or not path.lower().endswith(_LOGO_SUFFIXES):
+            continue
+        ranked[language].append(entry)
+    for language in ("en", None):
+        if ranked[language]:
+            best = max(ranked[language], key=_vote_average)
+            return _image_url(best.get("file_path"), "w500")
+    return ""
+
+
+def _best_backdrop(raw: Any) -> str:
+    """The widest textless backdrop, else any wide one."""
+    if not isinstance(raw, Sequence):
+        return ""
+    textless: list[Mapping[str, Any]] = []
+    other: list[Mapping[str, Any]] = []
+    for entry in raw:
+        if not isinstance(entry, Mapping):
+            continue
+        path = str(entry.get("file_path") or "")
+        if not path.lower().endswith(_IMAGE_SUFFIXES):
+            continue
+        try:
+            aspect = float(entry.get("aspect_ratio"))
+        except (TypeError, ValueError):
+            continue
+        if aspect < 1.7:
+            continue
+        (textless if entry.get("iso_639_1") is None else other).append(entry)
+    for group in (textless, other):
+        if group:
+            best = max(group, key=_vote_average)
+            return _image_url(best.get("file_path"), "w1280")
+    return ""
+
+
 class TmdbClient:
     """The TMDB reads this app needs, with the key kept on the object only."""
 
@@ -378,6 +454,8 @@ class TmdbClient:
         self.timeout = float(timeout)
         self.language = language
         self._fetch = fetch
+        #: ``/images`` answers per title for the life of the client.
+        self._images: dict[tuple[str, int], MediaImages] = {}
 
     @property
     def configured(self) -> bool:
@@ -445,6 +523,39 @@ class TmdbClient:
         chosen = "tv" if str(kind).lower() == "tv" else "movie"
         data = self._get(f"/{chosen}/{int(tmdb_id)}")
         return self._details(data, chosen, int(tmdb_id))
+
+    def images(self, kind: str, tmdb_id: int) -> MediaImages:
+        """A logo and a textless backdrop for one title.
+
+        Every failure, including a missing key, is an empty result: wide art is
+        decoration, so it must never stop a detail page from opening.
+        """
+        chosen = "tv" if str(kind).lower() == "tv" else "movie"
+        try:
+            number = int(tmdb_id)
+        except (TypeError, ValueError):
+            return MediaImages()
+        if number <= 0:
+            return MediaImages()
+        key = (chosen, number)
+        cached = self._images.get(key)
+        if cached is not None:
+            return cached
+        try:
+            data = self._get(
+                f"/{chosen}/{number}/images",
+                {"include_image_language": "en,null"},
+            )
+        except (TmdbError, OSError, ValueError, TypeError):
+            return MediaImages()
+        if not isinstance(data, Mapping):
+            return MediaImages()
+        result = MediaImages(
+            logo_url=_best_logo(data.get("logos")),
+            backdrop_url=_best_backdrop(data.get("backdrops")),
+        )
+        self._images[key] = result
+        return result
 
     def season(self, tmdb_id: int, season_number: int) -> Season:
         number = int(season_number)
@@ -547,6 +658,7 @@ class TmdbClient:
                     continue
                 if episode_number < 1:
                     continue
+                length = entry.get("runtime")
                 episodes.append(
                     Episode(
                         season=int(entry.get("season_number") or number),
@@ -555,7 +667,11 @@ class TmdbClient:
                         or f"Episode {episode_number}",
                         air_date=str(entry.get("air_date") or ""),
                         overview=" ".join(str(entry.get("overview") or "").split())[:1200],
-                        still_url=poster_url(entry.get("still_path"), size="w300"),
+                        still_url=poster_url(entry.get("still_path"), size="w780"),
+                        rating=_rating(entry),
+                        runtime=int(length)
+                        if isinstance(length, int) and not isinstance(length, bool) and length > 0
+                        else 0,
                     )
                 )
         episodes.sort(key=lambda episode: episode.number)
@@ -568,6 +684,55 @@ class TmdbClient:
         )
 
 
+#: Title -> backdrop, for the anime page: it has no TMDB id of its own.
+_TITLE_BACKDROPS: dict[tuple[str, str, str], str] = {}
+
+
+def normalise_title(value: Any) -> str:
+    """A title reduced to the words that matter, for exact comparison."""
+    return " ".join(re.findall(r"[0-9a-z]+", str(value or "").casefold()))
+
+
+def tmdb_backdrop_for_title(
+    title: str,
+    year: str = "",
+    kind: str = "tv",
+    *,
+    client: TmdbClient | None = None,
+) -> str:
+    """The backdrop of the TMDB title whose name is *exactly* ``title``.
+
+    Anime titles come from MyAnimeList and AniList, so this is how the anime
+    page finds wide art for them.  A near match is not used: the wrong show's
+    backdrop is worse than none, and the caller then falls back to the poster.
+    """
+    wanted = normalise_title(title)
+    chosen = "tv" if str(kind).lower() == "tv" else "movie"
+    if not wanted:
+        return ""
+    key = (wanted, _year(year), chosen)
+    if key in _TITLE_BACKDROPS:
+        return _TITLE_BACKDROPS[key]
+    if client is None:
+        client = TmdbClient(load_api_key())
+    if not client.configured:
+        return ""
+    try:
+        results = client.search(title)
+    except TmdbError:
+        return ""  # a failure is not an answer, so it is not cached
+    found = ""
+    for item in results:
+        if item.kind != chosen or normalise_title(item.title) != wanted:
+            continue
+        if key[1] and item.year and abs(int(key[1]) - int(item.year)) > 1:
+            continue
+        found = client.images(item.kind, item.tmdb_id).backdrop_url
+        break
+    _TITLE_BACKDROPS[key] = found
+    return found
+
+
 __all__ = [
     "API_BASE",
     "DEFAULT_TIMEOUT",
@@ -577,6 +742,7 @@ __all__ = [
     "TMDB_HOSTS",
     "Episode",
     "MediaDetails",
+    "MediaImages",
     "MediaItem",
     "Season",
     "TmdbClient",
@@ -588,7 +754,9 @@ __all__ = [
     "is_bearer_token",
     "load_api_key",
     "missing_key_message",
+    "normalise_title",
     "poster_url",
     "project_dotenv",
     "read_dotenv",
+    "tmdb_backdrop_for_title",
 ]

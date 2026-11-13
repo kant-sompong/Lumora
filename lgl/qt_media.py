@@ -13,10 +13,19 @@ from math import ceil
 from pathlib import Path
 from typing import Callable, Iterable, Sequence
 
-from PySide6.QtCore import QRectF, QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QFontMetricsF, QPainter, QPen, QPixmap
+from PySide6.QtCore import QRect, QRectF, QSize, Qt, QTimer, Signal
+from PySide6.QtGui import (
+    QColor,
+    QFontMetrics,
+    QFontMetricsF,
+    QPainter,
+    QPainterPath,
+    QPen,
+    QPixmap,
+)
 from PySide6.QtWidgets import (
     QComboBox,
+    QGraphicsDropShadowEffect,
     QDialog,
     QFrame,
     QGridLayout,
@@ -56,6 +65,7 @@ from .qt_widgets import (
     SectionTitle,
     Toast,
     clear_layout,
+    color,
     label,
     pixmap_from_bytes,
     cached_image_bytes,
@@ -140,6 +150,39 @@ def card_from_history(entry: dict) -> Card:
         kind=kind or "movie",
         tmdb_id=int(number) if number.isdigit() else 0,
     )
+
+
+#: Required by TMDB wherever its data is shown; both frontends display it.
+TMDB_ATTRIBUTION = (
+    "This product uses the TMDB API but is not endorsed or certified by TMDB."
+)
+
+
+def short_date(value: object) -> str:
+    """``2022-09-01`` -> ``Sep 1, 2022``; anything else is left alone."""
+    text = str(value or "").strip()
+    try:
+        from datetime import date
+
+        parsed = date.fromisoformat(text[:10])
+    except ValueError:
+        return text
+    return f"{parsed.strftime('%b')} {parsed.day}, {parsed.year}"
+
+
+def episode_meta_text(runtime: object, air_date: object) -> str:
+    """``66 min · Sep 1, 2022`` with whichever half exists."""
+    bits: list[str] = []
+    try:
+        minutes = int(runtime or 0)
+    except (TypeError, ValueError):
+        minutes = 0
+    if minutes > 0:
+        bits.append(f"{minutes} min")
+    date = short_date(air_date)
+    if date:
+        bits.append(date)
+    return " · ".join(bits)
 
 
 def rating_text(rating: float | None) -> str:
@@ -343,6 +386,15 @@ class HeroPanel(HeroBanner):
         row.addWidget(self.star)
         row.addStretch(1)
         column.addLayout(row)
+        #: A title's own logo replaces the text title when one loads.
+        self.logo = QLabel(self)
+        self.logo.setObjectName("heroLogo")
+        self.logo.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self.logo.setVisible(False)
+        self._logo_source: QPixmap | None = None
+        #: ``"backdrop"`` for real wide art, ``"fallback"`` for a dark poster.
+        self.backdrop_kind = ""
+        column.addWidget(self.logo)
         self.title = label("", "heroTitle", wrap=True)
         column.addWidget(self.title)
         self.meta = label("", "heroMeta")
@@ -383,45 +435,215 @@ class HeroPanel(HeroBanner):
         self.overview.setVisible(bool(card.overview))
         self.save.setText("✓ In My List" if in_list else "＋ My List")
 
+    # art -------------------------------------------------------------------
+    def set_logo(self, pix: QPixmap | None, title: str = "") -> None:
+        """Show the title's own logo, or keep the text title there.
+
+        The hero is never empty: a logo that failed to load leaves the name in
+        place, and the name stays the logo's accessible text either way.
+        """
+        pix = None if pix is None or pix.isNull() else pix
+        self._logo_source = pix
+        if pix is None:
+            self.logo.clear()
+            self.logo.setVisible(False)
+            self.title.setVisible(True)
+            return
+        shadow = QGraphicsDropShadowEffect(self.logo)
+        shadow.setBlurRadius(26)
+        shadow.setOffset(0, 3)
+        shadow.setColor(QColor(0, 0, 0, 190))
+        self.logo.setGraphicsEffect(shadow)
+        self.logo.setAccessibleName(title)
+        self.logo.setToolTip(title)
+        self.logo.setVisible(True)
+        self.title.setVisible(False)
+        self._scale_logo()
+
+    def _scale_logo(self) -> None:
+        source = getattr(self, "_logo_source", None)
+        if source is None:
+            return
+        width = max(120, int(self.width() * 0.45))
+        scaled = source.scaled(width, 110, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        self.logo.setFixedSize(max(1, scaled.width()), max(1, scaled.height()))
+        self.logo.setPixmap(scaled)
+
+    def resizeEvent(self, event) -> None:  # noqa: N802 - Qt's name
+        super().resizeEvent(event)
+        self._scale_logo()
+
+    def set_backdrop_kind(self, kind: str) -> None:
+        self.backdrop_kind = str(kind or "")
+
 
 # --------------------------------------------------------------------------
 # playback
 # --------------------------------------------------------------------------
 
 
+class StillLabel(QLabel):
+    """A 16:9 still with rounded corners, or a neutral placeholder."""
+
+    def __init__(self, parent: QWidget | None = None, *,
+                 size: tuple[int, int] = (200, 112)) -> None:
+        super().__init__(parent)
+        self.setObjectName("episodeStill")
+        self.setFixedSize(int(size[0]), int(size[1]))
+        self._pixmap: QPixmap | None = None
+
+    def set_pixmap(self, pix: QPixmap | None) -> None:
+        self._pixmap = None if pix is None or pix.isNull() else pix
+        self.update()
+
+    def paintEvent(self, _event) -> None:  # noqa: N802 - Qt's name
+        painter = QPainter(self)
+        painter.setRenderHints(QPainter.Antialiasing | QPainter.SmoothPixmapTransform)
+        path = QPainterPath()
+        path.addRoundedRect(QRectF(self.rect()), 8, 8)
+        painter.setClipPath(path)
+        painter.fillRect(self.rect(), color("surface"))
+        if self._pixmap is None:
+            painter.setPen(color("muted"))
+            painter.drawText(self.rect(), Qt.AlignCenter, "\u25b6")
+            return
+        scaled = self._pixmap.scaled(
+            self.size(), Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation
+        )
+        painter.drawPixmap(
+            int((self.width() - scaled.width()) / 2),
+            int((self.height() - scaled.height()) / 2),
+            scaled,
+        )
+
+
+class ElidedParagraph(QLabel):
+    """At most ``lines`` wrapped lines, with an ellipsis where it is cut."""
+
+    def __init__(self, text: str = "", lines: int = 3,
+                 parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("episodeOverview")
+        self.setWordWrap(True)
+        self.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+        self._full = str(text or "")
+        self._lines = max(1, int(lines))
+        self.setText(self._full)
+
+    def setText(self, text: str) -> None:  # noqa: N802 - Qt's name
+        self._full = str(text or "")
+        self._fit()
+        self.setVisible(bool(self._full))
+
+    def full_text(self) -> str:
+        return self._full
+
+    def resizeEvent(self, event) -> None:  # noqa: N802 - Qt's name
+        super().resizeEvent(event)
+        self._fit()
+
+    def _fit(self) -> None:
+        metrics = QFontMetrics(self.font())
+        height = max(metrics.lineSpacing(), metrics.lineSpacing() * self._lines)
+        self.setFixedHeight(height)
+        text = self._full
+        if not text:
+            QLabel.setText(self, "")
+            return
+        width = max(40, self.width() - 2)
+        while text:
+            box = metrics.boundingRect(
+                QRect(0, 0, int(width), 10000), Qt.TextWordWrap, text
+            )
+            if box.height() <= height:
+                break
+            head, _space, _tail = text.rpartition(" ")
+            if not head:
+                text = ""
+                break
+            text = head
+        if text != self._full:
+            text = text.rstrip(" ,.;:") + "\u2026"
+        QLabel.setText(self, text)
+
+
+def dimmed_poster(pix: QPixmap) -> QPixmap:
+    """A poster blurred and darkened enough to sit behind a title."""
+    if pix.isNull():
+        return pix
+    small = pix.scaled(48, 48, Qt.IgnoreAspectRatio, Qt.SmoothTransformation)
+    wide = small.scaled(1280, 720, Qt.IgnoreAspectRatio, Qt.SmoothTransformation)
+    canvas = QPixmap(wide.size())
+    canvas.fill(QColor(0, 0, 0))
+    painter = QPainter(canvas)
+    painter.setOpacity(0.55)
+    painter.drawPixmap(0, 0, wide)
+    painter.setOpacity(1.0)
+    painter.fillRect(canvas.rect(), QColor(0, 0, 0, 90))
+    painter.end()
+    return canvas
+
+
 class EpisodeRow(QFrame):
-    """One episode in the season list: number, title, air date, play hint."""
+    """One episode as streaming lists draw it: number, still, title, facts."""
 
     clicked = Signal()
 
-    def __init__(self, number: int, title: str, air_date: str = "") -> None:
+    #: Wide art, so the row is the same height whether a still exists or not.
+    STILL = (200, 112)
+
+    def __init__(self, number: int, title: str, air_date: str = "", *,
+                 still_url: str = "", rating: float | None = None,
+                 runtime: int = 0, overview: str = "") -> None:
         super().__init__()
         self.setObjectName("episodeRow")
         self.setCursor(Qt.PointingHandCursor)
         self.setAttribute(Qt.WA_Hover, True)
+        self.still_url = str(still_url or "")
         row = QHBoxLayout(self)
-        row.setContentsMargins(14, 9, 14, 9)
-        row.setSpacing(12)
+        row.setContentsMargins(14, 10, 14, 10)
+        row.setSpacing(14)
 
-        badge = QLabel(f"{int(number):02d}" if number else "—")
-        badge.setObjectName("episodeNumber")
-        badge.setFixedWidth(28)
-        row.addWidget(badge, 0, Qt.AlignVCenter)
+        self.badge = QLabel(f"{int(number):02d}" if number else "\u2014")
+        self.badge.setObjectName("episodeNumber")
+        self.badge.setFixedWidth(40)
+        self.badge.setAlignment(Qt.AlignCenter)
+        row.addWidget(self.badge, 0, Qt.AlignVCenter)
+
+        still_host = QWidget(self)
+        still_host.setFixedSize(*self.STILL)
+        self.still = StillLabel(still_host, size=self.STILL)
+        self.still.move(0, 0)
+        self.rating_pill = QLabel(f"\u2605 {rating:.1f}" if rating else "", still_host)
+        self.rating_pill.setObjectName("episodeRating")
+        self.rating_pill.adjustSize()
+        self.rating_pill.move(8, self.STILL[1] - self.rating_pill.height() - 8)
+        self.rating_pill.setVisible(bool(rating))
+        row.addWidget(still_host, 0, Qt.AlignVCenter)
 
         text = QVBoxLayout()
-        text.setSpacing(2)
-        name = ElideLabel(title or "Episode")
-        name.setObjectName("episodeTitle")
-        text.addWidget(name)
-        if air_date:
-            meta = QLabel(str(air_date))
-            meta.setObjectName("episodeMeta")
-            text.addWidget(meta)
+        text.setSpacing(3)
+        self.title_label = ElideLabel(title or "Episode")
+        self.title_label.setObjectName("episodeTitle")
+        text.addWidget(self.title_label)
+        meta_text = episode_meta_text(runtime, air_date)
+        self.meta = QLabel(meta_text)
+        self.meta.setObjectName("episodeMeta")
+        self.meta.setVisible(bool(meta_text))
+        text.addWidget(self.meta)
+        self.overview = ElidedParagraph(overview)
+        text.addWidget(self.overview)
+        text.addStretch(1)
         row.addLayout(text, 1)
 
-        play = QLabel("▶")
-        play.setObjectName("episodePlay")
-        row.addWidget(play, 0, Qt.AlignVCenter)
+        self.play = QLabel("\u25b6")
+        self.play.setObjectName("episodePlay")
+        self.play.setToolTip("Play this episode")
+        row.addWidget(self.play, 0, Qt.AlignVCenter)
+
+    def set_still(self, pix: QPixmap | None) -> None:
+        self.still.set_pixmap(pix)
 
     def mouseReleaseEvent(self, event) -> None:  # noqa: N802
         if event.button() == Qt.LeftButton and self.rect().contains(event.position().toPoint()):
@@ -929,9 +1151,9 @@ class MediaPage(QWidget):
             key=f"anime:{ident}",
             title=str(data.get("title") or "Untitled"),
             poster_url=str(data.get("poster_url") or ""),
-            # The gems feed carries no wide art; the detail page uses the
-            # poster so the hero still shows the title.
-            backdrop_url=str(data.get("poster_url") or ""),
+            # No wide art here: the detail page looks one up and only falls
+            # back to this poster, blurred and darkened, when nothing exists.
+            backdrop_url="",
             kind="anime",
             mal_id=ident,
             rating=rating,
@@ -1114,6 +1336,9 @@ class MediaPage(QWidget):
         self.detail_hero.details.clicked.connect(self._open_tmdb_page)
         self.detail_info = label("", "mediaNote", wrap=True)
         column.addWidget(self.detail_info)
+        # TMDB's terms ask for this wherever its data is described.
+        self.attribution = label(TMDB_ATTRIBUTION, "detailNote")
+        column.addWidget(self.attribution)
         self.episode_head = SectionTitle("Episodes")
         column.addWidget(self.episode_head)
         self.spoiler_note = label("", "mediaNote", wrap=True)
@@ -1307,7 +1532,8 @@ class MediaPage(QWidget):
 
     def _load_image(self, url: str, key: str,
                     apply: Callable[[QPixmap | None], None] | None,
-                    fallback: str = "", paint_url: str = "") -> None:
+                    fallback: str = "", paint_url: str = "",
+                    on_fail: Callable[[], None] | None = None) -> None:
         if not url:
             if fallback:
                 self._load_image(fallback, key, apply)
@@ -1324,6 +1550,8 @@ class MediaPage(QWidget):
             # shows a bare gradient when any artwork for the title exists.
             if fallback and fallback != url:
                 self._load_image(fallback, key, apply)
+            elif on_fail is not None:
+                on_fail()
 
         def done(data: object) -> None:
             pix = pixmap_from_bytes(data)
@@ -1335,7 +1563,7 @@ class MediaPage(QWidget):
                 twin = images.portable_image_url(url)
                 if twin:
                     self._load_image(twin, f"{key}-portable", apply, fallback,
-                                     paint_url=paint_url or url)
+                                     paint_url=paint_url or url, on_fail=on_fail)
                     return
                 failed(None)
                 return
@@ -1543,9 +1771,7 @@ class MediaPage(QWidget):
             + (f"\n\n{card.overview}" if card.overview else "")
         )
         self.stack.setCurrentWidget(self._detail_page)
-        self._load_image(card.backdrop_url or card.poster_url, f"backdrop-{card.key}",
-                         self._detail_backdrop,
-                         fallback=card.poster_url if card.backdrop_url else "")
+        self._load_detail_art(card)
         self._detail_trailer = None
         self.trailer_btn.setVisible(False)
         self.trailer_note.setVisible(False)
@@ -1566,6 +1792,123 @@ class MediaPage(QWidget):
         if card.rating is None:
             updates["rating"] = known.rating
         return replace(card, **updates)
+
+    # detail art ------------------------------------------------------------
+    def _load_detail_art(self, card: Card) -> None:
+        """Wide art first, the poster only as a marked fallback.
+
+        The list result's backdrop is shown at once so the page is never bare,
+        then ``/images`` is asked for every card: the list backdrop is often
+        missing, and a textless one is what a hero wants anyway.
+        """
+        token = getattr(self, "_detail_art_token", 0) + 1
+        self._detail_art_token = token
+        self.detail_hero.set_logo(None, card.title)
+        self.detail_hero.set_backdrop_kind("")
+        if card.backdrop_url:
+            self._apply_detail_backdrop(card, card.backdrop_url, "backdrop", token)
+        else:
+            self._apply_detail_backdrop(card, "", "fallback", token)
+        client = getattr(self, "_tmdb", None)
+        if card.kind in ("movie", "tv") and card.tmdb_id > 0 and client is not None:
+            self._fetch_detail_images(card, client, token)
+        elif card.kind == "anime":
+            self._fetch_anime_backdrop(card, token)
+
+    def _fetch_detail_images(self, card: Card, client: object, token: int) -> None:
+        """The title's own logo and textless backdrop, if TMDB has them."""
+
+        def work() -> object:
+            return client.images(card.kind, card.tmdb_id)  # type: ignore[attr-defined]
+
+        def done(result: object) -> None:
+            if token != getattr(self, "_detail_art_token", 0):
+                return  # the user moved on; a stale poster is not shown
+            backdrop = str(getattr(result, "backdrop_url", "") or "")
+            if backdrop:
+                self._apply_detail_backdrop(
+                    card, backdrop, "backdrop", token,
+                    cache_key=f"backdrop-images-{card.key}",
+                )
+            logo = str(getattr(result, "logo_url", "") or "")
+            if logo:
+                self._load_image(
+                    logo,
+                    f"logo-{card.key}",
+                    lambda pix: self._apply_detail_logo(pix, card, token),
+                )
+
+        run_async(work, done, lambda _exc: None)
+
+    def _fetch_anime_backdrop(self, card: Card, token: int) -> None:
+        """Anime has no TMDB id, so the title is looked up by name."""
+        client = getattr(self, "_tmdb", None)
+
+        def work() -> str:
+            return tmdb.tmdb_backdrop_for_title(
+                card.title, card.year, client=client
+            )
+
+        def done(url: object) -> None:
+            if token != getattr(self, "_detail_art_token", 0):
+                return
+            found = str(url or "")
+            if found:
+                self._apply_detail_backdrop(
+                    card, found, "backdrop", token,
+                    cache_key=f"backdrop-anime-{card.key}",
+                )
+
+        run_async(work, done, lambda _exc: None)
+
+    def _apply_detail_backdrop(self, card: Card, url: str, kind: str,
+                               token: int, cache_key: str = "") -> None:
+        if token != getattr(self, "_detail_art_token", 0):
+            return
+        if kind == "fallback" or not url:
+            self._apply_poster_fallback(card, token)
+            return
+
+        def apply(pix: QPixmap | None) -> None:
+            if pix is None or token != getattr(self, "_detail_art_token", 0):
+                return
+            self.detail_hero.set_backdrop_kind("backdrop")
+            self.detail_hero.set_pixmap(pix)
+            self._artwork.show_image(url, pix.toImage())
+
+        # Each source gets its own cache slot: the list backdrop and the
+        # /images one are different pictures for the same title.
+        self._load_image(
+            url, cache_key or f"backdrop-{card.key}", apply,
+            on_fail=lambda: self._apply_poster_fallback(card, token),
+        )
+
+    def _apply_poster_fallback(self, card: Card, token: int) -> None:
+        """Last resort: the poster, blurred and darkened, and said to be one."""
+        if token != getattr(self, "_detail_art_token", 0):
+            return
+        if not card.poster_url:
+            self.detail_hero.set_backdrop_kind("")
+            self.detail_hero.set_pixmap(None)
+            self._artwork.clear()
+            return
+
+        def apply(pix: QPixmap | None) -> None:
+            if pix is None or token != getattr(self, "_detail_art_token", 0):
+                return
+            dimmed = dimmed_poster(pix)
+            self.detail_hero.set_backdrop_kind("fallback")
+            self.detail_hero.set_pixmap(dimmed)
+            self._artwork.show_image(card.poster_url, dimmed.toImage())
+
+        self._load_image(card.poster_url, f"poster-fallback-{card.key}", apply)
+
+    def _apply_detail_logo(self, pix: QPixmap | None, card: Card, token: int) -> None:
+        if token != getattr(self, "_detail_art_token", 0):
+            return
+        if self._detail_card is not card:
+            return
+        self.detail_hero.set_logo(pix, card.title)
 
     def _detail_backdrop(self, pix: QPixmap | None) -> None:
         """Show the backdrop on the hero and blur a copy behind the page."""
@@ -1659,14 +2002,25 @@ class MediaPage(QWidget):
                 self.episode_column.addWidget(label("No episodes listed.", "mediaNote"))
                 return
             for episode in episodes[:40]:
+                position = int(getattr(episode, "number", 0) or 0)
                 row = EpisodeRow(
-                    int(getattr(episode, "number", 0) or 0),
+                    position,
                     view_prefs.episode_title(
                         self.settings,
                         str(getattr(episode, "title", "Episode") or "Episode"),
                     ),
                     str(getattr(episode, "air_date", "") or ""),
+                    still_url=str(getattr(episode, "still_url", "") or ""),
+                    rating=getattr(episode, "rating", None),
+                    runtime=int(getattr(episode, "runtime", 0) or 0),
+                    overview=str(getattr(episode, "overview", "") or ""),
                 )
+                if row.still_url:
+                    self._load_image(
+                        row.still_url,
+                        f"still-{card.tmdb_id}-{number}-{position}",
+                        row.set_still,
+                    )
                 row.clicked.connect(
                     lambda e=episode, s=number, c=card: self._play_tmdb(c, s, e)
                 )
