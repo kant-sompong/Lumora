@@ -344,3 +344,24 @@ def test_update_check_and_installer_are_wired(app):
     status = updates.interpret_release({"tag_name": "v99.0.0"}, "0.5.0")
     assert status.newer is True
     assert updates.interpret_release({"tag_name": "v0.1.0"}, "0.5.0").newer is False
+
+
+def test_import_progress_counts_the_detail_pass(app):
+    """The detail pass is the long one: it needs a number, not just a label."""
+    from lgl.qt_catalog import CatalogDialog
+
+    dialog = CatalogDialog(None)
+    dialog._busy = True
+    dialog._record_progress(SimpleNamespace(
+        phase="enrichment", pages_processed=12, games_imported=900,
+        games_discovered=900, enrich_done=120, enrich_total=900,
+        games_enriched=118, mirrors_found=240, enrich_failures=2,
+    ))
+    dialog._show_progress()
+    text = dialog.status.text()
+    assert "Fetching details 120 / 900 (13%)" in text
+    assert "240 download link(s)" in text
+    assert dialog.progress.maximum() == 900
+    assert dialog.progress.value() == 120
+    dialog._finish_progress()
+    dialog.deleteLater()
