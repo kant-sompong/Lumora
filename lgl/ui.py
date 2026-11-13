@@ -56,6 +56,7 @@ from . import kryoto  # noqa: E402
 from . import magnet as magnetlib  # noqa: E402
 from . import metadata as metalib  # noqa: E402
 from . import provider_health  # noqa: E402
+from . import ratings  # noqa: E402
 from . import theme_gtk  # noqa: E402
 from . import view_prefs
 from .gtk_quick_preview import QuickPreview  # noqa: E402
@@ -10206,6 +10207,35 @@ class SettingsDialog(Gtk.Dialog):
         self._tmdb_key.set_hexpand(True)
         tmdb_provider.pack_start(self._tmdb_key, False, False, 0)
 
+        omdb_detail = Gtk.Label(
+            label=(
+                "OMDb adds IMDb and Rotten Tomatoes scores to the ratings row. "
+                "Leave it blank to show only TMDB's score. Requires a free key "
+                "from omdbapi.com."
+            )
+        )
+        omdb_detail.set_xalign(0)
+        omdb_detail.set_line_wrap(True)
+        omdb_detail.set_max_width_chars(72)
+        omdb_detail.get_style_context().add_class("dim")
+        omdb_detail.get_style_context().add_class("small")
+        tmdb_provider.pack_start(omdb_detail, False, False, 0)
+
+        self._omdb_key = Gtk.Entry()
+        self._omdb_key.set_visibility(False)
+        self._omdb_key.set_placeholder_text("OMDb API key (optional)")
+        self._omdb_key.set_hexpand(True)
+        self._omdb_key.set_text(str(self._settings.get(ratings.OMDB_SETTING, "") or ""))
+        # Connect after seeding, so opening the dialog does not rewrite the key.
+        self._omdb_key.connect("changed", self._on_omdb_key)
+        tmdb_provider.pack_start(self._omdb_key, False, False, 0)
+
+        self._omdb_status = Gtk.Label(label="")
+        self._omdb_status.set_xalign(0)
+        self._omdb_status.get_style_context().add_class("dim")
+        self._omdb_status.get_style_context().add_class("small")
+        tmdb_provider.pack_start(self._omdb_status, False, False, 0)
+
         buttons = Gtk.FlowBox()
         buttons.set_selection_mode(Gtk.SelectionMode.NONE)
         buttons.set_homogeneous(False)
@@ -10544,6 +10574,19 @@ class SettingsDialog(Gtk.Dialog):
         self._rawg_key.set_text("")
         self._rawg_status.set_text("The saved RAWG key was removed.")
 
+
+    def _on_omdb_key(self, entry: Gtk.Entry) -> None:
+        """Store the OMDb key as it is typed; blank means TMDB scores only."""
+        try:
+            self._settings.set(ratings.OMDB_SETTING, entry.get_text().strip())
+        except (OSError, ValueError) as exc:
+            self._omdb_status.set_text(f"The key could not be saved: {exc}")
+            return
+        self._omdb_status.set_text(
+            "Saved. IMDb and Rotten Tomatoes appear on the next title."
+            if entry.get_text().strip()
+            else ""
+        )
 
     def _on_test_tmdb(self, _button) -> None:
         from .tmdb import TmdbClient, TmdbError
