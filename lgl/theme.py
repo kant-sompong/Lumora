@@ -41,7 +41,9 @@ DARK: dict[str, str] = {
     "divider": "#2a2d36",
     "text": "#e8e9ee",
     "muted": "#a4a7b3",
-    "faint": "#7c8090",
+    # The shared tokens lightened the contract's #7c8090 to #858998 so muted
+    # text clears 4.5:1 on overlay as well; design_tokens.py is the source.
+    "faint": "#858998",
     "accent": ACCENT,
     "accent_hover": "#9d74f8",
     "accent_soft": ACCENT_SOFT_DARK,
