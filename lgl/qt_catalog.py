@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import re
 import threading
+import time
 import urllib.parse
 from collections.abc import Callable
 from pathlib import Path
@@ -29,6 +30,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from . import kryoto
 from . import platform_support
 from .catalog_store import CatalogGame, CatalogStore
 from .importer import ImportOptions, import_source
@@ -323,8 +325,9 @@ class CatalogDownloadDialog(QDialog):
         column.addWidget(
             label(
                 "Imported records carry magnets, mirrors, or both. Magnets go to "
-                "the torrent queue; http(s) links go to the download queue. A "
-                "record with no link cannot be downloaded, whatever it is called.",
+                "the torrent queue; http(s) links go to the download queue, but "
+                "only after “Check link” has seen the server answer with a file — "
+                "a page is opened in the browser, never downloaded.",
                 "detailNote", wrap=True,
             )
         )
@@ -357,10 +360,20 @@ class CatalogDownloadDialog(QDialog):
         self.copy_link_btn.setCursor(Qt.PointingHandCursor)
         self.copy_link_btn.clicked.connect(self.copy_link)
         link_row.addWidget(self.copy_link_btn)
+        self.check_link_btn = QPushButton("Check link")
+        self.check_link_btn.setCursor(Qt.PointingHandCursor)
+        self.check_link_btn.setToolTip(
+            "Ask the server about this link first; a page is never downloaded"
+        )
+        self.check_link_btn.clicked.connect(self.check_link)
+        link_row.addWidget(self.check_link_btn)
         self.download_link_btn = QPushButton("Download link")
         self.download_link_btn.setObjectName("suggested")
         self.download_link_btn.setCursor(Qt.PointingHandCursor)
-        self.download_link_btn.setToolTip("Queue only the selected link")
+        self.download_link_btn.setToolTip(
+            "Check this link if needed, then queue it only when the server "
+            "answering with a file"
+        )
         self.download_link_btn.clicked.connect(self.download_link)
         link_row.addWidget(self.download_link_btn)
         link_row.addStretch(1)
@@ -485,7 +498,8 @@ class CatalogDownloadDialog(QDialog):
     def _update_link_buttons(self) -> None:
         has_link = bool(self._selected_link())
         for button in (
-            self.open_link_btn, self.copy_link_btn, self.download_link_btn,
+            self.open_link_btn, self.copy_link_btn, self.check_link_btn,
+            self.download_link_btn,
         ):
             button.setEnabled(has_link)
 
@@ -511,16 +525,71 @@ class CatalogDownloadDialog(QDialog):
         QApplication.clipboard().setText(url)
         self.status.setText("Link copied.")
 
-    def download_link(self) -> None:
-        """Queue only the link the user picked."""
+    def _picked(self) -> tuple[CatalogGame, object, int] | tuple[None, None, int]:
+        """The selected game and the link row the user highlighted."""
         game = self._selected()
-        if game is None:
-            return
         row = self.links.currentRow()
-        mirrors = self._mirrors(game)
-        if not (0 <= row < len(mirrors)):
+        mirrors = self._mirrors(game) if game is not None else []
+        if game is None or not (0 <= row < len(mirrors)):
+            return None, None, row
+        return game, mirrors[row], row
+
+    def check_link(self, *, then_queue: bool = False) -> None:
+        """Probe the selected link and keep what the server actually answered.
+
+        This is the Linux rule: a link's shape proves nothing, so the answer is
+        recorded on the record and, when *then_queue* is set, only a response
+        that returned a file is handed to the download queue.
+        """
+        game, record, row = self._picked()
+        if game is None or record is None:
             return
-        record = mirrors[row]
+        url = str(getattr(record, "url", "") or "")
+        if not url:
+            return
+        allow_external = not kryoto.host_allowed(url, kryoto.KRYOTO_HOSTS)
+        host = str(getattr(record, "host", "") or "") or mirror_filename(url)
+        self.status.setText(f"Checking {host}…")
+
+        def work() -> object:
+            return kryoto.check_link(url, allow_external=allow_external)
+
+        def done(result: object) -> None:
+            if not isinstance(result, kryoto.LinkCheck):
+                self.status.setText("The link check returned nothing usable.")
+                return
+            record.last_checked = time.time()
+            record.check_status = result.status
+            record.url_kind = result.kind or getattr(record, "url_kind", "")
+            record.content_type = result.content_type
+            record.notes = tuple(result.notes)
+            if result.filename and not getattr(record, "filename", ""):
+                record.filename = result.filename
+            if result.size and not getattr(record, "size", 0):
+                record.size = result.size
+            try:
+                self.catalog.save()
+            except OSError as exc:
+                self.status.setText(f"Checked, but the catalogue could not be saved: {exc}")
+            self._show_details(row)
+            self.links.setCurrentRow(row)
+            if then_queue:
+                if kryoto.is_downloadable_link(record.check_status, record.url_kind):
+                    self._queue_and_report(game, record)
+                else:
+                    self.status.setText(
+                        f"Not queued: the server answered as “{record.status_label()}”. "
+                        "Open it in the browser instead."
+                    )
+                return
+            self.status.setText(f"Check: {record.status_label()}.")
+
+        def failed(exc: object) -> None:
+            self.status.setText(f"The link check failed: {exc}")
+
+        run_async(work, done, failed)
+
+    def _queue_and_report(self, game: CatalogGame, record: object) -> None:
         error = self._queue_mirror(game, record)
         if error:
             self.status.setText(f"Nothing was queued: {error}")
@@ -531,6 +600,18 @@ class CatalogDownloadDialog(QDialog):
         self.status.setText(f"Queued {name}.")
         if self._on_queued is not None:
             self._on_queued(catalog_identifier(game.key), game.title or game.game_id)
+
+    def download_link(self) -> None:
+        """Queue the picked link, checking it first unless it is already proven."""
+        game, record, _row = self._picked()
+        if game is None or record is None:
+            return
+        if kryoto.is_downloadable_link(
+            getattr(record, "check_status", ""), getattr(record, "url_kind", "")
+        ):
+            self._queue_and_report(game, record)
+            return
+        self.check_link(then_queue=True)
 
     def _queue_mirror(self, game: CatalogGame, record: object) -> str:
         """Queue one http(s) link; returns an error message, or "" on success."""
@@ -570,7 +651,14 @@ class CatalogDownloadDialog(QDialog):
                 added += 1
             except Exception as exc:  # noqa: BLE001 - collected, never fatal
                 errors.append(str(exc))
+        unchecked = 0
         for record in self._mirrors(game):
+            if not kryoto.is_downloadable_link(
+                getattr(record, "check_status", ""), getattr(record, "url_kind", "")
+            ):
+                # A page URL is not a download: it has to be proven first.
+                unchecked += 1
+                continue
             error = self._queue_mirror(game, record)
             if error:
                 errors.append(error)
@@ -579,9 +667,17 @@ class CatalogDownloadDialog(QDialog):
         if added and self._on_queued is not None:
             self._on_queued(catalog_identifier(game.key), game.title or game.game_id)
         if added:
-            self.status.setText(f"Queued {added} link(s) for {game.title or game.game_id}.")
+            text = f"Queued {added} link(s) for {game.title or game.game_id}."
+            if unchecked:
+                text += f" {unchecked} still need “Check link” first."
+            self.status.setText(text)
         elif errors:
             self.status.setText(f"Nothing was queued: {errors[0]}")
+        elif unchecked:
+            self.status.setText(
+                f"{unchecked} link(s) are recorded but none is proven yet: "
+                "check one (or open it in the browser) first."
+            )
 
     def match_artwork(self) -> None:
         game = self._selected()

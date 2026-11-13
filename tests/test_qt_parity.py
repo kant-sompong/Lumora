@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from types import SimpleNamespace
 
@@ -220,6 +221,17 @@ def test_catalog_download_dialog_explains_an_empty_catalogue(app, tmp_path):
     dialog.deleteLater()
 
 
+def _pump_until(app, predicate, timeout=5.0):
+    """Run the event loop until the background check lands, or give up."""
+    end = time.time() + timeout
+    while time.time() < end:
+        app.processEvents()
+        if predicate():
+            return True
+        time.sleep(0.01)
+    return predicate()
+
+
 def _catalog_with_one_link(tmp_path):
     """A store holding one imported record and the link the importer stored."""
     from lgl.catalog_store import MirrorRecord
@@ -248,27 +260,79 @@ def test_catalog_download_dialog_shows_each_link_address(app, tmp_path):
     dialog.deleteLater()
 
 
-def test_catalog_download_dialog_opens_and_queues_the_selected_link(app, tmp_path, monkeypatch):
-    from lgl import platform_support
+def _dialog_with_link(tmp_path, monkeypatch, *, status="unchecked", kind=""):
+    """A dialog over one record, plus the list its manager received."""
+    added: list[dict] = []
+    manager = SimpleNamespace(add=lambda **kwargs: added.append(kwargs))
+    store = _catalog_with_one_link(tmp_path)
+    for record in store.mirrors_for("kryoto:w-w-d-d"):
+        record.check_status = status
+        record.url_kind = kind or record.url_kind
+    return CatalogDownloadDialog(None, store, manager, None, tmp_path), added, store
+
+
+def test_catalog_download_dialog_opens_copies_and_checks_a_link(app, tmp_path, monkeypatch):
+    from lgl import kryoto, platform_support
 
     opened: list[str] = []
     monkeypatch.setattr(platform_support, "open_url", lambda url: opened.append(url) or True)
-    added: list[dict] = []
-    manager = SimpleNamespace(add=lambda **kwargs: added.append(kwargs))
-    dialog = CatalogDownloadDialog(
-        None, _catalog_with_one_link(tmp_path), manager, None, tmp_path
+    checked: list[tuple[str, bool]] = []
+    monkeypatch.setattr(
+        kryoto, "check_link",
+        lambda url, allow_external=True: checked.append((url, allow_external)) or kryoto.LinkCheck(
+            url=url, status="verified", kind="file", http_status=200,
+            content_type="application/octet-stream",
+        ),
     )
+    dialog, added, store = _dialog_with_link(tmp_path, monkeypatch)
 
     dialog.open_link()
     assert opened == ["https://kryo.to/dl/WWDD-setup.exe"]
-
     dialog.copy_link()
     assert QtWidgets.QApplication.clipboard().text() == "https://kryo.to/dl/WWDD-setup.exe"
 
-    dialog.download_link()
-    assert [entry["url"] for entry in added] == ["https://kryo.to/dl/WWDD-setup.exe"]
-    assert "Queued WWDD-setup.exe" in dialog.status.text()
+    dialog.check_link()
+    assert _pump_until(
+        app, lambda: store.mirrors_for("kryoto:w-w-d-d")[0].check_status == "verified"
+    )
+    assert checked == [("https://kryo.to/dl/WWDD-setup.exe", False)]
+    record = store.mirrors_for("kryoto:w-w-d-d")[0]
+    assert record.url_kind == "file"
+    assert "verified by a request" in dialog.status.text()
     dialog.deleteLater()
+
+
+def test_downloading_a_link_checks_it_before_queuing_it(app, tmp_path, monkeypatch):
+    """A page URL must never reach the download queue: the Linux rule."""
+    from lgl import kryoto
+
+    answers = {"status": "page", "kind": "page"}
+    calls: list[str] = []
+
+    def check(url, allow_external=True):
+        calls.append(url)
+        return kryoto.LinkCheck(url=url, status=answers["status"], kind=answers["kind"])
+
+    monkeypatch.setattr(kryoto, "check_link", check)
+    dialog, added, _store = _dialog_with_link(tmp_path, monkeypatch)
+
+    dialog.download_link()
+    assert _pump_until(app, lambda: "Not queued" in dialog.status.text())
+    assert calls == ["https://kryo.to/dl/WWDD-setup.exe"]
+    assert added == [], "a web page was handed to the download queue"
+    assert "Not queued" in dialog.status.text()
+
+    # A link the server proved is a file is queued without another probe.
+    verified, verified_added, _ = _dialog_with_link(
+        tmp_path, monkeypatch, status="verified", kind="file"
+    )
+    verified.download_link()
+    assert _pump_until(app, lambda: "Queued" in verified.status.text())
+    assert calls == ["https://kryo.to/dl/WWDD-setup.exe"]
+    assert [entry["url"] for entry in verified_added] == ["https://kryo.to/dl/WWDD-setup.exe"]
+    assert "Queued WWDD-setup.exe" in verified.status.text()
+    dialog.deleteLater()
+    verified.deleteLater()
 
 
 def test_the_kryoto_preset_imports_with_download_links(app, tmp_path, monkeypatch):
@@ -283,6 +347,7 @@ def test_the_kryoto_preset_imports_with_download_links(app, tmp_path, monkeypatc
 
     monkeypatch.setattr(qt_catalog, "import_source", fake_import)
     for enrich in (True, False):
+        seen.clear()
         dialog = qt_catalog.CatalogDialog(None, catalog=CatalogStore(), enrich=enrich)
         dialog.start_import()
         for _ in range(300):
