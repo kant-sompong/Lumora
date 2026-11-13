@@ -209,6 +209,13 @@ class CatalogDialog(QDialog):
             "pages": int(getattr(job, "pages_processed", 0) or 0),
             "imported": int(getattr(job, "games_imported", 0) or 0),
             "discovered": int(getattr(job, "games_discovered", 0) or 0),
+            # The enrichment pass is the long one: it needs a count of its own,
+            # or the window sits on "Fetching details…" for minutes.
+            "enrich_done": int(getattr(job, "enrich_done", 0) or 0),
+            "enrich_total": int(getattr(job, "enrich_total", 0) or 0),
+            "enriched": int(getattr(job, "games_enriched", 0) or 0),
+            "links": int(getattr(job, "mirrors_found", 0) or 0),
+            "failures": int(getattr(job, "enrich_failures", 0) or 0),
             "status": str(getattr(job, "status", "") or ""),
         }
         with self._progress_lock:
@@ -222,15 +229,41 @@ class CatalogDialog(QDialog):
             snapshot = dict(self._progress_snapshot)
         if not snapshot:
             return
+        if snapshot.get("phase") == "enrichment":
+            self._show_enrichment(snapshot)
+            return
         pages = int(snapshot.get("pages", 0) or 0)
         imported = int(snapshot.get("imported", 0) or 0)
         discovered = int(snapshot.get("discovered", 0) or 0)
-        phase = "Fetching details" if snapshot.get("phase") == "enrichment" else "Reading the catalogue"
-        bits = [f"{phase}…", f"page {pages:,}"] if pages else [f"{phase}…"]
+        self.progress.setRange(0, 0)
+        bits = ["Reading the catalogue…", f"page {pages:,}"] if pages else ["Reading the catalogue…"]
         if imported:
             bits.append(f"{imported:,} games imported")
         elif discovered:
             bits.append(f"{discovered:,} found")
+        self.status.setText(" · ".join(bits))
+
+    def _show_enrichment(self, snapshot: dict[str, object]) -> None:
+        """The second pass: a real count, and a bar that moves with it."""
+        done = int(snapshot.get("enrich_done", 0) or 0)
+        total = int(snapshot.get("enrich_total", 0) or 0)
+        enriched = int(snapshot.get("enriched", 0) or 0)
+        links = int(snapshot.get("links", 0) or 0)
+        failures = int(snapshot.get("failures", 0) or 0)
+        if total > 0:
+            self.progress.setRange(0, total)
+            self.progress.setValue(min(done, total))
+            head = f"Fetching details {done:,} / {total:,} ({int(done * 100 / total)}%)"
+        else:
+            self.progress.setRange(0, 0)
+            head = "Fetching details…"
+        bits = [head]
+        if enriched:
+            bits.append(f"{enriched:,} records read")
+        if links:
+            bits.append(f"{links:,} download link(s)")
+        if failures:
+            bits.append(f"{failures:,} failed")
         self.status.setText(" · ".join(bits))
 
     def _finish_progress(self) -> None:
