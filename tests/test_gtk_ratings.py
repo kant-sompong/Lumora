@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import types
+
 import pytest
 
 gi = pytest.importorskip("gi")
@@ -90,3 +92,25 @@ def test_the_icons_are_painted_not_downloaded():
         surface.flush()
         data = bytes(surface.get_data())
         assert any(byte for byte in data), f"{kind} drew nothing"
+
+
+# -- TMDB's own score: no invented vote count --------------------------------
+
+
+class Details(types.SimpleNamespace):
+    """A stand-in for MediaDetails, which carries no vote_count."""
+
+
+def test_the_tmdb_score_follows_the_average_when_no_count_is_reported():
+    assert movies_ui._tmdb_score(Details(rating=8.6)) == 86
+    assert movies_ui._tmdb_score(Details(rating=7.0)) == 70
+
+
+def test_the_tmdb_score_uses_a_real_vote_count_when_the_title_has_one():
+    assert movies_ui._tmdb_score(Details(rating=8.62, vote_count=1200)) == 86
+
+
+def test_a_title_nobody_rated_has_no_tmdb_score():
+    assert movies_ui._tmdb_score(Details(rating=None)) is None
+    assert movies_ui._tmdb_score(Details(rating=0)) is None
+    assert movies_ui._tmdb_score(Details(rating=0.0, vote_count=0)) is None

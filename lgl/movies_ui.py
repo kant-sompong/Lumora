@@ -1393,6 +1393,31 @@ class SeasonPicker(Gtk.MenuButton):
         return False
 
 
+def _tmdb_score(details) -> int | None:
+    """TMDB's user score as a whole percentage.
+
+    The shared ``MediaDetails`` reports TMDB's average but no vote count, so
+    the count is used only when a title really carries one; otherwise the
+    percentage comes from the average itself, which ``tmdb._rating`` only sets
+    when TMDB has votes.  A count is never made up to satisfy the helper.
+    """
+    vote = getattr(details, "rating", None)
+    try:
+        votes = int(getattr(details, "vote_count", 0) or 0)
+    except (TypeError, ValueError):
+        votes = 0
+    if votes:
+        return ratings.tmdb_percent(vote, votes)
+    try:
+        average = float(vote)
+    except (TypeError, ValueError):
+        return None
+    if average <= 0:
+        return None
+    percent = round(average * 10)
+    return percent if 0 < percent <= 100 else None
+
+
 def _rating_glyph(cr, kind: str) -> None:
     """Paint one 16 px rating mark; the shapes are drawn, never downloaded."""
     if kind == "imdb":
@@ -4788,7 +4813,20 @@ class MoviesWindow(Gtk.Box):
         token = self._detail_token
         key = ratings.read_omdb_key(self._settings)
         vote = details.rating
-        votes = 1 if vote else 0
+        votes = int(getattr(details, "vote_count", 0) or 0)
+        score = _tmdb_score(details)
+
+        if not key:
+            # Contract section 3: with no OMDb key the row is TMDB's score
+            # alone.  fetch_ratings() would otherwise serve cached IMDb and
+            # Rotten Tomatoes scores from a previous run.
+            GLib.idle_add(
+                self._apply_ratings,
+                row,
+                ratings.Ratings(tmdb_percent=score),
+                token,
+            )
+            return
 
         def work() -> None:
             try:
@@ -4801,6 +4839,9 @@ class MoviesWindow(Gtk.Box):
                 )
             except Exception:  # noqa: BLE001 - a rating is never worth an error
                 return
+            values = ratings.Ratings(
+                imdb=values.imdb, rotten=values.rotten, tmdb_percent=score
+            )
             GLib.idle_add(self._apply_ratings, row, values, token)
 
         threading.Thread(target=work, daemon=True, name="lgl-ratings").start()
