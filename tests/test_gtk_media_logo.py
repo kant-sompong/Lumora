@@ -331,6 +331,45 @@ def test_a_row_keeps_its_synopsis_to_three_lines():
     assert overviews[0].startswith("word")
 
 
+def widgets(node, kind):
+    found = []
+
+    def walk(item):
+        if isinstance(item, kind):
+            found.append(item)
+        children = getattr(item, "get_children", None)
+        if children is not None:
+            for child in children():
+                walk(child)
+
+    walk(node)
+    return found
+
+
+@needs_display
+def test_a_row_fits_a_nine_hundred_pixel_window():
+    box = Gtk.ListBox()
+    win = Gtk.Window()
+    win.set_default_size(900, 420)
+    win.add(box)
+    win.show_all()
+    stub = window(Loader())
+    movies_ui.MoviesWindow._apply_season(stub, 1, box, season(episode(1)))
+    win.show_all()
+    for _ in range(40):
+        while Gtk.events_pending():
+            Gtk.main_iteration()
+    row = box.get_children()[0]
+    assert row.get_allocated_width() <= 900
+    still = [
+        image for image in widgets(row, Gtk.Image)
+        if not isinstance(image, movies_ui.HeroLogo)
+    ][0]
+    assert (still.get_allocated_width(), still.get_allocated_height()) == (200, 112)
+    assert still.get_pixbuf() is not None
+    win.destroy()
+
+
 @needs_display
 def test_an_episode_without_a_still_asks_for_no_image():
     box = Gtk.ListBox()
