@@ -45,6 +45,7 @@ from . import (  # noqa: E402
     framextv,
     mal,
     media_history,
+    ratings,
     provider_health,
     streaming,
     tmdb,
@@ -1389,6 +1390,112 @@ class SeasonPicker(Gtk.MenuButton):
         if key == Gdk.KEY_Escape:
             self._fade_out()
             return True
+        return False
+
+
+def _rating_glyph(cr, kind: str) -> None:
+    """Paint one 16 px rating mark; the shapes are drawn, never downloaded."""
+    if kind == "imdb":
+        # The yellow rounded square with the site's letters, in dark ink.
+        _rounded_path(cr, 0.5, 0.5, 15, 15, 4)
+        cr.set_source_rgba(0.96, 0.77, 0.09, 1.0)
+        cr.fill()
+        layout = PangoCairo.create_layout(cr)
+        layout.set_text("IMDb", -1)
+        description = Pango.FontDescription("Sans Bold")
+        description.set_absolute_size(5.4 * Pango.SCALE)
+        layout.set_font_description(description)
+        text_w, text_h = layout.get_pixel_size()
+        cr.set_source_rgba(0.08, 0.09, 0.11, 1.0)
+        cr.move_to((16 - text_w) / 2, (16 - text_h) / 2)
+        PangoCairo.show_layout(cr, layout)
+        return
+    if kind == "rotten":
+        # A small splat: a body with a few lobes, in the success green.
+        cr.set_source_rgba(0.13, 0.77, 0.37, 1.0)
+        cr.arc(8, 9, 5.2, 0, 6.2831853)
+        cr.fill()
+        for angle in (0.6, 1.8, 3.0, 4.2, 5.4):
+            cr.save()
+            cr.translate(8, 8)
+            cr.rotate(angle)
+            cr.arc(0, -5.4, 1.8, 0, 6.2831853)
+            cr.fill()
+            cr.restore()
+        cr.arc(8, 5.2, 1.6, 0, 6.2831853)
+        cr.fill()
+        return
+    # TMDB: a small teal circle with the initial.
+    cr.set_source_rgba(0.0, 0.71, 0.89, 1.0)
+    cr.arc(8, 8, 7.4, 0, 6.2831853)
+    cr.fill()
+    layout = PangoCairo.create_layout(cr)
+    layout.set_text("T", -1)
+    description = Pango.FontDescription("Sans Bold")
+    description.set_absolute_size(8.4 * Pango.SCALE)
+    layout.set_font_description(description)
+    text_w, text_h = layout.get_pixel_size()
+    cr.set_source_rgba(1, 1, 1, 1)
+    cr.move_to((16 - text_w) / 2, (16 - text_h) / 2 - 0.5)
+    PangoCairo.show_layout(cr, layout)
+
+
+class RatingsRow(Gtk.Box):
+    """IMDb, Rotten Tomatoes and TMDB user score, 14 px apart (section 3).
+
+    A badge with no data is hidden; with every badge hidden the row hides too,
+    so a title nobody has rated leaves the hero exactly as it was.
+    """
+
+    GAP = 14
+
+    def __init__(self) -> None:
+        super().__init__(orientation=Gtk.Orientation.HORIZONTAL, spacing=self.GAP)
+        self.get_style_context().add_class("ratings-row")
+        self.set_no_show_all(True)
+        self._badges: dict[str, Gtk.Box] = {}
+        for kind, tooltip in (
+            ("imdb", "IMDb"),
+            ("rotten", "Rotten Tomatoes (critics)"),
+            ("tmdb", "TMDB user score"),
+        ):
+            self._badges[kind] = self._badge(kind, tooltip)
+            self.pack_start(self._badges[kind], False, False, 0)
+
+    def _badge(self, kind: str, tooltip: str) -> Gtk.Box:
+        badge = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        badge.get_style_context().add_class("rating-badge")
+        badge.set_tooltip_text(tooltip)
+        area = Gtk.DrawingArea()
+        area.set_size_request(16, 16)
+        area.set_valign(Gtk.Align.CENTER)
+        area.connect("draw", self._on_draw, kind)
+        badge.pack_start(area, False, False, 0)
+        value = Gtk.Label(label="")
+        value.set_valign(Gtk.Align.CENTER)
+        value.get_style_context().add_class("rating-value")
+        badge.pack_start(value, False, False, 0)
+        badge.value = value
+        return badge
+
+    def _on_draw(self, area, cr, kind: str) -> bool:
+        _rating_glyph(cr, kind)
+        return False
+
+    def show_values(self, values) -> bool:
+        """Draw whichever scores exist; hide the row when none do."""
+        texts = {
+            "imdb": f"{float(values.imdb):.1f}" if values.imdb else "",
+            "rotten": f"{int(values.rotten)}%" if values.rotten else "",
+            "tmdb": f"{int(values.tmdb_percent)}%" if values.tmdb_percent else "",
+        }
+        for kind, badge in self._badges.items():
+            # The row is no-show-all, so each badge shows itself and its mark.
+            badge.show_all()
+            text = texts[kind]
+            badge.value.set_text(text)
+            badge.set_visible(bool(text))
+        self.set_visible(any(texts.values()))
         return False
 
 
@@ -4253,6 +4360,9 @@ class MoviesWindow(Gtk.Box):
         )
         content.pack_start(meta, False, False, 0)
 
+        ratings_row = RatingsRow()
+        content.pack_start(ratings_row, False, False, 0)
+
         actions = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         if item.kind == "tv":
             play = self._primary_button(
@@ -4334,6 +4444,7 @@ class MoviesWindow(Gtk.Box):
 
         self._detail_state = {
             "backdrop": backdrop,
+            "ratings": ratings_row,
             "title": title,
             "meta": meta,
             "overview": overview,
@@ -4665,6 +4776,39 @@ class MoviesWindow(Gtk.Box):
             self._load_detail_image(details.backdrop_url, backdrop)
         if details.kind == "tv" and details.seasons:
             self._render_seasons(details)
+        self._load_ratings(details)
+        return False
+
+    # -- ratings ------------------------------------------------------------
+    def _load_ratings(self, details: MediaDetails) -> None:
+        """Ask OMDb in the background; the row fills in when it answers."""
+        row = self._detail_state.get("ratings")
+        if row is None:
+            return
+        token = self._detail_token
+        key = ratings.read_omdb_key(self._settings)
+        vote = details.rating
+        votes = 1 if vote else 0
+
+        def work() -> None:
+            try:
+                values = ratings.fetch_ratings(
+                    details.imdb_id,
+                    vote,
+                    votes,
+                    key=key,
+                    cache_dir=platform_support.cache_dir(),
+                )
+            except Exception:  # noqa: BLE001 - a rating is never worth an error
+                return
+            GLib.idle_add(self._apply_ratings, row, values, token)
+
+        threading.Thread(target=work, daemon=True, name="lgl-ratings").start()
+
+    def _apply_ratings(self, row, values, token: int) -> bool:
+        if token != self._detail_token:
+            return False
+        row.show_values(values)
         return False
 
     def _render_seasons(self, details: MediaDetails) -> None:

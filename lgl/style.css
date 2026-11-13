@@ -1391,6 +1391,17 @@ flowboxchild.browse-tile:hover .cover-card {
   padding: 8px 0;
 }
 
+/* -- ratings row (contract section 3) ------------------------------------ */
+.ratings-row { margin-top: 2px; }
+
+.rating-badge { background-color: transparent; }
+
+.rating-value {
+  font-size: 15px;
+  font-weight: 600;
+  color: @hero_text;
+}
+
 /* -- season picker (contract section 2) ---------------------------------- */
 .season-picker-button {
   background-color: transparent;
