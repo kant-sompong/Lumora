@@ -13,19 +13,23 @@ import re
 import threading
 import time
 import urllib.parse
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QApplication,
+    QComboBox,
     QDialog,
+    QFrame,
+    QGridLayout,
     QHBoxLayout,
     QLineEdit,
     QListWidget,
     QListWidgetItem,
     QProgressBar,
     QPushButton,
+    QSplitter,
     QVBoxLayout,
     QWidget,
 )
@@ -33,8 +37,13 @@ from PySide6.QtWidgets import (
 from . import kryoto
 from . import platform_support
 from .catalog_store import CatalogGame, CatalogStore
-from .importer import ImportOptions, import_source
-from .qt_widgets import label, run_async
+from .importer import CatalogImporter, ImportOptions, ImportOutcome, import_source
+from .qt_catalog_links import (
+    CatalogGamePane,
+    http_links,
+    queue_mirror,
+)
+from .qt_widgets import label, run_async, scroll_page
 
 #: The public Kryoto catalogue; also the default for the generic dialog.
 KRYOTO_URL = "https://kryo.to"
@@ -614,24 +623,10 @@ class CatalogDownloadDialog(QDialog):
         self.check_link(then_queue=True)
 
     def _queue_mirror(self, game: CatalogGame, record: object) -> str:
-        """Queue one http(s) link; returns an error message, or "" on success."""
-        if self.manager is None:
-            return "the download queue is unavailable"
-        url = str(getattr(record, "url", "") or "")
-        if not url:
-            return "that link has no address"
-        name = str(getattr(record, "filename", "") or "") or mirror_filename(url)
-        try:
-            self.manager.add(  # type: ignore[attr-defined]
-                identifier=catalog_identifier(game.key),
-                filename=name,
-                url=url,
-                download_dir=self.download_dir,
-                total_size=getattr(record, "size", 0) or None,
-            )
-        except Exception as exc:  # noqa: BLE001 - collected, never fatal
-            return f"{name}: {exc}"
-        return ""
+        """Queue one http(s) link through the shared catalogue helper."""
+        return queue_mirror(
+            self.manager, self.download_dir, catalog_identifier(game.key), record
+        )
 
     def queue_selected(self) -> None:
         game = self._selected()
@@ -689,9 +684,556 @@ class CatalogDownloadDialog(QDialog):
         MatchArtworkDialog(self.catalog, game, settings, self).exec()
 
 
+def _stamp(value: object) -> str:
+    """A time the catalogue remembers as a short, local date and time."""
+    try:
+        moment = float(value or 0)
+    except (TypeError, ValueError):
+        return ""
+    if moment <= 0:
+        return ""
+    return time.strftime("%d %b %Y, %H:%M", time.localtime(moment))
+
+
+KRYOTO_HINT = (
+    "Discovery uses the site's public API only. A recorded game, a record with "
+    "source links, and a verified file are different states; only a check that "
+    "returned a file response enables the download button."
+)
+
+#: The filter and sort vocabularies, exactly as the Linux dialog offers them.
+KRYOTO_FILTERS = (
+    ("all", "All records"),
+    ("with", "With links"),
+    ("without", "No links"),
+    ("verified", "Verified files"),
+    ("unchecked", "Unchecked links"),
+)
+KRYOTO_SORTS = (
+    ("title", "Title"), ("year", "Year"), ("provider", "Provider"),
+    ("links", "Links"), ("status", "Status"),
+)
+
+
+class KryotoCatalogDialog(QDialog):
+    """Browse, refresh and check the Kryoto catalogue, like the Linux dialog.
+
+    The dialog never equates "listed" with "downloadable": a record can be in
+    the catalogue with no links, with unchecked links, or with a link a server
+    check actually confirmed as a file.  Catalog work runs in a worker thread
+    and is checkpointed by the shared importer, so closing cancels at the next
+    page boundary and Resume continues from the saved cursor.
+    """
+
+    def __init__(
+        self,
+        parent: QWidget | None = None,
+        *,
+        catalog: CatalogStore | None = None,
+        manager: object | None = None,
+        torrents: object | None = None,
+        download_dir: Path | None = None,
+        on_imported: Callable[[int], None] | None = None,
+        on_queued: Callable[[str, str], None] | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self.setObjectName("sheet")
+        self.setWindowTitle("Kryoto Catalog")
+        self.resize(1120, 760)
+        self.store = (
+            catalog if catalog is not None
+            else CatalogStore(platform_support.data_dir() / "catalog.json")
+        )
+        self.manager = manager
+        self.torrents = torrents
+        self.download_dir = Path(download_dir) if download_dir else Path.home()
+        self._on_imported = on_imported if callable(on_imported) else None
+        self._on_queued = on_queued if callable(on_queued) else None
+        self._cancel = threading.Event()
+        self._busy = False
+        self._games: list[CatalogGame] = []
+        self._shown: list[CatalogGame] = []
+        self._selected_key = ""
+        self._progress_lock = threading.Lock()
+        self._snapshot: dict[str, object] = {}
+
+        column = QVBoxLayout(self)
+        column.setContentsMargins(24, 22, 24, 16)
+        column.setSpacing(10)
+        column.addWidget(label("Kryoto catalog", "pageTitle"))
+        column.addWidget(label(KRYOTO_HINT, "detailNote", wrap=True))
+
+        actions = QHBoxLayout()
+        actions.setSpacing(8)
+        self.refresh_btn = QPushButton("Refresh Kryoto Catalog")
+        self.refresh_btn.setObjectName("suggested")
+        self.refresh_btn.setCursor(Qt.PointingHandCursor)
+        self.refresh_btn.setToolTip(
+            "Walk every catalog page with offset pagination, then fetch details "
+            "and source links for records that have not been read yet"
+        )
+        self.refresh_btn.clicked.connect(lambda _=False: self.start_refresh(False))
+        actions.addWidget(self.refresh_btn)
+        self.resume_btn = QPushButton("Resume")
+        self.resume_btn.setCursor(Qt.PointingHandCursor)
+        self.resume_btn.setToolTip("Continue the last interrupted Kryoto scan")
+        self.resume_btn.clicked.connect(lambda _=False: self.start_refresh(True))
+        actions.addWidget(self.resume_btn)
+        self.cancel_btn = QPushButton("Cancel")
+        self.cancel_btn.setCursor(Qt.PointingHandCursor)
+        self.cancel_btn.setEnabled(False)
+        self.cancel_btn.clicked.connect(self.cancel_refresh)
+        actions.addWidget(self.cancel_btn)
+        self.check_btn = QPushButton("Check Kryoto links")
+        self.check_btn.setCursor(Qt.PointingHandCursor)
+        self.check_btn.setToolTip(
+            "Probe Kryoto-hosted links only. External mirrors are left for the "
+            "per-link Check action; nothing is downloaded."
+        )
+        self.check_btn.clicked.connect(self.check_kryoto_links)
+        actions.addWidget(self.check_btn)
+        actions.addStretch(1)
+        self.sources_btn = QPushButton("Import another source…")
+        self.sources_btn.setCursor(Qt.PointingHandCursor)
+        self.sources_btn.clicked.connect(self.open_other_sources)
+        actions.addWidget(self.sources_btn)
+        column.addLayout(actions)
+
+        self.progress = QProgressBar()
+        self.progress.setRange(0, 0)
+        self.progress.setTextVisible(False)
+        self.progress.setFixedHeight(6)
+        self.progress.setAccessibleName("Kryoto catalog progress")
+        self.progress.setVisible(False)
+        column.addWidget(self.progress)
+        self.status = label("Ready.", "detailNote", wrap=True)
+        column.addWidget(self.status)
+
+        stats = QFrame()
+        stats.setObjectName("catalogStats")
+        grid = QGridLayout(stats)
+        grid.setContentsMargins(12, 8, 12, 8)
+        grid.setHorizontalSpacing(16)
+        grid.setVerticalSpacing(4)
+        self.stats: dict[str, object] = {}
+        for index, name in enumerate(
+            (
+                "Discovered", "Metadata", "With links", "No links",
+                "Links listed", "Checked", "Verified files", "Failed requests",
+                "Last refresh", "Coverage",
+            )
+        ):
+            caption = label(name, "fact-name")
+            value = label("—", "kvVal", wrap=True)
+            grid.addWidget(caption, (index % 2) * 5, (index // 2) * 2)
+            grid.addWidget(value, (index % 2) * 5, (index // 2) * 2 + 1)
+            self.stats[name] = value
+        column.addWidget(stats)
+
+        toolbar = QHBoxLayout()
+        toolbar.setSpacing(8)
+        self.search = QLineEdit()
+        self.search.setPlaceholderText("Search the imported catalogue")
+        self.search.setClearButtonEnabled(True)
+        self.search.textChanged.connect(lambda _text: self.refresh_view())
+        toolbar.addWidget(self.search, 1)
+        self.filter_combo = QComboBox()
+        for key, text in KRYOTO_FILTERS:
+            self.filter_combo.addItem(text, key)
+        self.filter_combo.currentIndexChanged.connect(lambda _i: self.refresh_view())
+        toolbar.addWidget(self.filter_combo)
+        self.sort_combo = QComboBox()
+        for key, text in KRYOTO_SORTS:
+            self.sort_combo.addItem(f"Sort: {text}", key)
+        self.sort_combo.currentIndexChanged.connect(lambda _i: self.refresh_view())
+        toolbar.addWidget(self.sort_combo)
+        column.addLayout(toolbar)
+
+        split = QSplitter(Qt.Horizontal)
+        self.list = QListWidget()
+        self.list.currentRowChanged.connect(self._show_selected)
+        split.addWidget(self.list)
+        pane_host = QWidget()
+        pane_column = QVBoxLayout(pane_host)
+        pane_column.setContentsMargins(0, 0, 0, 0)
+        pane_column.setSpacing(0)
+        scroll, _body, inner = scroll_page()
+        pane_column.addWidget(scroll)
+        self.pane = CatalogGamePane(
+            self.store, self.manager, self.torrents, self.download_dir,
+            on_message=self._message, on_queued=self._queued, parent=pane_host,
+        )
+        self.pane.changed.connect(self.refresh_view)
+        inner.addWidget(self.pane)
+        inner.addStretch(1)
+        split.addWidget(pane_host)
+        split.setStretchFactor(0, 3)
+        split.setStretchFactor(1, 4)
+        column.addWidget(split, 1)
+
+        bottom = QHBoxLayout()
+        bottom.addStretch(1)
+        close = QPushButton("Close")
+        close.clicked.connect(self.reject)
+        bottom.addWidget(close)
+        column.addLayout(bottom)
+
+        self._poll = QTimer(self)
+        self._poll.setInterval(200)
+        self._poll.timeout.connect(self._paint_progress)
+        self.refresh_view()
+
+    # state -----------------------------------------------------------------
+    def _message(self, text: str, error: bool = False) -> None:
+        self.status.setText(text)
+        if error:
+            self.status.setToolTip(text)
+
+    def _queued(self, identifier: str, title: str) -> None:
+        if self._on_queued is not None:
+            self._on_queued(identifier, title)
+
+    def _select_record(self) -> CatalogGame | None:
+        row = self.list.currentRow()
+        if 0 <= row < len(self._shown):
+            return self._shown[row]
+        return None
+
+    def _show_selected(self, _row: int) -> None:
+        record = self._select_record()
+        if record is None:
+            return
+        self._selected_key = record.key
+        self.pane.show_record(record, self._source_name(record.source_id))
+
+    def _source_name(self, source_id: str) -> str:
+        try:
+            source = self.store.get_source(source_id)
+        except Exception:  # noqa: BLE001
+            source = None
+        if source is not None and getattr(source, "name", ""):
+            return str(source.name)
+        return source_id or "unknown"
+
+    # view ------------------------------------------------------------------
+    def refresh_view(self) -> None:
+        """Re-read the store and repaint stats, list and detail pane."""
+        self._paint_stats()
+        try:
+            self._games = list(self.store.iter_games("kryoto")) or list(self.store.iter_games())
+        except Exception:  # noqa: BLE001 - a store issue is reported, not raised
+            self._games = []
+        self._shown = self._filtered(self._games)
+        self._fill_list()
+        self.resume_btn.setEnabled(not self._busy and self._has_resumable())
+
+    def _paint_stats(self) -> None:
+        try:
+            summary = self.store.source_summary("kryoto")
+        except Exception:  # noqa: BLE001
+            summary = {}
+        values = {
+            "Discovered": summary.get("games_discovered"),
+            "Metadata": summary.get("metadata_retrieved"),
+            "With links": summary.get("games_with_links"),
+            "No links": summary.get("games_without_links"),
+            "Links listed": summary.get("links_listed"),
+            "Checked": summary.get("links_checked"),
+            "Verified files": summary.get("links_verified"),
+            "Failed requests": summary.get("failed_requests"),
+            "Last refresh": _stamp(summary.get("last_refresh")),
+            "Coverage": "complete" if summary.get("pagination_complete") else "partial",
+        }
+        for name, value in values.items():
+            widget = self.stats.get(name)
+            if widget is not None:
+                widget.setText("—" if value in (None, "") else f"{value:,}" if isinstance(value, int) else str(value))
+
+    def _has_resumable(self) -> bool:
+        job = self.store.latest_job("kryoto")
+        return bool(job and getattr(job, "resumable", False))
+
+    def _filtered(self, games: Sequence[CatalogGame]) -> list[CatalogGame]:
+        needle = self.search.text().strip().casefold()
+        mode = str(self.filter_combo.currentData() or "all")
+        rows: list[CatalogGame] = []
+        for game in games:
+            links = http_links(self.store, game.key)
+            if needle and needle not in (game.title or "").casefold()                     and needle not in (game.developer or "").casefold():
+                continue
+            if mode == "with" and not links:
+                continue
+            if mode == "without" and links:
+                continue
+            if mode == "verified" and not any(
+                str(getattr(link, "check_status", "")) == "verified" for link in links
+            ):
+                continue
+            if mode == "unchecked" and not any(
+                str(getattr(link, "check_status", "unchecked")) == "unchecked" for link in links
+            ):
+                continue
+            rows.append(game)
+        key = str(self.sort_combo.currentData() or "title")
+        if key == "year":
+            rows.sort(key=lambda game: (str(game.year or ""), game.title.casefold()))
+        elif key == "provider":
+            rows.sort(key=lambda game: (game.source_id, game.title.casefold()))
+        elif key == "links":
+            rows.sort(key=lambda game: (-len(http_links(self.store, game.key)),
+                                        game.title.casefold()))
+        elif key == "status":
+            rows.sort(key=lambda game: (
+                -sum(1 for link in http_links(self.store, game.key)
+                     if str(getattr(link, "check_status", "")) == "verified"),
+                game.title.casefold(),
+            ))
+        else:
+            rows.sort(key=lambda game: (game.title or game.game_id).casefold())
+        return rows
+
+    def _fill_list(self) -> None:
+        self.list.clear()
+        for game in self._shown:
+            links = http_links(self.store, game.key)
+            item = QListWidgetItem(
+                f"{game.title or game.game_id}  ·  {len(links)} link(s)"
+            )
+            item.setToolTip(game.source_url or game.key)
+            self.list.addItem(item)
+        if not self._shown:
+            self._message(
+                "No imported records match this view. Refresh the catalog, or "
+                "clear the filters."
+            )
+            return
+        index = next(
+            (i for i, game in enumerate(self._shown) if game.key == self._selected_key), 0,
+        )
+        self.list.setCurrentRow(index)
+
+    # refresh ---------------------------------------------------------------
+    def start_refresh(self, resume: bool = False) -> None:
+        """Import into the worker thread, never on the UI thread."""
+        if self._busy:
+            return
+        job = None
+        if resume:
+            job = self.store.latest_job("kryoto")
+            if job is None or not getattr(job, "resumable", False):
+                self._message("There is no interrupted Kryoto scan to resume.")
+                return
+        from .sources import KryotoSource
+
+        self._cancel.clear()
+        self._busy = True
+        self.refresh_btn.setEnabled(False)
+        self.resume_btn.setEnabled(False)
+        self.cancel_btn.setEnabled(True)
+        self.check_btn.setEnabled(False)
+        self.sources_btn.setEnabled(False)
+        self.progress.setVisible(True)
+        self.progress.setRange(0, 0)
+        self._message("Resuming the Kryoto scan…" if resume else "Refreshing the Kryoto catalog…")
+        options = ImportOptions(page_size=25, enrich=True, workers=4)
+        store = self.store
+        cancel = self._cancel
+
+        def progress(snapshot: object) -> None:
+            with self._progress_lock:
+                self._snapshot = {
+                    "phase": str(getattr(snapshot, "phase", "") or ""),
+                    "pages": int(getattr(snapshot, "pages_processed", 0) or 0),
+                    "discovered": int(getattr(snapshot, "games_discovered", 0) or 0),
+                    "enrich_done": int(getattr(snapshot, "enrich_done", 0) or 0),
+                    "enrich_total": int(getattr(snapshot, "enrich_total", 0) or 0),
+                    "links": int(getattr(snapshot, "mirrors_found", 0) or 0),
+                }
+
+        def work() -> object:
+            importer = CatalogImporter(store, KryotoSource(), options=options)
+            report = None if resume else importer.inspect()
+            outcome = importer.run(
+                job=job if resume else None, cancel=cancel, progress=progress,
+                enrich=True,
+            )
+            try:
+                store.save()
+            except OSError:
+                pass
+            return outcome, report
+
+        def done(result: object) -> None:
+            self._finish(True)
+            outcome = result[0] if isinstance(result, tuple) else result
+            if isinstance(outcome, ImportOutcome):
+                self._message(outcome.summary)
+            self.refresh_view()
+            if self._on_imported is not None:
+                try:
+                    self._on_imported(self.store.count_games())
+                except Exception:  # noqa: BLE001 - a callback cannot break the dialog
+                    pass
+
+        def failed(exc: object) -> None:
+            self._finish(True)
+            self._message(f"The refresh failed: {exc}")
+            self.refresh_view()
+
+        self._poll.start()
+        run_async(work, done, failed)
+
+    def _finish(self, done: bool) -> None:
+        self._busy = False
+        self._poll.stop()
+        self.progress.setVisible(False)
+        self.refresh_btn.setEnabled(True)
+        self.resume_btn.setEnabled(self._has_resumable())
+        self.cancel_btn.setEnabled(False)
+        self.check_btn.setEnabled(True)
+        self.sources_btn.setEnabled(True)
+        if done:
+            with self._progress_lock:
+                self._snapshot = {}
+
+    def _paint_progress(self) -> None:
+        if not self._busy:
+            return
+        with self._progress_lock:
+            snapshot = dict(self._snapshot)
+        if not snapshot:
+            return
+        if snapshot.get("phase") == "enrichment" and snapshot.get("enrich_total"):
+            done = int(snapshot["enrich_done"])
+            total = int(snapshot["enrich_total"])
+            self.progress.setRange(0, total)
+            self.progress.setValue(min(done, total))
+            self._message(
+                f"Details and source links: {done:,}/{total:,} ({int(done * 100 / total)}%) · "
+                f"{int(snapshot.get('links', 0)):,} link(s) recorded"
+            )
+        else:
+            self.progress.setRange(0, 0)
+            self._message(
+                f"Catalog page {int(snapshot.get('pages', 0)):,} · "
+                f"{int(snapshot.get('discovered', 0)):,} game(s) discovered"
+            )
+
+    def cancel_refresh(self) -> None:
+        if not self._busy:
+            return
+        self._cancel.set()
+        self._message("Cancelling at the next page boundary; the checkpoint is kept.")
+
+    # actions ---------------------------------------------------------------
+    def check_kryoto_links(self) -> None:
+        """Probe every recorded Kryoto-hosted link, as the Linux button does."""
+        if self._busy:
+            return
+        targets = []
+        for game in self.store.iter_games():
+            for link in http_links(self.store, game.key):
+                if kryoto.host_allowed(str(getattr(link, "url", "")), kryoto.KRYOTO_HOSTS):
+                    targets.append(link)
+        if not targets:
+            self._message("No Kryoto-hosted links are recorded yet. Refresh the catalog first.")
+            return
+        self._busy = True
+        self.check_btn.setEnabled(False)
+        self.refresh_btn.setEnabled(False)
+        self.cancel_btn.setEnabled(True)
+        self.progress.setVisible(True)
+        self.progress.setRange(0, len(targets))
+        self._cancel.clear()
+        store = self.store
+        cancel = self._cancel
+
+        def work() -> int:
+            checked = 0
+            for index, link in enumerate(targets, start=1):
+                if cancel.is_set():
+                    break
+                url = str(getattr(link, "url", "") or "")
+                try:
+                    result = kryoto.check_link(url, allow_external=False)
+                except Exception:  # noqa: BLE001 - one bad link is not the end
+                    continue
+                link.last_checked = time.time()
+                link.check_status = result.status
+                link.url_kind = result.kind or getattr(link, "url_kind", "")
+                link.content_type = result.content_type
+                link.notes = tuple(result.notes)
+                if result.filename and not getattr(link, "filename", ""):
+                    link.filename = result.filename
+                if result.size and not getattr(link, "size", 0):
+                    link.size = result.size
+                checked += 1
+                with self._progress_lock:
+                    self._snapshot = {"checking": index, "total": len(targets)}
+            try:
+                store.save()
+            except OSError:
+                pass
+            return checked
+
+        def done(count: object) -> None:
+            self._finish(True)
+            self._message(f"Checked {count} Kryoto-hosted link(s).")
+            self.refresh_view()
+
+        def failed(exc: object) -> None:
+            self._finish(True)
+            self._message(f"The link check failed: {exc}")
+            self.refresh_view()
+
+        self._poll.stop()
+        self._progress_lock_paint = True
+        run_async(work, done, failed)
+        self._check_poll = QTimer(self)
+        self._check_poll.setInterval(200)
+
+        def paint() -> None:
+            with self._progress_lock:
+                snapshot = dict(self._snapshot)
+            if "checking" in snapshot:
+                self.progress.setRange(0, int(snapshot.get("total", 0)))
+                self.progress.setValue(int(snapshot["checking"]))
+                self._message(
+                    f"Checking {int(snapshot['checking']):,}/{int(snapshot.get('total', 0)):,}"
+                )
+            if not self._busy:
+                self._check_poll.stop()
+
+        self._check_poll.timeout.connect(paint)
+        self._check_poll.start()
+
+    def open_other_sources(self) -> None:
+        dialog = CatalogDialog(
+            self, catalog=self.store, on_imported=self._other_imported, enrich=False,
+        )
+        dialog.exec()
+        self.refresh_view()
+
+    def _other_imported(self, count: int) -> None:
+        self.refresh_view()
+        if self._on_imported is not None:
+            try:
+                self._on_imported(count)
+            except Exception:  # noqa: BLE001
+                pass
+
+    def closeEvent(self, event) -> None:  # noqa: N802 - Qt naming
+        self._cancel.set()
+        super().closeEvent(event)
+
+
 __all__ = [
     "CatalogDialog",
     "CatalogDownloadDialog",
+    "KRYOTO_FILTERS",
+    "KRYOTO_HINT",
+    "KRYOTO_SORTS",
+    "KryotoCatalogDialog",
     "KRYOTO_URL",
     "KRYOTO_NOTE",
     "WEBSITE_NOTE",
