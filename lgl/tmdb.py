@@ -369,6 +369,8 @@ class MediaDetails:
     tagline: str = ""
     #: TMDB's ``external_ids.imdb_id``, when the details call asked for it.
     imdb_id: str = ""
+    #: TMDB's vote count; without it the user score cannot be a percentage.
+    vote_count: int = 0
 
     @property
     def key(self) -> str:
@@ -380,6 +382,14 @@ class MediaDetails:
             return ""
         hours, minutes = divmod(int(self.runtime), 60)
         return f"{hours} h {minutes} min" if hours else f"{minutes} min"
+
+
+def _vote_count(value: Any) -> int:
+    try:
+        count = int(value)
+    except (TypeError, ValueError):
+        return 0
+    return count if 0 < count < 100_000_000 else 0
 
 
 def _imdb_id(raw: Any) -> str:
@@ -702,6 +712,7 @@ class TmdbClient:
             seasons=tuple(seasons),
             tagline=" ".join(str(data.get("tagline") or "").split())[:300],
             imdb_id=_imdb_id(data.get("external_ids")),
+            vote_count=_vote_count(data.get("vote_count")),
         )
 
     @staticmethod

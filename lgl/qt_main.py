@@ -82,8 +82,9 @@ from .qt_widgets import (
 from .settings import Settings
 
 APP_TITLE = "Lumora"
+#: The contract's sidebar width; it does not shrink in compact mode.
 RAIL_WIDTH = 72
-COMPACT_RAIL_WIDTH = 64
+COMPACT_RAIL_WIDTH = RAIL_WIDTH
 HEADER_HEIGHT = 64
 COMPACT_HEADER_HEIGHT = 56
 SEARCH_HEIGHT = 40
@@ -220,8 +221,9 @@ class Window(QMainWindow):
         rail.setFixedWidth(RAIL_WIDTH)
         self._rail = rail
         column = QVBoxLayout(rail)
-        column.setContentsMargins(4, 10, 4, 10)
-        column.setSpacing(2)
+        # 8 px side margin, 8 px between items (contract section 4).
+        column.setContentsMargins(8, 8, 8, 8)
+        column.setSpacing(8)
         self.rail_buttons: dict[str, RailButton] = {}
         for key, icon_name, text, tip in (
             ("browse", "grid", "Browse", "Browse the collection (Ctrl+1)"),
@@ -1157,9 +1159,9 @@ def apply_theme(
     palette = app.palette()
     from PySide6.QtGui import QColor
 
-    colours = theme.palette(resolved)
-    if accent:
-        colours = theme.with_accent(colours, accent)
+    from .qt_theme import palette as token_palette
+
+    colours = token_palette(resolved, accent)
     palette.setColor(palette.ColorRole.Window, QColor(colours["bg"]))
     palette.setColor(palette.ColorRole.WindowText, QColor(colours["text"]))
     palette.setColor(palette.ColorRole.Base, QColor(colours["surface"]))

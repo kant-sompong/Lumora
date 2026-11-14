@@ -14,7 +14,21 @@ import urllib.request
 from pathlib import Path
 from typing import Callable, Iterable, Sequence
 
-from PySide6.QtCore import QObject, QPoint, QRect, QRectF, QSize, Qt, QThreadPool, QTimer, QRunnable, Signal
+from PySide6.QtCore import (
+    QEasingCurve,
+    QObject,
+    QPoint,
+    QPropertyAnimation,
+    Property,
+    QRect,
+    QRectF,
+    QSize,
+    Qt,
+    QThreadPool,
+    QTimer,
+    QRunnable,
+    Signal,
+)
 from PySide6.QtGui import (
     QColor,
     QFont,
@@ -41,7 +55,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from . import theme
+from . import design_tokens, theme
+from .design_tokens import RADIUS, TEXT_SIZES, TOKENS
 from .qt_icons import icon, paint_icon
 
 #: Theme values custom-painted widgets need before QSS can reach them.
@@ -56,11 +71,12 @@ def set_theme(resolved: str, accent: str | None = None) -> None:
     """Remember the resolved palette so painted widgets can colour themselves.
 
     ``accent`` retints the accent family exactly as the stylesheet does, so a
-    hand-painted badge or rail highlight cannot drift from the QSS.
+    hand-painted badge or rail highlight cannot drift from the QSS.  The values
+    come from the shared design tokens, through ``qt_theme.palette``.
     """
-    palette = dict(theme.palette(resolved))
-    if accent:
-        palette = theme.with_accent(palette, accent)
+    from .qt_theme import palette as token_palette
+
+    palette = token_palette(resolved, accent)
     THEME_STATE["resolved"] = resolved
     THEME_STATE["palette"] = palette
     THEME_STATE["muted"] = palette["muted"]
@@ -339,9 +355,16 @@ class DiceButton(QAbstractButton):
 
 
 class RailButton(QWidget):
-    """One destination in the far-left rail: icon, label, optional badge."""
+    """One destination in the far-left rail: icon, label, optional badge.
+
+    The contract's sidebar: 56x56, a 22 px icon above an 11 px label, an
+    accent-soft pill with a 3 px accent bar when active, a 6 % text wash on
+    hover, a 2 px accent focus ring, and 140 ms transitions between the states.
+    Every colour and radius comes from the shared design tokens.
+    """
 
     clicked = Signal()
+    TRANSITION_MS = 140
 
     def __init__(self, key: str, icon_name: str, text: str, tip: str = "") -> None:
         super().__init__()
@@ -351,21 +374,43 @@ class RailButton(QWidget):
         self._badge = 0
         self._active = False
         self._hover = False
+        self._phase = 0.0
         self.setCursor(Qt.PointingHandCursor)
-        self.setFixedSize(64, 58)
+        self.setFixedSize(56, 56)
         self.setToolTip(tip or text)
         self.setAttribute(Qt.WA_Hover, True)
+        self.setFocusPolicy(Qt.StrongFocus)
+        self._animation = QPropertyAnimation(self, b"phase", self)
+        self._animation.setDuration(self.TRANSITION_MS)
+        self._animation.setEasingCurve(QEasingCurve.OutCubic)
+
+    # -- animated state ----------------------------------------------------
+    def _get_phase(self) -> float:
+        return self._phase
+
+    def _set_phase(self, value: float) -> None:
+        self._phase = max(0.0, min(1.0, float(value)))
+        self.update()
+
+    phase = Property(float, _get_phase, _set_phase)
+
+    def _animate_to(self, target: float) -> None:
+        self._animation.stop()
+        self._animation.setStartValue(self._phase)
+        self._animation.setEndValue(target)
+        self._animation.start()
 
     def set_active(self, active: bool) -> None:
         if active != self._active:
             self._active = active
-            self.update()
+            self._animate_to(1.0 if active else 0.0)
 
     def set_badge(self, count: int) -> None:
         if count != self._badge:
             self._badge = count
             self.update()
 
+    # -- hover / focus -----------------------------------------------------
     def enterEvent(self, event) -> None:  # noqa: N802
         self._hover = True
         self.update()
@@ -376,57 +421,110 @@ class RailButton(QWidget):
         self.update()
         super().leaveEvent(event)
 
+    def focusInEvent(self, event) -> None:  # noqa: N802
+        self.update()
+        super().focusInEvent(event)
+
+    def focusOutEvent(self, event) -> None:  # noqa: N802
+        self.update()
+        super().focusOutEvent(event)
+
+    def keyPressEvent(self, event) -> None:  # noqa: N802
+        if event.key() in (Qt.Key_Return, Qt.Key_Enter, Qt.Key_Space):
+            self.clicked.emit()
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
     def mouseReleaseEvent(self, event) -> None:  # noqa: N802
         if event.button() == Qt.LeftButton and self.rect().contains(event.position().toPoint()):
             self.clicked.emit()
         super().mouseReleaseEvent(event)
 
+    def _label(self) -> tuple[QFont, float, float]:
+        """The caption font, its advance, and the scale the item gives it.
+
+        "Downloads" is 61 px in an 11 px caption, so a 56 px item condenses it
+        by a few percent rather than eliding or dropping the caption size.
+        """
+        font = QFont(self.font())
+        font.setPixelSize(TEXT_SIZES["caption"])
+        font.setWeight(QFont.DemiBold if self._active else QFont.Normal)
+        advance = float(QFontMetrics(font).horizontalAdvance(self._text))
+        available = float(self.width() - 2)
+        scale = min(1.0, available / advance) if advance else 1.0
+        return font, advance, scale
+
+    def label_fits(self) -> bool:
+        """Whether the label is drawn whole inside the 56 px item."""
+        _font, advance, scale = self._label()
+        return advance * scale <= self.width() - 1
+
     def paintEvent(self, _event) -> None:  # noqa: N802
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
-        rect = QRectF(self.rect()).adjusted(4, 2, -4, -2)
-        if self._active:
-            painter.setBrush(alpha_color("text", 0.075))
-            painter.setPen(Qt.NoPen)
-            painter.drawRoundedRect(rect, 8, 8)
-        elif self._hover:
-            painter.setBrush(alpha_color("text", 0.045))
-            painter.setPen(Qt.NoPen)
-            painter.drawRoundedRect(rect, 8, 8)
+        tokens = TOKENS.get(str(THEME_STATE.get("resolved") or "dark"), TOKENS["dark"])
+        text = QColor(str(tokens["text"]))
+        accent = QColor(str(tokens["accent"]))
+        rect = QRectF(self.rect())
 
-        tint = color("accent_text") if self._active else color("muted")
-        icon_size = 21.0
+        # Hover wash, then the active pill, both eased over 140 ms.
+        if self._hover and not self._active:
+            wash = QColor(text)
+            wash.setAlphaF(0.06)
+            painter.setBrush(wash)
+            painter.setPen(Qt.NoPen)
+            painter.drawRoundedRect(rect, RADIUS[1], RADIUS[1])
+        if self._phase > 0.001:
+            soft = QColor(accent)
+            soft.setAlphaF(design_tokens.ACCENT_SOFT_ALPHA * self._phase)
+            painter.setBrush(soft)
+            painter.setPen(Qt.NoPen)
+            painter.drawRoundedRect(rect, RADIUS[1], RADIUS[1])
+            bar = QRectF(0, 8, 3, self.height() - 16)
+            painter.setBrush(accent)
+            painter.drawRoundedRect(bar, 1.5, 1.5)
+
+        if self.hasFocus():
+            ring = QColor(accent)
+            painter.setBrush(Qt.NoBrush)
+            painter.setPen(QPen(ring, 2))
+            painter.drawRoundedRect(rect.adjusted(1, 1, -1, -1), RADIUS[1], RADIUS[1])
+
+        tint = accent if self._active else QColor(str(tokens["text2"]))
+        icon_size = 22.0
         paint_icon(
             painter, self._icon,
             QRectF((self.width() - icon_size) / 2, 9, icon_size, icon_size),
-            tint, 1.65,
+            tint, 1.7,
         )
 
-        painter.setPen(tint if self._active else color("muted"))
-        font = QFont(self.font())
-        font.setPointSizeF(8.6)
-        font.setWeight(QFont.Medium if self._active else QFont.Normal)
+        painter.setPen(accent if self._active else QColor(str(tokens["text2"])))
+        font, advance, scale = self._label()
         painter.setFont(font)
+        painter.save()
+        painter.translate(self.width() / 2, 35)
+        painter.scale(scale, 1.0)
         painter.drawText(
-            QRectF(0, 33, self.width(), 16),
+            QRectF(-advance / 2, 0, advance, 14),
             Qt.AlignHCenter | Qt.AlignTop,
             self._text,
         )
+        painter.restore()
 
         if self._badge:
-            text = "99+" if self._badge > 99 else str(self._badge)
+            text_value = "99+" if self._badge > 99 else str(self._badge)
             badge_font = QFont(self.font())
-            badge_font.setPointSizeF(7.4)
+            badge_font.setPixelSize(10)
             badge_font.setWeight(QFont.DemiBold)
             painter.setFont(badge_font)
-            width = max(15.0, QFontMetrics(badge_font).horizontalAdvance(text) + 8.0)
-            badge = QRectF(self.width() - width - 7, 5, width, 15)
-            painter.setBrush(QColor(color("accent_fill")))
+            width = max(15.0, QFontMetrics(badge_font).horizontalAdvance(text_value) + 8.0)
+            badge = QRectF(self.width() - width - 2, 3, width, 15)
+            painter.setBrush(accent)
             painter.setPen(Qt.NoPen)
             painter.drawRoundedRect(badge, 7.5, 7.5)
-            painter.setPen(QColor(theme.DARK["on_accent"]) if THEME_STATE["resolved"] == "dark"
-                           else QColor(theme.LIGHT["on_accent"]))
-            painter.drawText(badge, Qt.AlignCenter, text)
+            painter.setPen(QColor("#ffffff"))
+            painter.drawText(badge, Qt.AlignCenter, text_value)
 
 
 class CheckRow(QWidget):
