@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
 )
 
 from . import palette as palette_lib
+from .qt_widgets import style_dialog
 
 #: Pages that live in the main stack, whichever frontend is running.
 _PAGE_KEYS = frozenset(key for key, _label in palette_lib.PAGES)
@@ -49,14 +50,13 @@ class PaletteDialog(QDialog):
         self._results: list[palette_lib.Command] = []
 
         column = QVBoxLayout(self)
-        column.setContentsMargins(14, 14, 14, 12)
-        column.setSpacing(8)
 
         self.field = QLineEdit()
         self.field.setObjectName("paletteSearch")
         self.field.setPlaceholderText("Type a page, setting or command")
         self.field.textChanged.connect(self.refilter)
         self.field.installEventFilter(self)
+        style_dialog(self, first=self.field)
         column.addWidget(self.field)
 
         self.results = QListWidget()
