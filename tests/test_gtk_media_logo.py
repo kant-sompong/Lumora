@@ -102,6 +102,7 @@ ART_METHODS = (
     "_apply_anime_images",
     "_anime_tmdb_kind",
     "_logo_language",
+    "_client_images",
     "_load_home_hero_art",
     "_apply_home_hero_images",
     "_apply_hero_image",

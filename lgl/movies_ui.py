@@ -2126,10 +2126,20 @@ class MoviesWindow(Gtk.Box):
         return box
 
     def _fill_meta(self, box: Gtk.Box, bits, rating=None, *,
-                   css: str = "movie-meta",
-                   star_css: str = "movie-rating-star") -> None:
+                   css: str | None = None,
+                   star_css: str | None = None) -> None:
         """One meta line.  ``css``/``star_css`` name the classes, so a hero
-        label can use the light-on-artwork set instead of the page tokens."""
+        label can use the light-on-artwork set instead of the page tokens.
+
+        A refill with no classes keeps the ones the box already had: details
+        arriving later must not repaint a hero line in the page's dark ink.
+        """
+        css = css or getattr(box, "meta_css", "") or "movie-meta"
+        star_css = (
+            star_css or getattr(box, "meta_star_css", "") or "movie-rating-star"
+        )
+        box.meta_css = css
+        box.meta_star_css = star_css
         for child in box.get_children():
             box.remove(child)
         written = False
@@ -2541,6 +2551,7 @@ class MoviesWindow(Gtk.Box):
             content.pack_start(overview, False, False, 0)
 
         actions = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        actions.get_style_context().add_class("movie-hero-actions")
         if item is not None:
             actions.pack_start(
                 self._primary_button(
@@ -2596,9 +2607,7 @@ class MoviesWindow(Gtk.Box):
         if item.kind in ("movie", "tv") and item.tmdb_id > 0:
             def work() -> None:
                 try:
-                    found = self._client.images(
-                        item.kind, item.tmdb_id, language=self._logo_language()
-                    )
+                    found = self._client_images(item.kind, item.tmdb_id)
                 except Exception:  # noqa: BLE001 - art must never break home
                     return
                 GLib.idle_add(self._apply_home_hero_images, found, token)
@@ -3406,6 +3415,7 @@ class MoviesWindow(Gtk.Box):
         content.pack_start(meta, False, False, 0)
 
         actions = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        actions.get_style_context().add_class("movie-hero-actions")
         find = self._primary_button(
             "Watch",
             "media-playback-start-symbolic",
@@ -4395,6 +4405,7 @@ class MoviesWindow(Gtk.Box):
         content.pack_start(ratings_row, False, False, 0)
 
         actions = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        actions.get_style_context().add_class("movie-hero-actions")
         if item.kind == "tv":
             play = self._primary_button(
                 "Choose an episode",
@@ -4576,9 +4587,7 @@ class MoviesWindow(Gtk.Box):
                           title, token: int) -> None:
         def work() -> None:
             try:
-                found = self._client.images(
-                    kind, tmdb_id, language=self._logo_language()
-                )
+                found = self._client_images(kind, tmdb_id)
             except Exception:  # noqa: BLE001 - art must never break a page
                 return
             GLib.idle_add(self._apply_art_images, found, backdrop, logo, title, token)
@@ -4626,6 +4635,17 @@ class MoviesWindow(Gtk.Box):
         """The two-letter display language a logo should be in, if any."""
         tag = str(getattr(self._client, "language", "") or "").split("-")[0]
         return tag.strip().lower() or None
+
+    def _client_images(self, kind: str, tmdb_id: int):
+        """Wide art in the display language, when one is known.
+
+        The keyword is left off the call otherwise, so a client that predates
+        the language argument (or a test stub without it) keeps working.
+        """
+        language = self._logo_language()
+        if language:
+            return self._client.images(kind, tmdb_id, language=language)
+        return self._client.images(kind, tmdb_id)
 
     def _fetch_anime_art(self, item, backdrop, logo, title, token: int) -> None:
         """Anime titles have no TMDB id, so the name is looked up instead."""

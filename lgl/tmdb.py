@@ -807,7 +807,12 @@ def tmdb_images_for_title(
             continue
         if arrival and item.year and abs(int(arrival) - int(item.year)) > 1:
             continue
-        found = client.images(item.kind, item.tmdb_id, language=asked or None)
+        if asked:
+            found = client.images(item.kind, item.tmdb_id, language=asked)
+        else:
+            # Older clients and test stubs take no language argument, so the
+            # keyword is only passed when there is a language to pass.
+            found = client.images(item.kind, item.tmdb_id)
         break
     _TITLE_IMAGES[key] = found
     return found
