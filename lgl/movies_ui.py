@@ -2596,7 +2596,9 @@ class MoviesWindow(Gtk.Box):
         if item.kind in ("movie", "tv") and item.tmdb_id > 0:
             def work() -> None:
                 try:
-                    found = self._client.images(item.kind, item.tmdb_id)
+                    found = self._client.images(
+                        item.kind, item.tmdb_id, language=self._logo_language()
+                    )
                 except Exception:  # noqa: BLE001 - art must never break home
                     return
                 GLib.idle_add(self._apply_home_hero_images, found, token)
@@ -3378,6 +3380,10 @@ class MoviesWindow(Gtk.Box):
             badge_row.pack_start(adult_badge, False, False, 0)
         content.pack_start(badge_row, False, False, 0)
 
+        # The logo takes the title's place and hides it once one loads.
+        logo = HeroLogo(overlay)
+        content.pack_start(logo, False, False, 0)
+
         title = Gtk.Label(label=getattr(item, "title", ""), xalign=0)
         title.set_line_wrap(True)
         title.set_lines(2)
@@ -3508,7 +3514,7 @@ class MoviesWindow(Gtk.Box):
         )
         if isinstance(item, anipm.AniTitle):
             self._build_ani_episode_section(body, item)
-        self._load_detail_art(item, backdrop, None, title, kind="anime")
+        self._load_detail_art(item, backdrop, logo, title, kind="anime")
         state["backdrop"] = backdrop
         page.show_all()
         return page
@@ -4570,7 +4576,9 @@ class MoviesWindow(Gtk.Box):
                           title, token: int) -> None:
         def work() -> None:
             try:
-                found = self._client.images(kind, tmdb_id)
+                found = self._client.images(
+                    kind, tmdb_id, language=self._logo_language()
+                )
             except Exception:  # noqa: BLE001 - art must never break a page
                 return
             GLib.idle_add(self._apply_art_images, found, backdrop, logo, title, token)
@@ -4614,22 +4622,53 @@ class MoviesWindow(Gtk.Box):
             pass
         return False
 
+    def _logo_language(self) -> str | None:
+        """The two-letter display language a logo should be in, if any."""
+        tag = str(getattr(self._client, "language", "") or "").split("-")[0]
+        return tag.strip().lower() or None
+
     def _fetch_anime_art(self, item, backdrop, logo, title, token: int) -> None:
         """Anime titles have no TMDB id, so the name is looked up instead."""
 
         def work() -> None:
             try:
-                url = tmdb.tmdb_backdrop_for_title(
+                found = tmdb.tmdb_images_for_title(
                     str(getattr(item, "title", "") or ""),
                     str(getattr(item, "year", "") or ""),
+                    self._anime_tmdb_kind(item),
                     client=self._client,
+                    language=self._logo_language(),
                 )
             except Exception:  # noqa: BLE001 - art must never break a page
                 return
-            if url:
-                GLib.idle_add(self._apply_anime_backdrop, url, backdrop, token)
+            GLib.idle_add(
+                self._apply_anime_images, found, backdrop, logo, title, token
+            )
 
         threading.Thread(target=work, daemon=True, name="lgl-tmdb-anime-art").start()
+
+    def _anime_tmdb_kind(self, item) -> str:
+        """A series anime answers to TMDB's TV side, a film to its movie one."""
+        try:
+            episodes = int(getattr(item, "episodes", 0) or 0)
+        except (TypeError, ValueError):
+            episodes = 0
+        return "tv" if episodes > 0 else "movie"
+
+    def _apply_anime_images(self, found, backdrop, logo, title, token: int) -> bool:
+        """Wide art for an anime page: the backdrop, then the logo on top."""
+        if token != getattr(self, "_art_token", 0):
+            return False
+        url = str(getattr(found, "backdrop_url", "") or "")
+        if url:
+            self._apply_anime_backdrop(url, backdrop, token)
+        logo_url = str(getattr(found, "logo_url", "") or "")
+        if logo_url and logo is not None:
+            self._images.load(
+                logo_url, LOGO_SIZE,
+                lambda pixbuf: self._apply_hero_logo(pixbuf, logo, title, token),
+            )
+        return False
 
     def _apply_anime_backdrop(self, url: str, backdrop, token: int) -> bool:
         if token != getattr(self, "_art_token", 0):

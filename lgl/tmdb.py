@@ -422,26 +422,42 @@ def _vote_average(entry: Mapping[str, Any]) -> float:
         return 0.0
 
 
-def _best_logo(raw: Any) -> str:
-    """The English logo, else a language-neutral one, else ``""``.
+def _language_code(value: Any) -> str | None:
+    """A TMDB language tag reduced to a two-letter code, or ``None``."""
+    text = str(value or "").strip().lower()
+    if not text or text in ("null", "none"):
+        return None
+    return text[:2] or None
+
+
+def _best_logo(raw: Any, language: str | None = None) -> str:
+    """The logo in ``language``, else English, else a neutral one, else ``""``.
 
     TMDB stores far more artwork than a page can render: only PNG and SVG
-    logos are used, because the rest are photographs of a logo.
+    logos are used, because the rest are photographs of a logo.  A PNG is
+    preferred over an SVG within a language, then the best-voted one.
     """
     if not isinstance(raw, Sequence):
         return ""
-    ranked: dict[str | None, list[Mapping[str, Any]]] = {"en": [], None: []}
+    wanted = _language_code(language)
+    order: list[str | None] = [wanted, "en", None] if wanted else ["en", None]
+    ranked: dict[str | None, list[Mapping[str, Any]]] = {}
     for entry in raw:
         if not isinstance(entry, Mapping):
             continue
         path = str(entry.get("file_path") or "")
-        language = entry.get("iso_639_1")
-        if language not in ranked or not path.lower().endswith(_LOGO_SUFFIXES):
+        if not path.lower().endswith(_LOGO_SUFFIXES):
             continue
-        ranked[language].append(entry)
-    for language in ("en", None):
-        if ranked[language]:
-            best = max(ranked[language], key=_vote_average)
+        ranked.setdefault(_language_code(entry.get("iso_639_1")), []).append(entry)
+
+    def rank(entry: Mapping[str, Any]) -> tuple[bool, float]:
+        png = str(entry.get("file_path") or "").lower().endswith(".png")
+        return (png, _vote_average(entry))
+
+    for code in order:
+        entries = ranked.get(code)
+        if entries:
+            best = max(entries, key=rank)
             return _image_url(best.get("file_path"), "w500")
     return ""
 
@@ -559,10 +575,14 @@ class TmdbClient:
         )
         return self._details(data, chosen, int(tmdb_id))
 
-    def images(self, kind: str, tmdb_id: int) -> MediaImages:
+    def images(
+        self, kind: str, tmdb_id: int, language: str | None = None
+    ) -> MediaImages:
         """A logo and a textless backdrop for one title.
 
-        Every failure, including a missing key, is an empty result: wide art is
+        ``language`` is the display language the logo should be in; English
+        and then a language-neutral logo are used when it has none.  Every
+        failure, including a missing key, is an empty result: wide art is
         decoration, so it must never stop a detail page from opening.
         """
         chosen = "tv" if str(kind).lower() == "tv" else "movie"
@@ -572,21 +592,23 @@ class TmdbClient:
             return MediaImages()
         if number <= 0:
             return MediaImages()
-        key = (chosen, number)
+        wanted = _language_code(language)
+        key = (chosen, number, wanted or "")
         cached = self._images.get(key)
         if cached is not None:
             return cached
+        ask = ",".join(dict.fromkeys(x for x in (wanted, "en", "null") if x))
         try:
             data = self._get(
                 f"/{chosen}/{number}/images",
-                {"include_image_language": "en,null"},
+                {"include_image_language": ask},
             )
         except (TmdbError, OSError, ValueError, TypeError):
             return MediaImages()
         if not isinstance(data, Mapping):
             return MediaImages()
         result = MediaImages(
-            logo_url=_best_logo(data.get("logos")),
+            logo_url=_best_logo(data.get("logos"), wanted),
             backdrop_url=_best_backdrop(data.get("backdrops")),
         )
         self._images[key] = result
@@ -722,13 +744,62 @@ class TmdbClient:
         )
 
 
-#: Title -> backdrop, for the anime page: it has no TMDB id of its own.
-_TITLE_BACKDROPS: dict[tuple[str, str, str], str] = {}
+#: Title -> wide art, for the anime page: it has no TMDB id of its own.
+_TITLE_IMAGES: dict[tuple[str, str, str, str], MediaImages] = {}
+
+#: The same dict under its older name, so a caller clearing one clears both.
+_TITLE_BACKDROPS = _TITLE_IMAGES
 
 
 def normalise_title(value: Any) -> str:
     """A title reduced to the words that matter, for exact comparison."""
     return " ".join(re.findall(r"[0-9a-z]+", str(value or "").casefold()))
+
+
+def tmdb_images_for_title(
+    title: str,
+    year: str = "",
+    kind: str = "tv",
+    *,
+    client: TmdbClient | None = None,
+    language: str | None = None,
+) -> MediaImages:
+    """The logo and backdrop of the TMDB title named *exactly* ``title``.
+
+    Anime titles come from MyAnimeList and AniList, so this is how the anime
+    page finds wide art for them.  A near match is not used: the wrong show's
+    logo is worse than none, and the caller then keeps its text title.  The
+    answer, including "nothing found", is cached per title, year, kind and
+    language, so reopening a page asks TMDB nothing.
+    """
+    wanted = normalise_title(title)
+    chosen = "tv" if str(kind).lower() == "tv" else "movie"
+    arrival = _year(year)
+    if not wanted:
+        return MediaImages()
+    asked = _language_code(language) or ""
+    key = (wanted, arrival, chosen, asked)
+    cached = _TITLE_IMAGES.get(key)
+    if cached is not None:
+        return cached
+    if client is None:
+        client = TmdbClient(load_api_key())
+    if not client.configured:
+        return MediaImages()
+    try:
+        results = client.search(title)
+    except TmdbError:
+        return MediaImages()  # a failure is not an answer, so it is not cached
+    found = MediaImages()
+    for item in results:
+        if item.kind != chosen or normalise_title(item.title) != wanted:
+            continue
+        if arrival and item.year and abs(int(arrival) - int(item.year)) > 1:
+            continue
+        found = client.images(item.kind, item.tmdb_id, language=asked or None)
+        break
+    _TITLE_IMAGES[key] = found
+    return found
 
 
 def tmdb_backdrop_for_title(
@@ -738,37 +809,8 @@ def tmdb_backdrop_for_title(
     *,
     client: TmdbClient | None = None,
 ) -> str:
-    """The backdrop of the TMDB title whose name is *exactly* ``title``.
-
-    Anime titles come from MyAnimeList and AniList, so this is how the anime
-    page finds wide art for them.  A near match is not used: the wrong show's
-    backdrop is worse than none, and the caller then falls back to the poster.
-    """
-    wanted = normalise_title(title)
-    chosen = "tv" if str(kind).lower() == "tv" else "movie"
-    if not wanted:
-        return ""
-    key = (wanted, _year(year), chosen)
-    if key in _TITLE_BACKDROPS:
-        return _TITLE_BACKDROPS[key]
-    if client is None:
-        client = TmdbClient(load_api_key())
-    if not client.configured:
-        return ""
-    try:
-        results = client.search(title)
-    except TmdbError:
-        return ""  # a failure is not an answer, so it is not cached
-    found = ""
-    for item in results:
-        if item.kind != chosen or normalise_title(item.title) != wanted:
-            continue
-        if key[1] and item.year and abs(int(key[1]) - int(item.year)) > 1:
-            continue
-        found = client.images(item.kind, item.tmdb_id).backdrop_url
-        break
-    _TITLE_BACKDROPS[key] = found
-    return found
+    """The backdrop of the TMDB title whose name is *exactly* ``title``."""
+    return tmdb_images_for_title(title, year, kind, client=client).backdrop_url
 
 
 __all__ = [
@@ -798,4 +840,5 @@ __all__ = [
     "season_poster_url",
     "read_dotenv",
     "tmdb_backdrop_for_title",
+    "tmdb_images_for_title",
 ]

@@ -63,9 +63,11 @@ class Client:
     def __init__(self, backdrop: str = "", logo: str = "") -> None:
         self.found = MediaImages(backdrop_url=backdrop, logo_url=logo)
         self.asked: list[tuple[str, int]] = []
+        self.languages: list = []
 
-    def images(self, kind, tmdb_id):
+    def images(self, kind, tmdb_id, language=None):
         self.asked.append((kind, tmdb_id))
+        self.languages.append(language)
         return self.found
 
 
@@ -97,6 +99,9 @@ ART_METHODS = (
     "_apply_hero_logo",
     "_fetch_anime_art",
     "_apply_anime_backdrop",
+    "_apply_anime_images",
+    "_anime_tmdb_kind",
+    "_logo_language",
     "_load_home_hero_art",
     "_apply_home_hero_images",
     "_apply_hero_image",
@@ -196,18 +201,62 @@ def test_the_poster_is_only_a_marked_fallback():
 def test_an_anime_title_asks_tmdb_by_name_not_its_poster(monkeypatch):
     asked = []
 
-    def lookup(title, year="", kind="tv", *, client=None):
-        asked.append((title, year))
-        return "https://image.tmdb.org/t/p/original/anime.jpg"
+    def lookup(title, year="", kind="tv", *, client=None, language=None):
+        asked.append((title, year, kind))
+        return MediaImages(
+            backdrop_url="https://image.tmdb.org/t/p/original/anime.jpg"
+        )
 
-    monkeypatch.setattr(movies_ui.tmdb, "tmdb_backdrop_for_title", lookup)
+    monkeypatch.setattr(movies_ui.tmdb, "tmdb_images_for_title", lookup)
     loader = Loader()
     backdrop = movies_ui.Backdrop(420)
-    anime = item(kind="anime", tmdb_id=0, title="Frieren", year="2023")
+    anime = item(kind="anime", tmdb_id=0, title="Frieren", year="2023",
+                 episodes=28)
     window(loader)._load_detail_art(anime, backdrop, None, None, kind="anime")
-    assert asked == [("Frieren", "2023")]
+    assert asked == [("Frieren", "2023", "tv")]
     assert "https://image.tmdb.org/t/p/original/anime.jpg" in loader.urls()
     assert backdrop._fallback is False
+
+
+@needs_display
+def test_an_anime_film_looks_on_the_movie_side(monkeypatch):
+    asked = []
+
+    def lookup(title, year="", kind="tv", *, client=None, language=None):
+        asked.append(kind)
+        return MediaImages()
+
+    monkeypatch.setattr(movies_ui.tmdb, "tmdb_images_for_title", lookup)
+    anime = item(kind="anime", tmdb_id=0, title="Your Name", year="2016",
+                 episodes=0)
+    window(Loader())._load_detail_art(
+        anime, movies_ui.Backdrop(420), None, None, kind="anime"
+    )
+    assert asked == ["movie"]
+
+
+@needs_display
+def test_an_anime_logo_takes_the_title_place(monkeypatch):
+    monkeypatch.setattr(
+        movies_ui.tmdb,
+        "tmdb_images_for_title",
+        lambda title, year="", kind="tv", *, client=None, language=None:
+            MediaImages(logo_url="https://image.tmdb.org/t/p/original/logo.png"),
+    )
+    loader = Loader()
+    hero = Gtk.Overlay()
+    hero.set_size_request(900, 420)
+    logo = movies_ui.HeroLogo(hero)
+    title = Gtk.Label(label="Frieren")
+    anime = item(kind="anime", tmdb_id=0, title="Frieren", year="2023",
+                 episodes=28)
+    window(loader)._load_detail_art(
+        anime, movies_ui.Backdrop(420), logo, title, kind="anime"
+    )
+    assert loader.urls()[-1] == "https://image.tmdb.org/t/p/original/logo.png"
+    assert logo.get_visible()
+    assert not title.get_visible()
+    assert logo.get_tooltip_text() == "Frieren"
 
 
 # -- logos -----------------------------------------------------------------
