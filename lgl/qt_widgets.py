@@ -43,6 +43,7 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import (
     QAbstractButton,
     QFrame,
+    QGraphicsDropShadowEffect,
     QGridLayout,
     QHBoxLayout,
     QLabel,
@@ -55,7 +56,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from . import design_tokens, theme
+from . import design_components, design_tokens, theme
 from .design_tokens import RADIUS, TEXT_SIZES, TOKENS
 from .qt_icons import icon, paint_icon
 
@@ -868,6 +869,128 @@ def monogram_initials(text: str) -> str:
     return (words[0][:1] + words[1][:1]).upper()
 
 
+class FieldError(QLabel):
+    """The danger-coloured line under a field that cannot be used.
+
+    Qt has no error state of its own, so the field carries an ``error``
+    property (the stylesheet turns the border danger) and this label carries
+    the message.  Clearing hides the label and drops the property again.
+    """
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("fieldError")
+        self.setWordWrap(True)
+        self.setVisible(False)
+
+    def show_for(self, field: QWidget, message: str) -> None:
+        field.setProperty("error", True)
+        field.style().unpolish(field)
+        field.style().polish(field)
+        self.setText(str(message))
+        self.setVisible(True)
+
+    def clear_for(self, field: QWidget) -> None:
+        field.setProperty("error", False)
+        field.style().unpolish(field)
+        field.style().polish(field)
+        self.clear()
+        self.setVisible(False)
+
+
+def style_dialog(
+    dialog: QWidget,
+    *,
+    padding: int = design_components.DIALOG_PADDING,
+    gap: int = design_components.DIALOG_GAP,
+    first: QWidget | None = None,
+) -> None:
+    """Give a sheet the shared surface, padding, gap and starting focus.
+
+    Qt ignores padding on a QDialog's own style rule, so the padding and the
+    gap are applied to the dialog's layout here, from the same constants the
+    stylesheet uses for the radius and the border.
+    """
+    dialog.setObjectName("sheet")
+    dialog.setAttribute(Qt.WA_StyledBackground, True)
+    layout = dialog.layout()
+    if layout is not None:
+        layout.setContentsMargins(padding, padding, padding, padding)
+        layout.setSpacing(gap)
+    if first is not None:
+        QTimer.singleShot(0, first.setFocus)
+
+
+class CardStateMixin:
+    """Hover, selection, focus and the two-pixel lift every card shares.
+
+    The border and the background come from the stylesheet, switched by the
+    ``hover``/``selected`` properties; the lift is a shadow offset, which never
+    changes the widget's geometry, so a grid cannot reflow under the pointer.
+    The numbers are in :mod:`lgl.design_components`.
+    """
+
+    def _init_card_states(self) -> None:
+        self.setProperty("hover", False)
+        self.setProperty("selected", False)
+        self.setAttribute(Qt.WA_Hover, True)
+        self.setFocusPolicy(Qt.StrongFocus)
+        self._lift = QGraphicsDropShadowEffect(self)
+        self._lift.setBlurRadius(16)
+        self._lift.setColor(QColor(0, 0, 0, 110))
+        self._lift.setOffset(0, 0)
+        self.setGraphicsEffect(self._lift)
+
+    # -- states ------------------------------------------------------------
+    def set_selected(self, on: bool) -> None:
+        self._set_card_flag("selected", bool(on))
+
+    def set_hovered(self, on: bool) -> None:
+        self._set_card_flag("hover", bool(on))
+        self._set_card_lift(bool(on))
+
+    def _set_card_flag(self, name: str, on: bool) -> None:
+        if bool(self.property(name)) == on:
+            return
+        self.setProperty(name, on)
+        self.style().unpolish(self)
+        self.style().polish(self)
+
+    def _set_card_lift(self, on: bool) -> None:
+        target = design_components.CARD_LIFT if on else 0
+        if self._lift.offset().y() != target:
+            self._lift.setOffset(0, target)
+            self._lift.setBlurRadius(22 if on else 16)
+
+    # -- events ------------------------------------------------------------
+    def enterEvent(self, event) -> None:  # noqa: N802 - Qt API
+        self.set_hovered(True)
+        super().enterEvent(event)
+
+    def leaveEvent(self, event) -> None:  # noqa: N802 - Qt API
+        self.set_hovered(False)
+        super().leaveEvent(event)
+
+    def focusInEvent(self, event) -> None:  # noqa: N802 - Qt API
+        self.update()
+        super().focusInEvent(event)
+
+    def focusOutEvent(self, event) -> None:  # noqa: N802 - Qt API
+        self.update()
+        super().focusOutEvent(event)
+
+    def keyPressEvent(self, event) -> None:  # noqa: N802 - Qt API
+        if event.key() in (Qt.Key_Return, Qt.Key_Enter, Qt.Key_Space):
+            self.activate()
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
+    #: Cards that can be opened override this; Enter and Space call it.
+    def activate(self) -> None:
+        return None
+
+
 class CoverArt(QWidget):
     """Rounded cover image; a quiet tinted monogram when there is no art."""
 
@@ -875,6 +998,7 @@ class CoverArt(QWidget):
                  radius: int = 6, *, crop: bool = True, title: str = "") -> None:
         super().__init__()
         self._pixmap: QPixmap | None = None
+        #: Cards pass POSTER_RADIUS so the poster and the card agree.
         self._radius = radius
         self._crop = crop
         self._title = title
@@ -1200,6 +1324,7 @@ class SectionTitle(QWidget):
 
 
 __all__ = [
+    "CardStateMixin",
     "CheckRow",
     "CoverArt",
     "CoverGrid",
@@ -1207,6 +1332,7 @@ __all__ = [
     "DirectionButton",
     "ElideLabel",
     "EmptyState",
+    "FieldError",
     "FlowLayout",
     "HeroBanner",
     "IconButton",
@@ -1233,4 +1359,5 @@ __all__ = [
     "search_icon",
     "set_theme",
     "space",
+    "style_dialog",
 ]

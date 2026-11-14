@@ -12,6 +12,7 @@ other.
 
 from __future__ import annotations
 
+from . import design_components as dc
 from . import design_tokens, theme
 from .design_tokens import RADIUS as RADIUS_STEPS
 from .design_tokens import SPACING, TEXT_SIZES, TOKENS
@@ -145,32 +146,60 @@ QLineEdit#searchField {{
 QLabel#keyHint {{ color: {c['faint']}; font-size: {small}px; }}
 
 QAbstractButton#iconButton {{
-    background: transparent; border: none; border-radius: {md}px;
+    background: transparent; border: none; border-radius: {dc.BUTTON_RADIUS}px;
+    min-width: {dc.ICON_BUTTON_SIZE}px; max-width: {dc.ICON_BUTTON_SIZE}px;
+    min-height: {dc.ICON_BUTTON_SIZE}px; max-height: {dc.ICON_BUTTON_SIZE}px;
 }}
+QAbstractButton#iconButton:focus {{ border: 2px solid {c['accent']}; }}
 QAbstractButton#iconButton:hover {{ background: {alpha(fg, 0.07)}; }}
 QAbstractButton#iconButton:pressed {{ background: {alpha(fg, 0.12)}; }}
 QAbstractButton#iconButton:disabled {{ background: transparent; }}
 
 /* ---- buttons ------------------------------------------------------- */
+/* Three kinds and a danger variant, from design_components.  Secondary is the
+   default: overlay fill plus a border.  #suggested is primary, #flat is quiet,
+   #danger is reserved for destructive actions.  Only one primary per sheet. */
 QPushButton, QToolButton {{
-    background: {c['raised']}; border: 1px solid {alpha(fg, 0.12)};
-    border-radius: {md}px; padding: 6px 14px; color: {fg};
+    background: {c['raised']}; border: {dc.BORDER_WIDTH}px solid {c['border']};
+    border-radius: {dc.BUTTON_RADIUS}px;
+    padding: 0 {dc.BUTTON_PADDING_X}px;
+    min-height: {dc.BUTTON_CONTENT}px;
+    color: {fg}; font-size: {dc.BUTTON_LABEL_SIZE}px;
 }}
-QPushButton:hover, QToolButton:hover {{ background: {c['hover']}; }}
+QPushButton:hover, QToolButton:hover {{ background: {c['hover']}; border-color: {alpha(fg, 0.22)}; }}
 QPushButton:pressed, QToolButton:pressed {{ background: {alpha(fg, 0.14)}; }}
-QPushButton:disabled, QToolButton:disabled {{ color: {c['faint']}; background: {alpha(fg, 0.03)}; }}
-QPushButton#flat, QToolButton#flat {{ background: transparent; border: none; }}
-QPushButton#flat:hover, QToolButton#flat:hover {{ background: {alpha(fg, 0.07)}; }}
-QPushButton#suggested {{
-    background: {c['accent_fill']}; color: {c['on_accent']}; border: none; font-weight: 600;
+QPushButton:focus, QToolButton:focus {{ border-color: {c['accent']}; }}
+QPushButton:disabled, QToolButton:disabled {{
+    color: {c['muted']}; background: {alpha(fg, 0.03)}; border-color: {alpha(fg, 0.08)};
 }}
-QPushButton#suggested:hover {{ background: {c['accent_fill_hover']}; }}
-QPushButton#suggested:disabled {{ background: {alpha(fg, 0.10)}; color: {c['faint']}; }}
+QPushButton#flat, QToolButton#flat {{
+    background: transparent; border: {dc.BORDER_WIDTH}px solid transparent;
+    color: {c['text2']};
+}}
+QPushButton#flat:hover, QToolButton#flat:hover {{ background: {alpha(fg, 0.07)}; color: {fg}; }}
+QPushButton#flat:disabled, QToolButton#flat:disabled {{ color: {c['muted']}; background: transparent; }}
+QPushButton#suggested {{
+    background: {c['accent_fill']}; color: {c['on_accent']};
+    border: {dc.BORDER_WIDTH}px solid {c['accent_fill']}; font-weight: 600;
+}}
+QPushButton#suggested:hover {{ background: {c['accent_fill_hover']}; border-color: {c['accent_fill_hover']}; }}
+QPushButton#suggested:focus {{ border-color: {c['on_accent']}; }}
+QPushButton#suggested:disabled {{
+    background: {alpha(fg, 0.10)}; border-color: transparent; color: {c['muted']};
+}}
 QPushButton#quiet {{
     background: transparent; border: 1px solid {alpha(fg, 0.14)}; color: {fg};
 }}
 QPushButton#quiet:hover {{ background: {alpha(fg, 0.06)}; }}
-QPushButton#small {{ padding: 3px 10px; }}
+QPushButton#danger {{
+    background: transparent; border: {dc.BORDER_WIDTH}px solid {alpha(c['danger'], 0.55)};
+    color: {c['danger']}; font-weight: 600;
+}}
+QPushButton#danger:hover {{ background: {alpha(c['danger'], 0.12)}; }}
+QPushButton#danger:disabled {{ color: {c['muted']}; border-color: {alpha(fg, 0.10)}; background: transparent; }}
+QPushButton#small {{
+    padding: 0 {dc.INPUT_PADDING_X}px; min-height: {dc.BUTTON_SMALL_CONTENT}px;
+}}
 QPushButton#pill {{
     background: transparent; border: 1px solid {alpha(fg, 0.10)};
     border-radius: 14px; padding: 5px 14px; color: {c['muted']};
@@ -207,14 +236,27 @@ QPushButton#dayChip[today="true"] {{ border-color: {alpha(c['accent'], 0.55)}; }
 
 /* ---- inputs -------------------------------------------------------- */
 QLineEdit, QComboBox, QSpinBox {{
-    background: {c['surface']}; border: 1px solid {alpha(fg, 0.14)};
-    border-radius: {md}px; padding: 7px 10px;
+    background: {c['raised']}; border: {dc.BORDER_WIDTH}px solid {c['border']};
+    border-radius: {dc.INPUT_RADIUS}px;
+    padding: 0 {dc.INPUT_PADDING_X}px;
+    min-height: {dc.INPUT_CONTENT}px; max-height: {dc.INPUT_CONTENT}px;
     selection-background-color: {alpha(c['accent'], 0.45)};
 }}
-QLineEdit:focus, QComboBox:focus, QSpinBox:focus {{ border: 1px solid {c['accent']}; }}
+QLineEdit:focus, QComboBox:focus, QSpinBox:focus {{
+    border: {dc.INPUT_FOCUS_BORDER}px solid {c['accent']};
+    background: {alpha(c['accent'], dc.INPUT_FOCUS_ALPHA)};
+}}
+QLineEdit:disabled, QComboBox:disabled, QSpinBox:disabled {{
+    color: {c['muted']}; background: {alpha(fg, 0.03)}; border-color: {alpha(fg, 0.08)};
+}}
+QLineEdit[error="true"], QComboBox[error="true"], QSpinBox[error="true"] {{
+    border: {dc.INPUT_ERROR_BORDER}px solid {c['danger']};
+}}
+QLabel#fieldError {{ color: {c['danger']}; font-size: {dc.FIELD_ERROR_SIZE}px; }}
 QLineEdit#librarySearch {{
     background: {alpha(fg, 0.05)}; border: 1px solid {alpha(fg, 0.08)};
-    border-radius: 20px; padding: 9px 16px 9px 38px;
+    border-radius: 18px; padding: 0 16px 0 38px;
+    min-height: {dc.INPUT_CONTENT}px; max-height: {dc.INPUT_CONTENT}px;
 }}
 QLineEdit#librarySearch:focus {{ border: 1px solid {c['accent']}; }}
 /* The leading icon is an action widget, a QToolButton: without this it took
@@ -248,19 +290,26 @@ QMenu::separator {{ height: 1px; background: {c['divider']}; margin: 5px 8px; }}
 QMenu::indicator {{ width: 14px; height: 14px; }}
 
 QCheckBox, QRadioButton {{ color: {fg}; spacing: 8px; }}
+QCheckBox:focus, QRadioButton:focus {{ color: {fg}; }}
 QCheckBox::indicator {{
-    width: 15px; height: 15px; border-radius: 4px;
+    width: {dc.CHECK_INDICATOR}px; height: {dc.CHECK_INDICATOR}px;
+    border-radius: {dc.CHECK_RADIUS}px;
     border: 1px solid {alpha(fg, 0.28)}; background: transparent;
 }}
+QCheckBox::indicator:hover {{ border-color: {alpha(c['accent'], 0.6)}; }}
 QCheckBox::indicator:checked {{
     background: {c['accent_fill']}; border-color: {c['accent_fill']};
 }}
+QCheckBox::indicator:focus {{
+    border: {dc.CARD_FOCUS_RING}px solid {c['accent']};
+}}
 QRadioButton::indicator {{
-    width: 15px; height: 15px; border-radius: 8px;
+    width: {dc.CHECK_INDICATOR}px; height: {dc.CHECK_INDICATOR}px;
+    border-radius: {dc.CHECK_INDICATOR // 2}px;
     border: 1px solid {alpha(fg, 0.28)}; background: transparent;
 }}
 QRadioButton::indicator:checked {{
-    border: 4px solid {c['accent_fill']}; background: {c['bg']};
+    border: 5px solid {c['accent_fill']}; background: {c['bg']};
 }}
 
 /* ---- scroll bars: thin overlay style -------------------------------- */
@@ -337,11 +386,29 @@ QAbstractButton#viewToggle:checked {{
 }}
 
 /* ---- cover cards / list rows ---------------------------------------- */
-QFrame#coverCard {{ background: transparent; border-radius: {md}px; }}
-QFrame#coverCard[hover="true"] {{ background: {alpha(fg, 0.035)}; }}
-QFrame#coverCard[selected="true"] {{ background: {alpha(c['accent'], 0.10)}; }}
-QLabel#coverTitle {{ font-weight: 600; font-size: {body}px; color: {alpha(fg, 0.94)}; }}
-QLabel#coverMeta {{ font-size: {small + 1}px; color: {alpha(fg, 0.5)}; }}
+/* A card is a surface with a 1 px border and the middle radius; the poster
+   inside keeps its own aspect and the same radius.  Hover tints the border and
+   lifts the shadow, selected adds a 2 px accent border and the soft wash, and
+   keyboard focus keeps a 2 px accent ring. */
+QFrame#coverCard {{
+    background: {c['surface']}; border: {dc.CARD_BORDER_WIDTH}px solid {c['border']};
+    border-radius: {dc.CARD_RADIUS}px; padding: {dc.CARD_PADDING}px;
+}}
+QFrame#coverCard[hover="true"] {{
+    background: {c['raised']};
+    border-color: {alpha(c['accent'], dc.CARD_HOVER_BORDER_ALPHA)};
+}}
+QFrame#coverCard[selected="true"] {{
+    background: {alpha(c['accent'], dc.CARD_SELECTED_ALPHA)};
+    border: {dc.CARD_SELECTED_BORDER}px solid {c['accent']};
+}}
+QFrame#coverCard:focus {{
+    border: {dc.CARD_FOCUS_RING}px solid {c['accent']};
+}}
+QLabel#coverTitle {{
+    font-weight: 600; font-size: {dc.CARD_TITLE_SIZE}px; color: {fg};
+}}
+QLabel#coverMeta {{ font-size: {dc.CARD_META_SIZE}px; color: {c['muted']}; }}
 QFrame#listRow {{ border-bottom: 1px solid {alpha(fg, 0.05)}; background: transparent; }}
 QFrame#listRow:hover {{ background: {alpha(fg, 0.035)}; }}
 QFrame#listRow[selected="true"] {{ background: {alpha(c['accent'], 0.10)}; }}
@@ -421,7 +488,16 @@ QFrame#toast {{
 QFrame#toast[error="true"] {{ border-color: {alpha(c['danger'], 0.6)}; }}
 
 /* ---- dialogs ---------------------------------------------------------- */
-QDialog#sheet {{ background: {c['bg']}; }}
+/* The sheet: overlay surface, the large radius, 24 px of padding and 16 px
+   between blocks.  The padding and gaps live in the layout because Qt ignores
+   padding on a QDialog's own style rule, so both come from the same constant. */
+QDialog#sheet {{
+    background: {c['raised']}; border: {dc.CARD_BORDER_WIDTH}px solid {c['border']};
+    border-radius: {dc.DIALOG_RADIUS}px;
+}}
+QDialog#sheet QLabel#pageTitle {{ font-size: {dc.DIALOG_HEADER_SIZE}px; font-weight: 700; }}
+QDialog#sheet QLabel#sectionTitle {{ font-size: {dc.DIALOG_TITLE_SIZE}px; font-weight: 600; }}
+QDialog#sheet QPushButton#suggested {{ min-width: 96px; }}
 QFrame#sheetHeader {{
     background: {c['surface']}; border-bottom: 1px solid {alpha(fg, 0.07)};
 }}
@@ -463,8 +539,8 @@ QLabel#heroKind {{
 QLabel#heroTitle {{ font-size: 34px; font-weight: 800; }}
 QLabel#heroMeta {{ color: {alpha(fg, 0.78)}; }}
 QLabel#heroOverview {{ color: {alpha(fg, 0.8)}; font-size: {body + 1}px; }}
-QLabel#posterTitle {{ font-weight: 600; font-size: {body}px; }}
-QLabel#posterMeta {{ color: {alpha(fg, 0.46)}; font-size: {small + 1}px; }}
+QLabel#posterTitle {{ font-weight: 600; font-size: {dc.CARD_TITLE_SIZE}px; }}
+QLabel#posterMeta {{ color: {c['muted']}; font-size: {dc.CARD_META_SIZE}px; }}
 QPushButton#posterCard {{ background: transparent; border: none; padding: 0; }}
 QPushButton#posterCard:hover {{ background: {alpha(fg, 0.04)}; border-radius: {md}px; }}
 QPushButton#carouselArrow {{
@@ -504,6 +580,16 @@ QCheckBox#tileCheck {{
     border-radius: {sm}px; padding: 1px 3px; margin: 2px 0 2px 2px;
 }}
 QCheckBox#tileCheck::indicator {{ width: 13px; height: 13px; }}
+
+/* ---- dense controls keep their own height ---------------------------- */
+/* Pills, chips, tabs and flat rows are deliberately smaller than the 36 px
+   button; the base height must not stretch them. */
+QPushButton#pill, QPushButton#filterRow, QPushButton#dayChip, QPushButton#segment,
+QPushButton#radioPill, QPushButton#sheetTab, QPushButton#mediaNav,
+QPushButton#heroAction, QPushButton#libraryTab, QPushButton#popoverRow,
+QPushButton#popoverAction, QPushButton#resetLink, QPushButton#carouselArrow,
+QPushButton#sortPill, QPushButton#sortDirection, QAbstractButton#viewToggle,
+QPushButton#kebab, QPushButton#tileCheck {{ min-height: 0; }}
 """
     if not compact:
         return qss

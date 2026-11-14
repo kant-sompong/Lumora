@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -35,7 +35,7 @@ from . import (
     __version__, mal, platform_support, provider_health, streaming, theme, tmdb,
     view_prefs,
 )
-from .qt_widgets import label, run_async
+from .qt_widgets import FieldError, label, run_async
 from . import ratings
 from .settings import Settings
 from .sources import RawgSource
@@ -122,7 +122,9 @@ class SettingsDialog(QDialog):
         close.clicked.connect(self.accept)
         foot.addWidget(close)
         outer.addWidget(footer)
+        self.setAttribute(Qt.WA_StyledBackground, True)
         self.show_tab("general")
+        QTimer.singleShot(0, self._tabs["general"].setFocus)
 
     # scaffolding -----------------------------------------------------------
     def _scrolled(self, body: QWidget) -> QWidget:
@@ -431,6 +433,7 @@ class SettingsDialog(QDialog):
         ))
         self._provider_status: dict[str, QLabel] = {}
         self._provider_fields: dict[str, QLineEdit] = {}
+        self._provider_errors: dict[str, object] = {}
         specs = (
             ("rawg", "RAWG — metadata only",
              "RAWG supplies titles, release dates, genres, platforms, developers, "
@@ -478,6 +481,10 @@ class SettingsDialog(QDialog):
             field.setEchoMode(QLineEdit.Password)
             self._provider_fields[key] = field
             column.addWidget(field)
+            #: The danger line under a field whose key was refused.
+            error = FieldError()
+            self._provider_errors[key] = error
+            column.addWidget(error)
             buttons = QWidget()
             button_row = QHBoxLayout(buttons)
             button_row.setContentsMargins(0, 0, 0, 0)
@@ -515,9 +522,14 @@ class SettingsDialog(QDialog):
         field = self._provider_fields[key]
         value = field.text().strip()
         status = self._provider_status[key]
+        error = self._provider_errors.get(key)
         if not value:
             status.setText("Nothing was typed, so the saved key was left unchanged.")
+            if error is not None and hasattr(error, "show_for"):
+                error.show_for(field, "A key is required. Nothing was saved.")
             return
+        if error is not None and hasattr(error, "clear_for"):
+            error.clear_for(field)
         try:
             if key == "omdb":
                 self.settings.set(ratings.OMDB_SETTING, value)

@@ -43,7 +43,7 @@ from .qt_catalog_links import (
     http_links,
     queue_mirror,
 )
-from .qt_widgets import label, run_async, scroll_page
+from .qt_widgets import label, run_async, scroll_page, style_dialog
 
 #: The public Kryoto catalogue; also the default for the generic dialog.
 KRYOTO_URL = "https://kryo.to"
@@ -97,8 +97,6 @@ class CatalogDialog(QDialog):
         self._enrich = bool(enrich)
 
         column = QVBoxLayout(self)
-        column.setContentsMargins(24, 22, 24, 16)
-        column.setSpacing(10)
 
         column.addWidget(label(title, "pageTitle"))
         column.addWidget(label(note, "detailNote", wrap=True))
@@ -109,9 +107,12 @@ class CatalogDialog(QDialog):
         self.url.setPlaceholderText("https://example.org/games")
         self.url.setClearButtonEnabled(True)
         row.addWidget(self.url, 1)
+        style_dialog(self, first=self.url)
         self.import_btn = QPushButton(action)
         self.import_btn.setObjectName("suggested")
         self.import_btn.setCursor(Qt.PointingHandCursor)
+        self.import_btn.setDefault(True)
+        self.import_btn.setAutoDefault(True)
         self.import_btn.clicked.connect(self.start_import)
         row.addWidget(self.import_btn)
         column.addLayout(row)
@@ -328,8 +329,7 @@ class CatalogDownloadDialog(QDialog):
         self._games: list[CatalogGame] = []
 
         column = QVBoxLayout(self)
-        column.setContentsMargins(24, 22, 24, 16)
-        column.setSpacing(10)
+        style_dialog(self, first=None)
         column.addWidget(label("Download from catalogue", "pageTitle"))
         column.addWidget(
             label(
@@ -758,8 +758,7 @@ class KryotoCatalogDialog(QDialog):
         self._snapshot: dict[str, object] = {}
 
         column = QVBoxLayout(self)
-        column.setContentsMargins(24, 22, 24, 16)
-        column.setSpacing(10)
+        style_dialog(self, first=None)
         column.addWidget(label("Kryoto catalog", "pageTitle"))
         column.addWidget(label(KRYOTO_HINT, "detailNote", wrap=True))
 
