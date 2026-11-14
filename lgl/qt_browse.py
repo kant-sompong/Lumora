@@ -139,13 +139,19 @@ class BrowseCard(CardStateMixin, QFrame):
         return max(1, self.width() - 2 * design_components.CARD_PADDING)
 
     def _card_height(self) -> int:
-        # Poster keeps 16:9 inside the padding, plus the two text lines.
-        poster = int(max(CARD_MIN, self.width() or CARD_MIN) * 0.5625)
+        # Poster keeps 16:9 inside the padding, plus the two text lines.  The
+        # width is not known yet when the card is built, so this starts from
+        # the minimum and resizeEvent refines it once the grid has placed it.
+        poster = int(CARD_MIN * 0.5625)
         return poster + 52 + 2 * design_components.CARD_PADDING
 
     def resizeEvent(self, event) -> None:  # noqa: N802
         super().resizeEvent(event)
-        self.cover.setFixedHeight(max(90, int(self._inner_width() * 0.5625)))
+        cover = max(90, int(self._inner_width() * 0.5625))
+        self.cover.setFixedHeight(cover)
+        wanted = cover + 52 + 2 * design_components.CARD_PADDING
+        if self.height() != wanted:
+            self.setFixedHeight(wanted)
 
     def set_pixmap(self, pix: QPixmap | None) -> None:
         self.cover.set_pixmap(pix)

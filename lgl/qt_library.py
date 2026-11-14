@@ -67,6 +67,7 @@ from .qt_widgets import (
     pixmap_from_bytes,
     run_async,
     scroll_page,
+    style_dialog,
 )
 from .util import human_size
 
@@ -330,8 +331,6 @@ class LaunchDialog(QDialog):
         self.path = path
         self.setMinimumWidth(520)
         column = QVBoxLayout(self)
-        column.setContentsMargins(22, 20, 22, 18)
-        column.setSpacing(10)
 
         column.addWidget(label("Review before launching", "pageTitle"))
         warning = label(
@@ -372,6 +371,8 @@ class LaunchDialog(QDialog):
         row.addWidget(self.launch)
         column.addLayout(row)
         self.confirm.toggled.connect(self.launch.setEnabled)
+        style_dialog(self, first=self.confirm)
+        self.launch.setDefault(True)
 
 
 class EditDetailsDialog(QDialog):
