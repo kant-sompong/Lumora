@@ -17,6 +17,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 pytest.importorskip("PySide6.QtWidgets")
 
 from PySide6.QtCore import Qt  # noqa: E402
+from PySide6.QtGui import QFontMetricsF  # noqa: E402
 from PySide6.QtTest import QTest  # noqa: E402
 from PySide6.QtWidgets import (  # noqa: E402
     QApplication,
@@ -38,6 +39,8 @@ from lgl.library_store import LibraryEntry  # noqa: E402
 from lgl.qt_browse import BrowseCard  # noqa: E402
 from lgl.qt_catalog import CatalogDialog  # noqa: E402
 from lgl.qt_library import LibraryCard  # noqa: E402
+from lgl.qt_media import Card as MediaCard  # noqa: E402
+from lgl.qt_media import PosterCard  # noqa: E402
 from lgl.qt_palette import PaletteDialog  # noqa: E402
 from lgl.qt_settings import SettingsDialog  # noqa: E402
 from lgl.qt_widgets import FieldError, IconButton  # noqa: E402
@@ -329,6 +332,42 @@ def test_a_dialog_fits_a_900_px_window(app, themed, tmp_path):
             )
             assert geometry.bottom() <= dialog.height()
         dialog.close()
+
+
+def test_every_card_pays_for_the_stylesheet_inset(app, themed):
+    """The border and padding live inside the card, so the height a card
+    declares has to be its layout's needs plus that frame. On Windows the
+    larger font made two pixels of shortfall visible as tiles overlapping."""
+    themed("dark")
+    line = QFontMetricsF(app.font()).height()
+    assert line > 0
+
+    poster = PosterCard(MediaCard(key="movie:1", title="A Film"))
+    poster.ensurePolished()
+    poster.layout().activate()
+    assert poster.height() >= poster.layout().sizeHint().height() + 2 * dc.CARD_INSET
+    assert poster.height() >= poster.cover.height() + 2 * dc.CARD_INSET + line
+    poster.close()
+
+    browse = BrowseCard(_game())
+    browse.resize(240, browse.height())
+    browse.show()
+    browse.ensurePolished()
+    app.processEvents()
+    assert browse.height() >= browse.layout().sizeHint().height() + 2 * dc.CARD_INSET
+    assert browse.height() >= browse.cover.height() + 2 * dc.CARD_INSET + line
+    browse.close()
+
+    library = LibraryCard(_entry())
+    library.resize(240, library.height())
+    library.show()
+    library.ensurePolished()
+    library.layout().activate()
+    app.processEvents()
+    assert library.minimumHeight() >= (
+        library.layout().sizeHint().height() + 2 * dc.CARD_INSET
+    )
+    library.close()
 
 
 def test_a_card_fits_its_own_box_at_900_px(app, themed):

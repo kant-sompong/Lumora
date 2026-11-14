@@ -9,9 +9,10 @@ import pytest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 pytest.importorskip("PySide6.QtWidgets")
 
+from PySide6.QtGui import QFont
 from PySide6.QtWidgets import QApplication
 
-from lgl import library_tools
+from lgl import design_components, library_tools, qt_main
 from lgl.collections import CollectionStore
 from lgl.library_store import LibraryEntry
 from lgl.qt_library import LibraryCard, LibraryPage, LibraryRow
@@ -68,9 +69,40 @@ def pump(rounds: int = 6) -> None:
         QApplication.processEvents()
 
 
+def settle(page) -> None:
+    """Force the polish and layout pass a real window gets before measuring."""
+    for card in page._cards.values():
+        card.ensurePolished()
+        layout = card.layout()
+        if layout is not None:
+            layout.activate()
+    page.ensurePolished()
+    pump()
+
+
 @pytest.fixture(scope="module")
 def app():
     return QApplication.instance() or QApplication([])
+
+
+@pytest.fixture(scope="module", autouse=True)
+def real_card_style(app):
+    """Style the cards the way the app does, at a large font.
+
+    The card padding and border come from the stylesheet, and the rows under
+    the artwork are sized from font metrics, so both have to be real here: a
+    Windows font metric difference was hiding a card that was too short.
+    """
+    original_font = app.font()
+    font = QFont(original_font)
+    font.setPointSize(14)
+    app.setFont(font)
+    qt_main.apply_theme(app, "dark")
+    pump()
+    yield
+    app.setStyleSheet("")
+    app.setFont(original_font)
+    pump()
 
 
 @pytest.fixture
@@ -121,6 +153,7 @@ def test_select_mode_puts_a_check_box_under_the_artwork_of_every_tile(page):
     assert len(bulk._checks) == 5
     page.grab()  # a paint pass, as a real window gets
     pump(10)
+    settle(page)
     card = page._cards["game-0"]
     check = bulk._checks["game-0"]
     assert isinstance(card, LibraryCard)
@@ -137,6 +170,25 @@ def test_select_mode_puts_a_check_box_under_the_artwork_of_every_tile(page):
     assert bulk.count.text() == "1 selected"
     assert bulk.keys() == ["game-2"]
     assert bulk.tag_button.isEnabled() is True
+
+
+def test_a_card_is_tall_enough_for_its_artwork_and_its_text_rows(page):
+    """The stylesheet draws padding and a border inside the card, so the
+    minimum height has to cover the artwork, the rows and that frame."""
+    bulk = select(page, "game-0")
+    settle(page)
+    card = page._cards["game-0"]
+    inset = 2 * (
+        design_components.CARD_PADDING + design_components.CARD_BORDER_WIDTH
+    )
+    rows = card.layout().sizeHint().height() - card.cover.height()
+
+    assert card.minimumHeight() >= card.cover.height() + rows + inset
+    assert card.height() >= card.minimumHeight()
+    # The last row must sit below the artwork, not inside it.
+    check = bulk._checks["game-0"]
+    assert check.geometry().top() >= card.cover.geometry().bottom()
+    assert not check.geometry().intersects(card.cover.geometry())
 
 
 def test_the_list_view_gets_check_boxes_in_front_of_the_text(page):
@@ -186,6 +238,7 @@ def test_compact_mode_keeps_the_toggle_the_bar_and_its_check_boxes(page):
     assert bulk.count.text() == "3 selected"
     page.grab()
     pump(10)
+    settle(page)
     card = page._cards["game-2"]
     assert bulk._checks["game-2"].parentWidget() is card
     assert not bulk._checks["game-2"].geometry().intersects(card.cover.geometry())

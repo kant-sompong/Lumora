@@ -242,8 +242,8 @@ class LibraryCard(CardStateMixin, QFrame):
         self._fit_cover()
 
     def _fit_cover(self) -> None:
-        # The stylesheet's card padding is inside the width.
-        width = max(1, self.width() - 2 * design_components.CARD_PADDING)
+        # The stylesheet's card padding and border sit inside the width.
+        width = max(1, self.width() - 2 * design_components.CARD_INSET)
         if width == self._fit_width:
             return
         self._fit_width = width
@@ -251,8 +251,11 @@ class LibraryCard(CardStateMixin, QFrame):
         height = max(self.MIN_COVER_HEIGHT, min(self.MAX_COVER_HEIGHT, height))
         if height != self.cover.height():
             self.cover.setFixedHeight(height)
+        # sizeHint() covers the rows and their spacing but not the frame and
+        # padding the stylesheet draws around them, so add that back or the
+        # fixed-height cover squeezes the rows (and the bulk check box) under it.
         rest = self.layout().sizeHint().height() - self.cover.height()
-        needed = height + max(0, rest)
+        needed = height + max(0, rest) + 2 * design_components.CARD_INSET
         if self.minimumHeight() != needed:
             self.setMinimumHeight(needed)
 

@@ -33,6 +33,9 @@ CARD_PADDING = SPACING[2]
 #: The card's own margin between the poster and its two text lines.
 CARD_TEXT_GAP = SPACING[1]
 CARD_BORDER_WIDTH = BORDER_WIDTH
+#: Border plus padding, drawn inside the card by the stylesheet: a card's inner
+#: width is its width minus twice this, and its outer height has to add it.
+CARD_INSET = CARD_PADDING + CARD_BORDER_WIDTH
 #: Hover turns the border into the accent at 55 % opacity; the fill stays.
 CARD_HOVER_BORDER_ALPHA = 0.55
 #: Selected means a 2 px accent border plus the accent-soft wash.
@@ -139,6 +142,7 @@ __all__ = [
     "CARD_BORDER_WIDTH",
     "CARD_FOCUS_RING",
     "CARD_HOVER_BORDER_ALPHA",
+    "CARD_INSET",
     "CARD_LIFT",
     "CARD_META_SIZE",
     "CARD_PADDING",

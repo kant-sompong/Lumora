@@ -214,8 +214,8 @@ class PosterCard(CardStateMixin, QFrame):
 
         # The 12 px card padding comes from the stylesheet, so the artwork is
         # that much narrower than the card.
-        pad = design_components.CARD_PADDING
-        inner = max(1, width - 2 * pad)
+        inset = design_components.CARD_INSET
+        inner = max(1, width - 2 * inset)
         column = QVBoxLayout(self)
         column.setContentsMargins(0, 0, 0, 0)
         column.setSpacing(0)
@@ -236,7 +236,7 @@ class PosterCard(CardStateMixin, QFrame):
         self.meta.setFixedWidth(inner)
         column.addWidget(self.meta)
         column.addStretch(1)
-        self.setFixedHeight(int(inner * 1.5) + 46 + 2 * pad)
+        self.setFixedHeight(int(inner * 1.5) + 46 + 2 * inset)
 
     def set_pixmap(self, pix: QPixmap | None) -> None:
         self.cover.set_pixmap(pix)
