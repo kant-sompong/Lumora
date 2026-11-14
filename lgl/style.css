@@ -1414,6 +1414,18 @@ flowboxchild.browse-tile:hover .cover-card {
 
 .season-picker-button:hover { background-color: alpha(@text, 0.06); }
 
+/* Contract section 2: an open or pressed season header (including "Specials")
+ * has no box behind it; only the hover tint above is drawn. */
+.season-picker-button:active,
+.season-picker-button:checked,
+.season-picker-button:focus,
+.season-picker-button:backdrop {
+  background-color: transparent;
+  background-image: none;
+  border: none;
+  box-shadow: none;
+}
+
 .season-picker-title {
   font-size: 22px;
   font-weight: 600;
@@ -2147,11 +2159,86 @@ button.movie-arrow:disabled {
 .movie-detail-body { background-color: @bg; }
 
 /* Every label drawn on the hero uses this set, never the page tokens: it is
- * light text on a dark gradient in both themes. */
+ * light text on a dark gradient in both themes.  The :backdrop copies matter:
+ * without them an unfocused window falls back to the page's ink. */
 .movie-hero-sub,
-.movie-hero-meta { color: #d6dae0; }
-.movie-hero-overview { color: #f2f4f6; }
-.movie-hero-rating { color: #f5c518; }
+.movie-hero-meta,
+.movie-hero-sub:backdrop,
+.movie-hero-meta:backdrop { color: #d6dae0; }
+.movie-hero-overview,
+.movie-hero-overview:backdrop { color: #f2f4f6; }
+.movie-hero-rating,
+.movie-hero-rating:backdrop { color: #f5c518; }
+.movie-hero-title:backdrop { color: #ffffff; }
+.movie-hero-badge:backdrop { color: #ffffff; }
+
+/* Buttons and pickers sitting on the hero: the hero is dark artwork in both
+ * themes, so they take the hero inks too instead of @text/@surface. */
+.movie-hero-actions button.movie-btn-dark,
+.movie-hero-actions button.movie-btn-dark:backdrop {
+  color: #f2f4f6;
+  background-color: rgba(255, 255, 255, 0.10);
+  background-image: none;
+  border: 1px solid rgba(255, 255, 255, 0.26);
+  box-shadow: none;
+}
+
+.movie-hero-actions button.movie-btn-dark:hover {
+  background-color: rgba(255, 255, 255, 0.18);
+}
+
+.movie-hero-actions button.movie-btn-dark:active,
+.movie-hero-actions button.movie-btn-dark:checked,
+.movie-hero-actions button.movie-btn-dark:focus {
+  background-color: rgba(255, 255, 255, 0.26);
+  color: #ffffff;
+}
+
+.movie-hero-actions button.movie-btn-primary,
+.movie-hero-actions button.movie-btn-primary:backdrop,
+.movie-hero-actions button.movie-btn-primary:hover {
+  color: #14161c;
+  background-color: #f2f4f6;
+  background-image: none;
+  border: none;
+}
+
+.movie-hero-actions spinbutton,
+.movie-hero-actions spinbutton:backdrop {
+  color: #f2f4f6;
+  background-color: rgba(255, 255, 255, 0.10);
+  background-image: none;
+  border: 1px solid rgba(255, 255, 255, 0.26);
+  border-radius: 9px;
+}
+
+.movie-hero-actions spinbutton entry,
+.movie-hero-actions spinbutton entry:backdrop {
+  color: #f2f4f6;
+  background-color: transparent;
+  background-image: none;
+}
+
+.movie-hero-actions spinbutton button,
+.movie-hero-actions spinbutton button:backdrop {
+  color: #f2f4f6;
+  background-color: transparent;
+  background-image: none;
+  border: none;
+}
+
+.movie-hero-actions combobox button,
+.movie-hero-actions combobox button:backdrop,
+.movie-hero-actions menubutton button,
+.movie-hero-actions menubutton button:backdrop {
+  color: #f2f4f6;
+  background-color: rgba(255, 255, 255, 0.10);
+  background-image: none;
+  border: 1px solid rgba(255, 255, 255, 0.26);
+}
+
+.movie-hero-actions combobox arrow,
+.movie-hero-actions combobox arrow:backdrop { color: #f2f4f6; }
 
 /* -- player: kept black in both themes (video area) ---------------------- */
 .movie-player-frame {
