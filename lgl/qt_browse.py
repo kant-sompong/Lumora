@@ -54,7 +54,9 @@ from .qt_archive import (
     tile_meta,
 )
 from .qt_feed import PosterRow
+from . import design_components
 from .qt_widgets import (
+    CardStateMixin,
     CheckRow,
     CoverArt,
     DirectionButton,
@@ -91,65 +93,65 @@ def _today() -> str:
 # --------------------------------------------------------------------------
 
 
-class BrowseCard(QFrame):
-    """Wide (16:9) cover card used by the Browse grid."""
+class BrowseCard(CardStateMixin, QFrame):
+    """Wide (16:9) cover card used by the Browse grid.
+
+    Card metrics come from :mod:`lgl.design_components`: the stylesheet draws
+    the surface, border, radius and padding, and the mixin adds hover, the two
+    pixel lift, selection and the keyboard focus ring.
+    """
 
     clicked = Signal(str)
 
     def __init__(self, game: GameSummary) -> None:
         super().__init__()
         self.setObjectName("coverCard")
-        self.setProperty("hover", False)
-        self.setProperty("selected", False)
+        self._init_card_states()
         self.setCursor(Qt.PointingHandCursor)
-        self.setAttribute(Qt.WA_Hover, True)
         self.game = game
         self.identifier = game.identifier
         self.setMinimumWidth(CARD_MIN)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
         column = QVBoxLayout(self)
+        # The 12 px card padding is drawn by the stylesheet.
         column.setContentsMargins(0, 0, 0, 0)
         column.setSpacing(0)
         title_text = bare_title(game.title) or game.identifier
-        self.cover = CoverArt(radius=6, title=title_text)
+        self.cover = CoverArt(radius=design_components.POSTER_RADIUS, title=title_text)
         self.cover.setMinimumHeight(120)
         column.addWidget(self.cover)
 
         self.title = ElideLabel(title_text)
         self.title.setObjectName("coverTitle")
-        self.title.setContentsMargins(2, 9, 2, 0)
+        self.title.setContentsMargins(0, design_components.CARD_TEXT_GAP, 0, 0)
         column.addWidget(self.title)
 
         meta = tile_meta(game)
         self.meta = ElideLabel(meta or "—")
         self.meta.setObjectName("coverMeta")
-        self.meta.setContentsMargins(2, 1, 2, 0)
+        self.meta.setContentsMargins(0, 1, 0, 0)
         column.addWidget(self.meta)
-        self.setFixedHeight(int(CARD_MIN * 0.5625) + 52)
+        self.setFixedHeight(self._card_height())
+
+    # -- geometry -----------------------------------------------------------
+    def _inner_width(self) -> int:
+        return max(1, self.width() - 2 * design_components.CARD_PADDING)
+
+    def _card_height(self) -> int:
+        # Poster keeps 16:9 inside the padding, plus the two text lines.
+        poster = int(max(CARD_MIN, self.width() or CARD_MIN) * 0.5625)
+        return poster + 52 + 2 * design_components.CARD_PADDING
 
     def resizeEvent(self, event) -> None:  # noqa: N802
         super().resizeEvent(event)
-        self.cover.setFixedHeight(max(90, int(self.width() * 0.5625)))
+        self.cover.setFixedHeight(max(90, int(self._inner_width() * 0.5625)))
 
     def set_pixmap(self, pix: QPixmap | None) -> None:
         self.cover.set_pixmap(pix)
 
-    def set_selected(self, on: bool) -> None:
-        self._flag("selected", on)
-
-    def _flag(self, name: str, on: bool) -> None:
-        self.setProperty(name, on)
-        self.style().unpolish(self)
-        self.style().polish(self)
-
-    def enterEvent(self, event) -> None:  # noqa: N802
-        self._flag("hover", True)
-        super().enterEvent(event)
-
-    def leaveEvent(self, event) -> None:  # noqa: N802
-        self._flag("hover", False)
-        super().leaveEvent(event)
+    def activate(self) -> None:
+        self.clicked.emit(self.identifier)
 
     def mouseReleaseEvent(self, event) -> None:  # noqa: N802
         if event.button() == Qt.LeftButton and self.rect().contains(event.position().toPoint()):

@@ -56,7 +56,9 @@ from .qt_library import ArtworkBackdrop
 from .qt_player import EmbeddedPlayer, make_player
 from .qt_ratings import RatingsRow
 from .qt_season_picker import SeasonPicker
+from . import design_components
 from .qt_widgets import (
+    CardStateMixin,
     CoverArt,
     ElideLabel,
     EmptyState,
@@ -195,7 +197,7 @@ def rating_text(rating: float | None) -> str:
 # --------------------------------------------------------------------------
 
 
-class PosterCard(QFrame):
+class PosterCard(CardStateMixin, QFrame):
     """Poster (2:3) with title and meta below, used by grids and carousels."""
 
     clicked = Signal(object)
@@ -203,46 +205,44 @@ class PosterCard(QFrame):
     def __init__(self, card: Card, width: int = 158) -> None:
         super().__init__()
         self.setObjectName("coverCard")
-        self.setProperty("hover", False)
-        self.setAttribute(Qt.WA_Hover, True)
+        self._init_card_states()
         self.setCursor(Qt.PointingHandCursor)
         self.card = card
         self._width = width
         self.setFixedWidth(width)
         self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
 
+        # The 12 px card padding comes from the stylesheet, so the artwork is
+        # that much narrower than the card.
+        pad = design_components.CARD_PADDING
+        inner = max(1, width - 2 * pad)
         column = QVBoxLayout(self)
         column.setContentsMargins(0, 0, 0, 0)
         column.setSpacing(0)
-        self.cover = CoverArt(width, int(width * 1.5), radius=6, crop=True, title=card.title)
+        self.cover = CoverArt(
+            inner, int(inner * 1.5),
+            radius=design_components.POSTER_RADIUS, crop=True, title=card.title,
+        )
         column.addWidget(self.cover)
 
         self.title = ElideLabel(card.title)
         self.title.setObjectName("posterTitle")
-        self.title.setContentsMargins(0, 8, 0, 0)
-        self.title.setFixedWidth(width)
+        self.title.setContentsMargins(0, design_components.CARD_TEXT_GAP, 0, 0)
+        self.title.setFixedWidth(inner)
         column.addWidget(self.title)
-        meta = ElideLabel(card.meta or "—")
-        meta.setObjectName("posterMeta")
-        meta.setFixedWidth(width)
-        column.addWidget(meta)
+        self.meta = ElideLabel(card.meta or "—")
+        self.meta.setObjectName("posterMeta")
+        self.meta.setContentsMargins(0, 1, 0, 0)
+        self.meta.setFixedWidth(inner)
+        column.addWidget(self.meta)
         column.addStretch(1)
-        self.setFixedHeight(int(width * 1.5) + 46)
+        self.setFixedHeight(int(inner * 1.5) + 46 + 2 * pad)
 
     def set_pixmap(self, pix: QPixmap | None) -> None:
         self.cover.set_pixmap(pix)
 
-    def enterEvent(self, event) -> None:  # noqa: N802
-        self.setProperty("hover", True)
-        self.style().unpolish(self)
-        self.style().polish(self)
-        super().enterEvent(event)
-
-    def leaveEvent(self, event) -> None:  # noqa: N802
-        self.setProperty("hover", False)
-        self.style().unpolish(self)
-        self.style().polish(self)
-        super().leaveEvent(event)
+    def activate(self) -> None:
+        self.clicked.emit(self.card)
 
     def mouseReleaseEvent(self, event) -> None:  # noqa: N802
         if event.button() == Qt.LeftButton and self.rect().contains(event.position().toPoint()):

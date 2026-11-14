@@ -50,7 +50,9 @@ from .library import MANIFEST_NAME
 from .util import LaunchError
 from .library_store import LibraryEntry, LibraryStore, SORT_DEFAULT_DESCENDING
 from .qt_quick_preview import QuickPreview
+from . import design_components
 from .qt_widgets import (
+    CardStateMixin,
     CoverArt,
     DirectionButton,
     ElideLabel,
@@ -164,7 +166,7 @@ GRID_MIN_CELL = 232
 # --------------------------------------------------------------------------
 
 
-class LibraryCard(QFrame):
+class LibraryCard(CardStateMixin, QFrame):
     """Cover card for an installed game.
 
     The cover box follows the artwork's own shape, the way the Linux window
@@ -185,10 +187,8 @@ class LibraryCard(QFrame):
     def __init__(self, entry: LibraryEntry) -> None:
         super().__init__()
         self.setObjectName("coverCard")
-        self.setProperty("hover", False)
-        self.setProperty("selected", False)
+        self._init_card_states()
         self.setCursor(Qt.PointingHandCursor)
-        self.setAttribute(Qt.WA_Hover, True)
         self.entry = entry
         self.identifier = entry.identifier
         self.setMinimumWidth(200)
@@ -198,13 +198,15 @@ class LibraryCard(QFrame):
         column.setContentsMargins(0, 0, 0, 0)
         column.setSpacing(0)
         name = entry.title or entry.identifier
-        self.cover = CoverArt(radius=6, crop=True, title=name)
+        self.cover = CoverArt(
+            radius=design_components.POSTER_RADIUS, crop=True, title=name
+        )
         self.cover.setMinimumHeight(self.MIN_COVER_HEIGHT)
         self._cover_aspect = self.DEFAULT_ASPECT
         column.addWidget(self.cover)
 
         row = QHBoxLayout()
-        row.setContentsMargins(2, 9, 2, 0)
+        row.setContentsMargins(0, design_components.CARD_TEXT_GAP, 0, 0)
         row.setSpacing(4)
         self.title = ElideLabel(name)
         self.title.setObjectName("coverTitle")
@@ -217,12 +219,12 @@ class LibraryCard(QFrame):
         bits = [b for b in (entry.year, human_size(entry.size) if entry.size else "") if b]
         self.meta = ElideLabel(" · ".join(bits) or "—")
         self.meta.setObjectName("coverMeta")
-        self.meta.setContentsMargins(2, 1, 2, 0)
+        self.meta.setContentsMargins(0, 1, 0, 0)
         column.addWidget(self.meta)
         if entry.compatibility:
             compat = ElideLabel(entry.compatibility)
             compat.setObjectName("coverMeta")
-            compat.setContentsMargins(2, 0, 2, 0)
+            compat.setContentsMargins(0, 0, 0, 0)
             column.addWidget(compat)
         self._fit_width = -1
 
@@ -239,7 +241,8 @@ class LibraryCard(QFrame):
         self._fit_cover()
 
     def _fit_cover(self) -> None:
-        width = self.width()
+        # The stylesheet's card padding is inside the width.
+        width = max(1, self.width() - 2 * design_components.CARD_PADDING)
         if width == self._fit_width:
             return
         self._fit_width = width
@@ -256,21 +259,8 @@ class LibraryCard(QFrame):
         super().resizeEvent(event)
         self._fit_cover()
 
-    def set_selected(self, on: bool) -> None:
-        self._flag("selected", on)
-
-    def _flag(self, name: str, on: bool) -> None:
-        self.setProperty(name, on)
-        self.style().unpolish(self)
-        self.style().polish(self)
-
-    def enterEvent(self, event) -> None:  # noqa: N802
-        self._flag("hover", True)
-        super().enterEvent(event)
-
-    def leaveEvent(self, event) -> None:  # noqa: N802
-        self._flag("hover", False)
-        super().leaveEvent(event)
+    def activate(self) -> None:
+        self.clicked.emit(self.identifier)
 
     def mouseReleaseEvent(self, event) -> None:  # noqa: N802
         if event.button() == Qt.LeftButton and self.rect().contains(event.position().toPoint()):
