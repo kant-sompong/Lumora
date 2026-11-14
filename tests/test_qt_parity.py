@@ -348,13 +348,13 @@ def test_the_kryoto_preset_imports_with_download_links(app, tmp_path, monkeypatc
     monkeypatch.setattr(qt_catalog, "import_source", fake_import)
     for enrich in (True, False):
         seen.clear()
-        dialog = qt_catalog.CatalogDialog(None, catalog=CatalogStore(), enrich=enrich)
+        catalog = CatalogStore(tmp_path / "catalog.json")
+        dialog = qt_catalog.CatalogDialog(None, catalog=catalog, enrich=enrich)
         dialog.start_import()
-        for _ in range(300):
-            app.processEvents()
-            if seen:
-                break
-        assert seen and seen[-1].enrich is enrich
+        # The import runs on a pool thread; without the sleep in _pump_until a
+        # 1-CPU machine can spend the whole loop before the job even starts.
+        assert _pump_until(app, lambda: bool(seen)), "the import never reached the pool"
+        assert seen[-1].enrich is enrich
         dialog.deleteLater()
     # The menu entry the Windows build offers must ask for those links.
     from lgl import qt_main
@@ -365,10 +365,12 @@ def test_the_kryoto_preset_imports_with_download_links(app, tmp_path, monkeypatc
         lambda *a, **kw: SimpleNamespace(exec=lambda: calls.append(kw)),
     )
     window = SimpleNamespace(
-        catalog=CatalogStore(), _catalog_imported=lambda count: None
+        catalog=CatalogStore(tmp_path / "menu.json"),
+        _catalog_imported=lambda count: None,
     )
     qt_main.Window.show_kryoto_catalog(window)
     assert calls and calls[0]["enrich"] is True
+    QtCore.QThreadPool.globalInstance().waitForDone(5000)
 
 
 def test_match_artwork_dialog_builds(app):
