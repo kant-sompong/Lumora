@@ -35,7 +35,7 @@ from .artwork import (
     remembered_miss,
 )
 from .catalog_store import CatalogGame, CatalogStore
-from .qt_widgets import label, run_async
+from .qt_widgets import label, run_async, style_dialog
 from .sources import RawgSource
 from .steamart import SteamArtSource
 
@@ -139,8 +139,8 @@ class MatchArtworkDialog(QDialog):
         self._candidates: list[Candidate] = []
 
         column = QVBoxLayout(self)
-        column.setContentsMargins(22, 20, 22, 16)
-        column.setSpacing(8)
+
+        style_dialog(self)
         column.addWidget(label(game.title or game.game_id, "pageTitle"))
         column.addWidget(
             label(

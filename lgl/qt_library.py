@@ -401,8 +401,8 @@ class EditDetailsDialog(QDialog):
         self._notes: QLineEdit
 
         column = QVBoxLayout(self)
-        column.setContentsMargins(22, 20, 22, 18)
-        column.setSpacing(8)
+
+        style_dialog(self)
         column.addWidget(label(entry.title or entry.identifier, "pageTitle"))
         column.addWidget(label(
             "Values you type here are marked as yours and are never overwritten by "
@@ -458,7 +458,7 @@ class DuplicatesDialog(QDialog):
         self.setWindowTitle("Duplicate files")
         self.resize(640, 480)
         column = QVBoxLayout(self)
-        column.setContentsMargins(20, 18, 20, 16)
+        style_dialog(self)
         column.addWidget(label("Duplicate files", "pageTitle"))
         column.addWidget(label(
             "Files with the same name and size. Nothing is deleted here.", "detailNote"

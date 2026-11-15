@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 )
 
 from . import shelves as shelves_lib
+from .qt_widgets import style_dialog
 
 
 class ShelvesDialog(QDialog):
@@ -31,6 +32,8 @@ class ShelvesDialog(QDialog):
         self.settings = settings
 
         layout = QVBoxLayout(self)
+
+        style_dialog(self)
         heading = QLabel("HOME SHELVES", self)
         heading.setObjectName("detailEyebrow")
         layout.addWidget(heading)

@@ -20,7 +20,7 @@ MODES = ("system", "dark", "light")
 DEFAULT_MODE = "system"
 
 #: The accent family, shared with the Windows frontend.
-ACCENT = "#8b5cf6"
+ACCENT = "#8557ea"
 #: The accent for *filled* surfaces that carry white labels: white on #8b5cf6 is
 #: only 3.7:1, while this shade is 5.6:1 and still reads as the same colour.
 ACCENT_FILL = "#7c3aed"
@@ -30,7 +30,7 @@ FAVORITE = "#f5c518"
 #: Accent at 18% opacity, for selected pills and quiet highlights.  GTK's
 #: ``@define-color`` cannot compute alpha() portably, so the value is spelled
 #: out and kept in step with the accent above.
-ACCENT_SOFT_DARK = "rgba(139, 92, 246, 0.18)"
+ACCENT_SOFT_DARK = "rgba(133, 87, 234, 0.18)"
 ACCENT_SOFT_LIGHT = "rgba(124, 58, 237, 0.18)"
 
 DARK: dict[str, str] = {
@@ -56,10 +56,11 @@ DARK: dict[str, str] = {
     "success": "#22c55e",
     "warning": "#f59e0b",
     "danger": "#ef4444",
-    #: The same hues as *text*: the contract's warning/danger are tuned for
-    #: fills, and light mode needs a deeper shade to clear 4.5:1 on the page.
+    #: The same hues as *text*: the contract's warning/danger/success are tuned
+    #: for fills, and each needs its own shade to clear 4.5:1 as ink.
+    "success_text": "#22c55e",
     "warning_text": "#f59e0b",
-    "danger_text": "#ef4444",
+    "danger_text": "#f05252",
     "favorite": FAVORITE,
     "shadow": "rgba(0, 0, 0, 0.55)",
     #: The hero sits on a dark scrim in both modes, so this one never switches.
@@ -85,6 +86,7 @@ LIGHT: dict[str, str] = {
     "success": "#22c55e",
     "warning": "#f59e0b",
     "danger": "#ef4444",
+    "success_text": "#15803d",
     "warning_text": "#b45309",
     "danger_text": "#b91c1c",
     "favorite": FAVORITE,

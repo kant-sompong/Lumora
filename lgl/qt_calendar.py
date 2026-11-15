@@ -23,7 +23,7 @@ from PySide6.QtWidgets import (
 
 from . import anime_calendar as cal
 from . import release_feed
-from .qt_widgets import run_async
+from .qt_widgets import run_async, style_dialog
 
 TZ = "local"
 
@@ -43,6 +43,8 @@ class CalendarDialog(QDialog):
         self._busy = False
 
         layout = QVBoxLayout(self)
+
+        style_dialog(self)
         bar = QHBoxLayout()
         self._filter = QComboBox()
         for key, label in release_feed.FILTERS:

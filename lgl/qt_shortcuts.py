@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
 )
 
 from . import shortcut_prefs
+from .qt_widgets import literal, style_dialog
 
 #: ``(id, label, default)`` for every action the main window installs.
 BINDINGS = (
@@ -40,6 +41,8 @@ class ShortcutsDialog(QDialog):
         self.settings = settings
 
         layout = QVBoxLayout(self)
+
+        style_dialog(self)
         heading = QLabel("KEYBOARD SHORTCUTS", self)
         heading.setObjectName("detailEyebrow")
         layout.addWidget(heading)
@@ -49,7 +52,7 @@ class ShortcutsDialog(QDialog):
         for shortcut_id, label, _default in BINDINGS:
             field = QLineEdit(self)
             self.fields[shortcut_id] = field
-            form.addRow(label, field)
+            form.addRow(literal(label), field)
         layout.addLayout(form)
 
         self.note = QLabel("Each action needs its own shortcut, e.g. Ctrl+Shift+L.", self)

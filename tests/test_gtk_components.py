@@ -353,31 +353,30 @@ def test_a_sheet_and_a_card_fit_a_nine_hundred_pixel_window():
 
 # -- contrast, both themes -------------------------------------------------
 
-#: The two pairs the shared tokens cannot bring to 4.5:1.  Both come from
-#: ``design_tokens.py``, which is read-only for this slice, so the ratios are
-#: pinned here rather than skipped: a token change that fixes one of them fails
-#: this table on purpose, and the table is then updated with the new number.
-TOKEN_CLASHES: dict[tuple[str, str, str], float] = {
-    # White on the dark accent fill: the accent itself is the fill colour.
-    ("dark", "on_accent", "accent"): 4.23,
-    # The light danger ink on a white surface.
-    ("light", "danger", "surface"): 3.76,
-}
-
-#: Every other pair must reach AA.  ``danger_text`` is the shade the sheet
-#: actually draws error text in, and it passes in both themes.
+#: Every text pair the two sheets draw, in both themes.  Fill and ink are
+#: separate tokens now (``accent_fill`` carries white labels, ``accent_text`` is
+#: the accent as text, and danger/warning/success have a ``*_text`` sibling), so
+#: no pair is pinned: each one is asserted at AA directly.
 PAIRS = (
     ("text on page", "text", "bg"),
     ("text on surface", "text", "surface"),
     ("text on overlay", "text", "raised"),
     ("secondary text on page", "muted", "bg"),
     ("secondary text on surface", "muted", "surface"),
+    ("secondary text on overlay", "muted", "raised"),
     ("muted text on page", "faint", "bg"),
+    ("muted text on overlay", "faint", "raised"),
     ("label on the accent fill", "on_accent", "accent_fill"),
-    ("error text on surface", "danger_text", "surface"),
+    ("label on the hovered accent fill", "on_accent", "accent_fill_hover"),
+    ("label on the accent tint", "on_accent", "accent"),
+    ("accent text on page", "accent_text", "bg"),
+    ("accent text on surface", "accent_text", "surface"),
+    ("accent text on overlay", "accent_text", "raised"),
     ("error text on page", "danger_text", "bg"),
-    ("clash: white on the dark accent", "on_accent", "accent"),
-    ("clash: light danger on the surface", "danger", "surface"),
+    ("error text on surface", "danger_text", "surface"),
+    ("error text on overlay", "danger_text", "raised"),
+    ("warning text on surface", "warning_text", "surface"),
+    ("success text on surface", "success_text", "surface"),
 )
 
 
@@ -386,22 +385,7 @@ PAIRS = (
 def test_every_text_pair_meets_wcag_aa(label, foreground, background, mode):
     palette = theme.PALETTES[mode]
     ratio = design_tokens.contrast_ratio(palette[foreground], palette[background])
-    pinned = TOKEN_CLASHES.get((mode, foreground, background))
-    if pinned is not None:
-        assert round(ratio, 2) == pinned, (
-            f"{label} is {ratio:.2f}:1 in {mode} mode, not the pinned {pinned}:1 "
-            "the shared tokens give it"
-        )
-        return
     assert ratio >= theme.CONTRAST_TEXT, f"{label} is {ratio:.2f}:1 in {mode} mode"
-
-
-def test_the_clash_table_holds_exactly_the_two_shared_tokens():
-    assert set(TOKEN_CLASHES) == {
-        ("dark", "on_accent", "accent"),
-        ("light", "danger", "surface"),
-    }
-    assert all(ratio < theme.CONTRAST_TEXT for ratio in TOKEN_CLASHES.values())
 
 
 def blend(foreground: str, background: str, alpha: float) -> str:
@@ -412,14 +396,15 @@ def blend(foreground: str, background: str, alpha: float) -> str:
     return "#%02x%02x%02x" % tuple(round(channel * 255) for channel in mixed)
 
 
-#: Every new pair this slice introduces is a label over a fill the sheet paints,
-#: so each one is measured against the blended fill, not the flat token.
+#: The sheet paints some labels over a tint, not over a flat token, so those
+#: pairs are measured against the blended fill the eye actually sees.  The
+#: rows below are the ones this slice's sheets (and the rail) put ink on.
 FILL_PAIRS = (
     ("danger button label on its hover tint", "danger_text", "danger", 0.05, "surface"),
-    ("danger button label on a sheet", "danger_text", None, 0.0, "surface"),
-    ("quiet label on a sheet", "muted", None, 0.0, "surface"),
-    ("selected card title on its fill", "text", "accent", 0.10, "surface"),
-    ("selected card meta on its fill", "muted", "accent", 0.10, "surface"),
+    ("selected card title on its fill", "text", "accent",
+     dc.CARD_SELECTED_ALPHA, "surface"),
+    ("selected card meta on its fill", "muted", "accent",
+     dc.CARD_SELECTED_ALPHA, "surface"),
     ("secondary button label on its fill", "text", "text", 0.06, "surface"),
     ("hovered card title on its fill", "text", "text", 0.035, "surface"),
 )
@@ -427,12 +412,12 @@ FILL_PAIRS = (
 
 @pytest.mark.parametrize("mode", ("dark", "light"))
 @pytest.mark.parametrize("label,foreground,fill,alpha,under", FILL_PAIRS)
-def test_every_new_label_reads_on_the_fill_it_sits_on(
+def test_every_label_over_a_tint_still_reads(
     label, foreground, fill, alpha, under, mode
 ):
-    pal = theme.PALETTES[mode]
-    background = pal[under] if not fill else blend(pal[fill], pal[under], alpha)
-    ratio = design_tokens.contrast_ratio(pal[foreground], background)
+    palette = theme.PALETTES[mode]
+    background = blend(palette[fill], palette[under], alpha)
+    ratio = design_tokens.contrast_ratio(palette[foreground], background)
     assert ratio >= theme.CONTRAST_TEXT, (
         f"{label} is {ratio:.2f}:1 in {mode} mode on {background}"
     )

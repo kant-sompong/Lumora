@@ -35,7 +35,7 @@ from . import (
     __version__, mal, platform_support, provider_health, streaming, theme, tmdb,
     view_prefs,
 )
-from .qt_widgets import FieldError, label, run_async
+from .qt_widgets import FieldError, label, literal, run_async, style_dialog
 from . import ratings
 from .settings import Settings
 from .sources import RawgSource
@@ -440,12 +440,12 @@ class SettingsDialog(QDialog):
              "publishers, descriptions, ratings, and cover URLs. It does not provide "
              "game files; store links are metadata, not downloads.",
              "RAWG API key (blank = use the saved key)"),
-            ("tmdb", "TMDB — movies & TV metadata",
+            ("tmdb", literal("TMDB — movies & TV metadata"),
              "TMDB supplies movie and TV show titles, release dates, genres, "
              "descriptions, ratings, posters, and backdrops. It does not provide video "
              "files; playback is handled separately.",
              "TMDB API key (blank = use the saved key)"),
-            ("omdb", "OMDb — IMDb & Rotten Tomatoes scores",
+            ("omdb", literal("OMDb — IMDb & Rotten Tomatoes scores"),
              "OMDb supplies the IMDb rating and the Rotten Tomatoes score shown "
              "beside each movie and show. It is optional: without a key the TMDB "
              "user score is still shown. A free key covers personal use.",
@@ -489,7 +489,7 @@ class SettingsDialog(QDialog):
             button_row = QHBoxLayout(buttons)
             button_row.setContentsMargins(0, 0, 0, 0)
             button_row.setSpacing(8)
-            save = QPushButton("Save & test")
+            save = QPushButton("Save && test")
             save.clicked.connect(lambda _=False, k=key: self._save_provider(k))
             clear = QPushButton("Clear")
             clear.clicked.connect(lambda _=False, k=key: self._clear_provider(k))
@@ -593,7 +593,7 @@ class SettingsDialog(QDialog):
     # media -----------------------------------------------------------------
     def _build_media(self) -> QWidget:
         body, column = self._page()
-        self._heading(column, "Media & playback")
+        self._heading(column, literal("Media & playback"))
         column.addWidget(label("Providers", "settLabel"))
 
         self._streaming = QComboBox()
@@ -714,7 +714,7 @@ class SettingsDialog(QDialog):
             ("Ctrl+1", "Show the Browse view"),
             ("Ctrl+2", "Show the Library view"),
             ("Ctrl+3", "Open Downloads"),
-            ("Ctrl+4", "Open Movies & TV"),
+            ("Ctrl+4", literal("Open Movies & TV")),
             ("Ctrl+K", "Open the command palette"),
             ("Ctrl+F", "Focus the search field"),
             ("Ctrl+R / F5", "Reload the collection or rescan the library"),
@@ -741,14 +741,13 @@ class AboutDialog(QDialog):
         self.setWindowTitle("About Lumora")
         self.setMinimumWidth(520)
         column = QVBoxLayout(self)
-        column.setContentsMargins(28, 26, 28, 20)
-        column.setSpacing(8)
+        style_dialog(self)
         column.addWidget(label("Lumora", "pageTitle"))
         column.addWidget(label(f"Version {__version__}", "settDesc"))
         column.addSpacing(6)
         column.addWidget(label(
             "A desktop library for playing, downloading and organising games, "
-            "with a Movies & TV section for everything else. Linux runs the GTK "
+            "with a Movies && TV section for everything else. Linux runs the GTK "
             "frontend; Windows runs this one and shares the same core.",
             "settDesc", wrap=True,
         ))

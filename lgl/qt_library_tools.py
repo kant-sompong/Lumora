@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
 )
 
 from . import library_tools
+from .qt_widgets import style_dialog
 
 #: Fields with a multi-line editor rather than a single line.
 LONG_FIELDS = {"description"}
@@ -70,6 +71,8 @@ class TagsDialog(QDialog):
         self.entries = [as_entry(entry) for entry in entries]
 
         layout = QVBoxLayout(self)
+
+        style_dialog(self)
         heading = QLabel("TAGS", self)
         heading.setObjectName("detailEyebrow")
         layout.addWidget(heading)
@@ -164,6 +167,8 @@ class MetadataEditorDialog(QDialog):
         self.entry = as_entry(entry)
 
         layout = QVBoxLayout(self)
+
+        style_dialog(self)
         heading = QLabel("EDIT DETAILS", self)
         heading.setObjectName("detailEyebrow")
         layout.addWidget(heading)
@@ -241,6 +246,8 @@ class BulkEditDialog(QDialog):
         self.keys = [str(key) for key in keys]
 
         layout = QVBoxLayout(self)
+
+        style_dialog(self)
         heading = QLabel(f"BULK EDIT · {len(self.keys)} SELECTED", self)
         heading.setObjectName("detailEyebrow")
         layout.addWidget(heading)
@@ -286,6 +293,8 @@ class DuplicatesDialog(QDialog):
         self.groups = library_tools.duplicates([as_entry(entry) for entry in entries])
 
         layout = QVBoxLayout(self)
+
+        style_dialog(self)
         heading = QLabel("POSSIBLE DUPLICATES", self)
         heading.setObjectName("detailEyebrow")
         layout.addWidget(heading)

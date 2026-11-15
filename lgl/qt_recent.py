@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
 )
 
 from . import recently_viewed
+from .qt_widgets import style_dialog
 
 #: How each stored kind is shown next to the title.
 KIND_NAMES = {"game": "Game", "movie": "Movie", "tv": "TV", "anime": "Anime"}
@@ -43,6 +44,8 @@ class RecentlyViewedDialog(QDialog):
         self._path = Path(path)
 
         layout = QVBoxLayout(self)
+
+        style_dialog(self)
         headline = QLabel("RECENTLY VIEWED", self)
         headline.setObjectName("detailEyebrow")
         layout.addWidget(headline)
