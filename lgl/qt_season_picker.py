@@ -74,16 +74,20 @@ def _spaced(step: int) -> int:
 
 def panel_geometry(
     anchor: QRect, size: QSize, area: QRect, gap: int = PANEL_GAP
-) -> tuple[QPoint, int]:
-    """Where the open panel goes, and how tall it may be.
+) -> QRect:
+    """Where the open panel goes, and how big it may be.
 
     ``anchor`` is the header's rectangle in global coordinates, ``area`` the
-    available screen rectangle.  The panel hangs directly below the header when
-    its full height fits there, flips above when it does not, and is shortened
-    to the room on whichever side is chosen so it never leaves the screen.  The
-    return value is the global top-left and the height to apply.
+    available screen rectangle.  The width is capped at the screen's, so on a
+    screen narrower than the panel the panel shrinks instead of hanging off
+    it.  The panel hangs directly below the header when its full height fits
+    there, flips above when it does not, and is shortened to the room on
+    whichever side is chosen so it never leaves the screen.  The return value
+    is the global rectangle to apply, size included: a placement that reports
+    a width nobody applies is how the panel used to stay 300 px wide on a
+    narrower screen.
     """
-    width = min(size.width(), area.width())
+    width = max(1, min(size.width(), area.width()))
     wanted = min(size.height(), area.height())
     below_top = anchor.bottom() + 1 + gap
     above_bottom = anchor.top() - gap
@@ -102,7 +106,7 @@ def panel_geometry(
     x = min(anchor.left(), area.right() + 1 - width)
     x = max(area.left(), x)
     y = max(area.top(), min(y, area.bottom() + 1 - height))
-    return QPoint(x, y), height
+    return QRect(QPoint(x, y), QSize(width, height))
 
 
 class Chevron(QWidget):
@@ -642,7 +646,9 @@ class SeasonPicker(QWidget):
         # The platform gives a popup its first geometry when it is shown, so the
         # place is set afterwards: otherwise the move is silently lost and the
         # panel opens wherever the window system decided (in practice, nowhere
-        # near the header).
+        # near the header).  The place now carries the size too - a placement
+        # that only set the height is how the panel stayed 300 px wide on a
+        # narrower screen.
         self.place_panel()
         self._watch_window(True)
         self.panel.setFocus()
@@ -653,11 +659,16 @@ class SeasonPicker(QWidget):
         if screen is None:  # pragma: no cover - a window always has a screen
             return
         anchor = QRect(self.mapToGlobal(QPoint(0, 0)), self.size())
-        point, height = panel_geometry(
-            anchor, self.panel.size(), screen.availableGeometry()
+        # The wanted width comes from the contract, not from the panel's last
+        # placed size: a panel narrowed on a small screen has to be able to
+        # grow back when the window moves to a wider one.
+        box = panel_geometry(
+            anchor,
+            QSize(PANEL_WIDTH, self.panel.height()),
+            screen.availableGeometry(),
         )
-        self.panel.setFixedHeight(height)
-        self.panel.move(point)
+        self.panel.setFixedSize(box.size())
+        self.panel.move(box.topLeft())
 
     def _watch_window(self, watching: bool) -> None:
         """Follow the window while the panel is open, so a move cannot strand it."""

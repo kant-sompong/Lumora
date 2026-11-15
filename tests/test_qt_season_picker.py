@@ -262,10 +262,9 @@ def _expected_position(app, picker):
     panel legitimately flips above.
     """
     anchor = QRect(picker.mapToGlobal(qt_season_picker.QPoint(0, 0)), picker.size())
-    point, height = qt_season_picker.panel_geometry(
+    return qt_season_picker.panel_geometry(
         anchor, picker.panel.size(), _screen_rect(app)
     )
-    return point, height
 
 
 def test_the_panel_hangs_directly_below_the_header(app):
@@ -275,10 +274,11 @@ def test_the_panel_hangs_directly_below_the_header(app):
     pump(app, 0.1)
 
     panel = picker.panel
-    expected, height = _expected_position(app, picker)
+    expected = _expected_position(app, picker)
     assert abs(panel.pos().x() - expected.x()) <= 4
     assert abs(panel.pos().y() - expected.y()) <= 4
-    assert abs(panel.height() - height) <= 4
+    assert abs(panel.height() - expected.height()) <= 4
+    assert panel.width() == expected.width()
     assert panel.height() <= PANEL_MAX_HEIGHT
     # 100 px from the top there is room below on any desktop: no flip here.
     assert panel.pos().y() >= anchor.y()
@@ -335,36 +335,143 @@ def test_the_panel_is_clamped_to_the_right_edge(app):
 
 def test_panel_geometry_prefers_below_then_above_then_the_roomier_side():
     area = QRect(0, 0, 1000, 800)
-    size = QSize(PANEL_WIDTH, 300)
-    below, height = qt_season_picker.panel_geometry(
-        QRect(100, 100, 120, 24), size, area
+    below = qt_season_picker.panel_geometry(
+        QRect(100, 100, 120, 24), QSize(PANEL_WIDTH, 300), area
     )
-    assert (below.x(), below.y(), height) == (100, 128, 300)
+    assert (below.x(), below.y(), below.width(), below.height()) == (
+        100, 128, PANEL_WIDTH, 300,
+    )
 
-    flipped, height = qt_season_picker.panel_geometry(
-        QRect(100, 700, 120, 24), size, area
+    flipped = qt_season_picker.panel_geometry(
+        QRect(100, 700, 120, 24), QSize(PANEL_WIDTH, 300), area
     )
-    assert flipped.y() + height == 700 - 4
-    assert height == 300
+    assert flipped.y() + flipped.height() == 700 - 4
+    assert flipped.height() == 300
 
     # 396 px above and 372 px below, and 420 px wanted: neither side fits, so
     # the roomier side wins and the panel is shortened to it.
-    flipped, shortened = qt_season_picker.panel_geometry(
+    flipped = qt_season_picker.panel_geometry(
         QRect(100, 400, 120, 24), QSize(PANEL_WIDTH, 420), area
     )
-    assert shortened == 396
+    assert flipped.height() == 396
     assert flipped.y() == 0
 
 
 def test_panel_geometry_shortens_the_panel_and_clamps_it_inside():
     area = QRect(0, 0, 1000, 400)
-    point, height = qt_season_picker.panel_geometry(
+    box = qt_season_picker.panel_geometry(
         QRect(0, 50, 120, 24), QSize(PANEL_WIDTH, 420), area
     )
-    assert height == area.bottom() + 1 - (50 + 24 + 4)
-    assert point.y() == 78
-    assert point.y() + height <= area.bottom() + 1
-    assert 0 <= point.x() <= area.right() + 1 - PANEL_WIDTH
+    assert box.height() == area.bottom() + 1 - (50 + 24 + 4)
+    assert box.y() == 78
+    assert box.y() + box.height() <= area.bottom() + 1
+    assert box.width() == PANEL_WIDTH
+    assert 0 <= box.x() <= area.right() + 1 - PANEL_WIDTH
+
+
+# -- a screen narrower than the panel --------------------------------------
+# The panel is 300 px wide, but a narrow screen must win: the width the
+# geometry asks for is the width the popup gets.
+
+class _Screen:
+    """Just enough of a QScreen for ``place_panel``."""
+
+    def __init__(self, area):
+        self._area = area
+
+    def availableGeometry(self):
+        return self._area
+
+
+def test_panel_geometry_shrinks_the_width_to_a_narrow_screen():
+    narrow = QRect(0, 0, 240, 600)
+    box = qt_season_picker.panel_geometry(
+        QRect(0, 100, 120, 24), QSize(PANEL_WIDTH, 300), narrow
+    )
+
+    assert box.width() == 240
+    assert box.x() == 0
+    assert box.x() + box.width() <= narrow.right() + 1
+
+
+def test_panel_geometry_keeps_a_narrow_panel_off_the_right_edge():
+    narrow = QRect(0, 0, 240, 600)
+    box = qt_season_picker.panel_geometry(
+        QRect(190, 100, 120, 24), QSize(PANEL_WIDTH, 300), narrow
+    )
+
+    assert box.width() == 240
+    assert box.x() == 0
+    assert box.x() + box.width() == narrow.right() + 1
+
+
+def test_panel_geometry_never_widens_past_any_screen():
+    for area in (QRect(0, 0, 1, 600), QRect(0, 0, 260, 600), QRect(0, 0, 800, 600)):
+        for left in (0, 120, 799):
+            box = qt_season_picker.panel_geometry(
+                QRect(left, 50, 120, 24), QSize(PANEL_WIDTH, 300), area
+            )
+            assert box.width() <= area.width()
+            assert box.x() >= area.left()
+            assert box.x() + box.width() <= area.right() + 1
+
+
+def test_the_open_panel_takes_the_narrow_screens_width(app, monkeypatch):
+    picker, _loader = _picker(app)
+    area = QRect(0, 0, 240, 600)
+    monkeypatch.setattr(
+        qt_season_picker.SeasonPicker, "screen", lambda self: _Screen(area)
+    )
+    picker.open_panel()
+    pump(app, 0.1)
+
+    panel = picker.panel
+    assert panel.width() == 240
+    # The offscreen plugin nudges a popup's x by the header's own offset, the
+    # same few pixels every other placement test here allows for.
+    assert abs(panel.pos().x() - area.left()) <= 4
+    picker.close_panel()
+    picker.close()
+
+
+def test_a_narrow_panel_hugs_the_right_edge_when_the_header_does(app, monkeypatch):
+    picker, _loader = _picker(app)
+    picker.move(190, 40)
+    pump(app)
+    area = QRect(0, 0, 240, 600)
+    monkeypatch.setattr(
+        qt_season_picker.SeasonPicker, "screen", lambda self: _Screen(area)
+    )
+    picker.open_panel()
+    pump(app, 0.1)
+
+    panel = picker.panel
+    # A 240 px panel on a 240 px screen has exactly one home: the screen's
+    # left edge, so the popup cannot hang off the right one.
+    assert panel.width() == 240
+    assert abs(panel.pos().x() - area.left()) <= 4
+    picker.close_panel()
+    picker.close()
+
+
+def test_a_narrow_panel_grows_back_on_a_wider_screen(app, monkeypatch):
+    picker, _loader = _picker(app)
+    area = [QRect(0, 0, 240, 600)]
+    monkeypatch.setattr(
+        qt_season_picker.SeasonPicker, "screen", lambda self: _Screen(area[0])
+    )
+    picker.open_panel()
+    pump(app, 0.1)
+    assert picker.panel.width() == 240
+
+    area[0] = QRect(0, 0, 1000, 800)
+    picker.place_panel()
+    pump(app, 0.05)
+
+    assert picker.panel.width() == PANEL_WIDTH
+    assert picker.panel.pos().x() >= area[0].left()
+    picker.close_panel()
+    picker.close()
 
 
 def test_the_panel_follows_the_window_when_it_moves(app):
@@ -389,7 +496,7 @@ def test_the_panel_follows_the_window_when_it_moves(app):
     anchor_after = picker.mapToGlobal(qt_season_picker.QPoint(0, 0))
     assert anchor_after != anchor_before
     assert picker.panel.pos() != before
-    expected, _height = _expected_position(app, picker)
+    expected = _expected_position(app, picker)
     assert abs(picker.panel.pos().x() - expected.x()) <= 4
     assert abs(picker.panel.pos().y() - expected.y()) <= 4
     picker.close_panel()
