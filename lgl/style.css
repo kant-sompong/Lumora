@@ -1483,7 +1483,6 @@ flowboxchild.browse-tile:hover .cover-card {
   background-color: transparent;
   background-image: none;
   border: none;
-  border-left: 3px solid transparent;
   box-shadow: none;
   padding: 6px 0;
   margin: 0 8px;
@@ -1499,14 +1498,18 @@ flowboxchild.browse-tile:hover .cover-card {
   color: @text;
 }
 
+/* The 3 px bar is an inset shadow, not a border: a border adds three pixels to
+ * the button's minimum width, which pushed the 72 px rail to 74 as soon as the
+ * palette was loaded and the rule applied. */
 .rail-button.rail-on {
   background-color: @accent_soft;
-  border-left-color: @accent;
+  box-shadow: inset 3px 0 0 @accent;
   color: @accent;
 }
 
 .rail-button.rail-on:hover {
   background-color: @accent_soft;
+  box-shadow: inset 3px 0 0 @accent;
   color: @accent_hover;
 }
 
@@ -1516,6 +1519,10 @@ flowboxchild.browse-tile:hover .cover-card {
 
 .rail-button:focus {
   box-shadow: inset 0 0 0 2px @accent;
+}
+
+.rail-button.rail-on:focus {
+  box-shadow: inset 3px 0 0 @accent, inset 0 0 0 2px @accent;
 }
 
 .rail-label {
