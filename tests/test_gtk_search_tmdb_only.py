@@ -296,7 +296,7 @@ def test_which_part_dialog_follows_the_sheet_rules():
     try:
         assert dialog.get_border_width() == 24
         assert dialog.get_content_area().get_spacing() == 16
-        assert dialog.get_default_response() == 100
+        assert dialog.default_response() == 100
         # The first part has its own response id, so Enter plays it.
         first = dialog.get_widget_for_response(100)
         assert first is not None and first.get_label() == "Attack on Titan"

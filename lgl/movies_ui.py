@@ -1106,6 +1106,7 @@ class WhichPartDialog(Gtk.Dialog):
                 button.get_style_context().add_class("suggested-action")
                 first = ident
         self.add_button("Cancel", Gtk.ResponseType.CANCEL)
+        self._default_response = first or 0
         if first is not None:
             self.set_default_response(first)
         self.connect("response", self._on_response)
@@ -1115,6 +1116,10 @@ class WhichPartDialog(Gtk.Dialog):
     def labels(self) -> list[str]:
         """The part labels on screen, in order."""
         return [text for text, _target in self._parts]
+
+    def default_response(self) -> int:
+        """The response Enter sends: the first part's id."""
+        return self._default_response
 
     @property
     def _parts(self) -> list:
