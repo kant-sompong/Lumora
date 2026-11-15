@@ -19,10 +19,15 @@ from typing import Mapping
 MODES = ("system", "dark", "light")
 DEFAULT_MODE = "system"
 
-#: The accent family, shared with the Windows frontend.
+#: The accent family, shared with the Windows frontend.  The accent has three
+#: roles, because no single purple can serve all of them: ``accent`` is the tint
+#: drawn as borders, washes and focus rings (4.62:1 under white), ``accent_fill``
+#: is the background under a white label, and ``accent_text`` is the same hue as
+#: ink.  The tint itself is only 3.53:1 as text on the dark overlay, and the fill
+#: shade 2.86:1, while the light enough for text is 2.72:1 under white.
 ACCENT = "#8557ea"
-#: The accent for *filled* surfaces that carry white labels: white on #8b5cf6 is
-#: only 3.7:1, while this shade is 5.6:1 and still reads as the same colour.
+#: The accent for *filled* surfaces that carry white labels: white on the tint
+#: above is 4.62:1, and on this shade 5.70:1, still the same colour.
 ACCENT_FILL = "#7c3aed"
 ACCENT_FILL_HOVER = "#6d28d9"
 #: The one warm colour kept from the previous design: the favourite star.
@@ -49,8 +54,9 @@ DARK: dict[str, str] = {
     "accent_soft": ACCENT_SOFT_DARK,
     "accent_fill": ACCENT_FILL,
     "accent_fill_hover": ACCENT_FILL_HOVER,
-    #: Accent dark enough (or light enough) to read as *text*; the fill accent
-    #: itself is only 3.7:1 on white, so links and inline accent text use this.
+    #: The accent as *ink*: 5.99:1 on the dark overlay and 6.53:1 on a surface,
+    #: where both the tint (3.53:1) and the fill shade (2.86:1) fall short of
+    #: AA.  Links and inline accent text use this; fills never do.
     "accent_text": "#a78bfa",
     "on_accent": "#ffffff",
     "success": "#22c55e",

@@ -73,6 +73,9 @@ def palette(resolved: str, accent: str | None = None) -> dict[str, str]:
         "faint": str(tokens["muted"]),
         "accent": str(tokens["accent"]),
         "accent_hover": str(tokens["accent_hover"]),
+        # Fill and ink are separate tokens: white labels sit on accent_fill,
+        # while accent-coloured text uses accent_text, which is the only shade
+        # that clears AA as ink on the dark sheets.
         "accent_fill": str(tokens["accent_fill"]),
         "accent_fill_hover": str(tokens["accent_fill_hover"]),
         "accent_soft": design_tokens.accent_soft(resolved),
