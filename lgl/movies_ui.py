@@ -41,6 +41,7 @@ from gi.repository import (  # noqa: E402
 from . import artwork_background, platform_support, recently_viewed  # noqa: E402
 from . import gtk_feed_home  # noqa: E402
 from . import (  # noqa: E402
+    anime_map,
     anipm,
     framextv,
     mal,
@@ -546,6 +547,39 @@ def _episode_meta_text(runtime, air_date) -> str:
     return " · ".join(bits)
 
 
+#: TMDB's Animation genre id, and the original language anime is made in.
+ANIME_GENRE = 16
+ANIME_LANGUAGE = "ja"
+
+
+def genre_ids(document) -> set[int]:
+    """Every genre id a TMDB document carries, in either shape TMDB uses.
+
+    Search rows send ``genre_ids``; a details document sends ``genres`` as
+    objects.  Reading both keeps the anime rule independent of the call.
+    """
+    ids: set[int] = set()
+    if not isinstance(document, dict):
+        return ids
+    for field in ("genre_ids", "genres"):
+        raw = document.get(field)
+        if not isinstance(raw, (list, tuple)):
+            continue
+        for entry in raw:
+            value = entry.get("id") if isinstance(entry, dict) else entry
+            if isinstance(value, int) and not isinstance(value, bool):
+                ids.add(value)
+    return ids
+
+
+def is_anime(document) -> bool:
+    """A TMDB title in Japanese that TMDB files under Animation."""
+    if not isinstance(document, dict):
+        return False
+    language = str(document.get("original_language") or "").strip().lower()
+    return language == ANIME_LANGUAGE and ANIME_GENRE in genre_ids(document)
+
+
 def _paint_soft_poster(cr, pixbuf, width: int, height: int) -> None:
     """A poster stretched and softened, for a hero with no wide art.
 
@@ -1028,6 +1062,80 @@ class AniPmTile(Gtk.FlowBoxChild):
         button.add(box)
         self.add(button)
         images.load(item.poster_url, POSTER_SIZE, poster.set_pixbuf)
+
+
+class WhichPartDialog(Gtk.Dialog):
+    """Ask which AniList entry a TMDB season or film is.
+
+    The anime list can point one TMDB season at more than one AniList entry
+    (Attack on Titan's third season is two of them); only the viewer knows which
+    part the episode they pressed belongs to.  This asks instead of guessing.
+    """
+
+    def __init__(self, parent, title: str, parts) -> None:
+        super().__init__(title="Which part?", transient_for=parent, modal=True)
+        self.set_border_width(24)
+        self.set_default_size(420, -1)
+        self._targets: dict[int, object] = {}
+        self._picked = None
+        box = self.get_content_area()
+        box.set_spacing(16)
+        heading = Gtk.Label(
+            label=f"Which part of {title}?" if title else "Which part?", xalign=0
+        )
+        heading.set_line_wrap(True)
+        heading.get_style_context().add_class("movie-page-title")
+        box.pack_start(heading, False, False, 0)
+        note = Gtk.Label(
+            label="The anime list links this title to more than one AniList "
+            "entry, so pick the part you were about to watch.",
+            xalign=0,
+        )
+        note.set_line_wrap(True)
+        note.get_style_context().add_class("movie-status")
+        box.pack_start(note, False, False, 0)
+        first = None
+        for index, (text, target) in enumerate(parts):
+            ident = 100 + index
+            self._targets[ident] = target
+            button = self.add_button(str(text), ident)
+            reason = str(getattr(target, "reason", "") or "")
+            if reason:
+                button.set_tooltip_text(reason)
+            if index == 0:
+                button.get_style_context().add_class("suggested-action")
+                first = ident
+        self.add_button("Cancel", Gtk.ResponseType.CANCEL)
+        if first is not None:
+            self.set_default_response(first)
+        self.connect("response", self._on_response)
+        self.connect("key-press-event", self._on_key)
+        self.show_all()
+
+    def labels(self) -> list[str]:
+        """The part labels on screen, in order."""
+        return [text for text, _target in self._parts]
+
+    @property
+    def _parts(self) -> list:
+        return [(button.get_label(), target)
+                for button, target in (
+                    (self.get_widget_for_response(ident), target)
+                    for ident, target in sorted(self._targets.items())
+                ) if button is not None]
+
+    def _on_response(self, _dialog, response: int) -> None:
+        self._picked = self._targets.get(response)
+
+    def _on_key(self, _dialog, event):
+        if event.keyval == Gdk.KEY_Escape:
+            self.response(Gtk.ResponseType.CANCEL)
+            return True
+        return False
+
+    def chosen(self):
+        """The part the viewer picked, or ``None`` when the sheet was closed."""
+        return self._picked
 
 
 class ProviderHealthDialog(Gtk.Dialog):
@@ -2942,7 +3050,7 @@ class MoviesWindow(Gtk.Box):
         inner.pack_start(head, False, False, 0)
 
         self._search_status = Gtk.Label(
-            label="Type a title above to search TMDB and ani.pm.", xalign=0
+            label="Type a title above to search TMDB.", xalign=0
         )
         self._search_status.set_line_wrap(True)
         self._search_status.get_style_context().add_class("movie-status")
@@ -2950,9 +3058,7 @@ class MoviesWindow(Gtk.Box):
 
         self._search_empty = self._empty_state(
             "Search movies, TV and anime",
-            "Results come straight from TMDB and ani.pm's catalogue - "
-            "anime that only exists on ani.pm shows up here too. "
-            "Nothing is suggested or invented.",
+            "Results come straight from TMDB — nothing is suggested or invented.",
             icon="edit-find-symbolic",
         )
         inner.pack_start(self._search_empty, False, False, 10)
@@ -2975,7 +3081,7 @@ class MoviesWindow(Gtk.Box):
         if not text:
             self._spin(self._search_spinner, False)
             self._clear_flow(self._search_flow)
-            self._search_status.set_text("Type a title above to search TMDB and ani.pm.")
+            self._search_status.set_text("Type a title above to search TMDB.")
             self._search_empty.show()
             return
 
@@ -2996,93 +3102,42 @@ class MoviesWindow(Gtk.Box):
         GLib.timeout_add(350, later)
 
     def _run_search(self, text: str, token: int) -> None:
-        """Search TMDB and ani.pm in parallel, then show both in one grid.
+        """Search TMDB only: ani.pm is the player, not a catalogue."""
 
-        ani.pm is queried alongside TMDB so anime that exists only in the
-        ani.pm catalogue still appears.  Either source may fail without
-        hiding the other's results; stale tokens drop late arrivals.
-        """
-        results: dict[str, object] = {}
-        lock = threading.Lock()
-        remaining = 2
-
-        def finish() -> None:
-            nonlocal remaining
-            with lock:
-                remaining -= 1
-                done = remaining == 0
-            if done:
-                GLib.idle_add(
-                    self._apply_search, token, text,
-                    results.get("tmdb") or [], results.get("ani") or [],
-                    results.get("tmdb_error"), results.get("ani_error"),
-                )
-
-        def tmdb_work() -> None:
+        def work() -> None:
+            items: object = []
+            error = None
             try:
-                results["tmdb"] = self._client.search(text)
-            except TmdbError as error:
-                results["tmdb_error"] = error
-            finish()
+                items = self._client.search(text)
+            except TmdbError as failure:
+                error = failure
+            GLib.idle_add(self._apply_search, token, text, items, error)
 
-        def ani_work() -> None:
-            try:
-                results["ani"] = self._ani_client.search(text, limit=24)
-            except anipm.AniPmError as error:
-                results["ani_error"] = error
-            finish()
+        threading.Thread(target=work, daemon=True, name="lgl-tmdb-search").start()
 
-        threading.Thread(target=tmdb_work, daemon=True, name="lgl-tmdb-search").start()
-        threading.Thread(target=ani_work, daemon=True, name="lgl-anipm-search").start()
-
-    def _apply_search(self, token: int, text: str, items, ani_items,
-                      tmdb_error=None, ani_error=None) -> bool:
+    def _apply_search(self, token: int, text: str, items, tmdb_error=None) -> bool:
+        """Show the TMDB rows; a stale token drops a late arrival."""
         if token != self._search_token:
             return False
         self._spin(self._search_spinner, False)
         self._clear_flow(self._search_flow)
-        # ani.pm results first: this integration exists because anime that
-        # only lives there was invisible before.
-        for item in (ani_items or []):
-            self._search_flow.add(
-                AniPmTile(item, self._images, self._open_anime_details)
-            )
-        for item in (items or []):
+        results = list(items or [])
+        for item in results:
             self._search_flow.add(PosterTile(item, self._images, self._open_details))
-        total = len(items or []) + len(ani_items or [])
-        if not total:
-            if tmdb_error is None and ani_error is None:
+        if not results:
+            if tmdb_error is None:
                 self._search_status.set_text(f"No titles matched “{text[:60]}”.")
             else:
-                self._search_status.set_text(
-                    self._search_error_text(tmdb_error, ani_error)
-                )
+                self._search_status.set_text(f"TMDB: {tmdb_error}")
             self._search_empty.show()
             if getattr(tmdb_error, "kind", "") == "missing-key":
                 self._search_configure.show()
             return False
-        bits = []
-        if ani_items:
-            bits.append(f"{len(ani_items)} from ani.pm")
-        if items:
-            bits.append(f"{len(items)} from TMDB")
-        note = f"{total} results · " + " · ".join(bits)
-        degraded = self._search_error_text(tmdb_error, ani_error)
-        if degraded:
-            note += f" · {degraded}"
-        self._search_status.set_text(note)
+        self._search_status.set_text(
+            f"{len(results)} result{'s' if len(results) != 1 else ''}"
+        )
         self._search_flow.show_all()
         return False
-
-    @staticmethod
-    def _search_error_text(tmdb_error, ani_error) -> str:
-        """A short, per-source explanation for whichever search failed."""
-        parts = []
-        if tmdb_error is not None:
-            parts.append(f"TMDB: {tmdb_error}")
-        if ani_error is not None:
-            parts.append(f"ani.pm: {ani_error}")
-        return " · ".join(parts)
 
     # -- anime --------------------------------------------------------------
 
@@ -3109,8 +3164,7 @@ class MoviesWindow(Gtk.Box):
         sub = Gtk.Label(
             label="Popular anime from MyAnimeList. Metadata comes from MAL; "
             "playback uses the anime provider selected in Settings. The main "
-            "search above also queries ani.pm's catalogue, where titles "
-            "missing from MAL/TMDB live.",
+            "search above is TMDB only, and plays anime through that provider.",
             xalign=0,
         )
         sub.set_line_wrap(True)
@@ -5167,6 +5221,69 @@ class MoviesWindow(Gtk.Box):
         if item.kind == "tv":
             self._open_details(item)
             return
+        self._play_tmdb_title(item)
+
+    def _play_episode(self, season: int, episode) -> None:
+        show = self._current_details or self._current_item
+        if show is None:
+            return
+        self._play_tmdb_title(show, int(season), episode)
+
+    def _play_tmdb_title(self, item: MediaItem, season: int | None = None,
+                         episode=None) -> None:
+        """Play a TMDB title: anime on ani.pm through the mapping.
+
+        TMDB does not say whether a search row is anime, so its details document
+        answers that question on a worker.  A title it cannot read, or a
+        provider that is not ani.pm, keeps the provider chain the page had.
+        """
+        number = max(1, int(getattr(episode, "number", 1) or 1)) if episode is not None else 1
+        season_number = int(season or 1)
+        title = str(getattr(item, "title", "") or "")
+        provider = self._anime_provider()
+        client = getattr(self, "_client", None)
+
+        def work() -> None:
+            anime = False
+            if client is not None:
+                try:
+                    anime = is_anime(client.get(f"/{item.kind}/{item.tmdb_id}"))
+                except Exception:  # noqa: BLE001 - an unreadable title is not anime
+                    anime = False
+            if not anime or provider != streaming.ANI_PROVIDER:
+                GLib.idle_add(self._play_tmdb_provider, item, season, episode)
+                return
+            target = anime_map.tmdb_to_anilist(
+                item.kind, item.tmdb_id, season_number, number, title=title,
+            )
+            if target is None:
+                # No list entry and no title match: today's behaviour asks
+                # AniList once by name, and only then gives up.
+                try:
+                    found = streaming.anilist_search(title)
+                except Exception:  # noqa: BLE001 - no link is simply no link
+                    found = None
+                if found:
+                    target = anime_map.PlayTarget(
+                        anilist_id=int(found), episode=number, confident=True,
+                        reason="matched by title on AniList",
+                    )
+            parts = ()
+            if target is not None and not getattr(target, "confident", False):
+                parts = self._part_labels(target.candidates)
+            GLib.idle_add(self._apply_tmdb_play, item, season, episode, target, parts)
+
+        threading.Thread(target=work, daemon=True, name="lgl-tmdb-play").start()
+
+    def _play_tmdb_provider(self, item, season=None, episode=None) -> bool:
+        """The old route: a provider builds a URL from the TMDB id."""
+        if episode is not None:
+            self._play_episode_on_providers(item, int(season or 1), episode)
+        else:
+            self._play_movie_on_providers(item)
+        return False
+
+    def _play_movie_on_providers(self, item: MediaItem) -> None:
         self._playing_episode = None
         self._record_playback(item.key, item.title, item.poster_url, item.year)
         dub = bool(self._settings.get("anime_dub", False))
@@ -5177,10 +5294,7 @@ class MoviesWindow(Gtk.Box):
         )
         self._play_attempts(attempts, item.title)
 
-    def _play_episode(self, season: int, episode) -> None:
-        show = self._current_details or self._current_item
-        if show is None:
-            return
+    def _play_episode_on_providers(self, show: MediaItem, season: int, episode) -> None:
         self._record_playback(show.key, show.title, show.poster_url, show.year)
         self._playing_episode = (int(season), int(episode.number))
         title = f"{episode.title} · S{season:02d}E{episode.number:02d}"
@@ -5192,6 +5306,76 @@ class MoviesWindow(Gtk.Box):
             )
         )
         self._play_attempts(attempts, title)
+
+    def _apply_tmdb_play(self, item, season, episode, target, parts) -> bool:
+        """On the UI thread: play the resolved entry, asking which part if unsure."""
+        title = str(getattr(item, "title", "") or "")
+        if target is None:
+            self._open_player_message(
+                title,
+                "No AniList entry matched this title, so ani.pm cannot play it.",
+            )
+            return False
+        if not getattr(target, "confident", False):
+            target = self._ask_which_part(title, parts)
+            if target is None:
+                return False
+        try:
+            url = streaming.ani_url(
+                target.anilist_id, target.episode, language=self._ani_language()
+            )
+            url = streaming.validate_embed_url(streaming.ANI_PROVIDER, url)
+        except (streaming.EmbedUrlError, ValueError) as error:
+            self._open_player_message(title, str(error))
+            return False
+        self._record_playback(item.key, item.title, item.poster_url, item.year)
+        self._playing_episode = None
+        self._play_attempts([(streaming.ANI_PROVIDER, url)], title)
+        return False
+
+    def _ani_language(self) -> str:
+        """The ani.pm track the anime settings ask for."""
+        chosen = self._settings.get("anime_language", "") or (
+            "dub" if self._settings.get("anime_dub", False) else "sub"
+        )
+        try:
+            return streaming.clean_language(streaming.ANI_PROVIDER, chosen)
+        except Exception:  # noqa: BLE001 - a bad setting plays the default track
+            return "sub"
+
+    @staticmethod
+    def _part_labels(candidates) -> tuple:
+        """A name for each candidate, or ``Part i/N`` when ani.pm has none."""
+        candidates = list(candidates or ())
+        ids = [int(getattr(candidate, "anilist_id", 0) or 0) for candidate in candidates]
+        names: dict[int, str] = {}
+        if ids:
+            try:
+                for title in anipm.AniPmClient().lookup(anilist=[i for i in ids if i]):
+                    number = int(getattr(title, "anilist_id", 0) or 0)
+                    text = str(getattr(title, "title", "") or "").strip()
+                    if number and text:
+                        names[number] = text
+            except Exception:  # noqa: BLE001 - a name is a nicety, the parts play
+                names = {}
+        total = len(candidates)
+        return tuple(
+            (
+                names.get(int(getattr(candidate, "anilist_id", 0) or 0), "")
+                or f"Part {index}/{total}",
+                candidate,
+            )
+            for index, candidate in enumerate(candidates, start=1)
+        )
+
+    def _ask_which_part(self, title: str, parts):
+        """Show the sheet and return the chosen part, or ``None``."""
+        dialog = WhichPartDialog(self.get_toplevel(), title, parts)
+        try:
+            dialog.run()
+        finally:
+            dialog.destroy()
+        return dialog.chosen()
 
     def _provider_attempts(self, build, preferred: str | None = None) -> list[tuple[str, str]]:
         """Every provider that can build a URL, the preferred one first.
