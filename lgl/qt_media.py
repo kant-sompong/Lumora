@@ -378,6 +378,8 @@ class HeroPanel(HeroBanner):
         column = QVBoxLayout(self)
         column.setContentsMargins(64, 64, 64, 28)
         column.setSpacing(8)
+        #: The title block, so a page can slot the ratings in under the year.
+        self.body = column
         column.addStretch(1)
         self.kind = label("", "heroKind")
         column.addWidget(self.kind)
@@ -1324,11 +1326,13 @@ class MediaPage(QWidget):
         column.addLayout(top)
         self.detail_hero = HeroPanel()
         column.addWidget(self.detail_hero)
-        # Under the title and the year line, as the contract places it.
+        # Under the title and the year line, above the overview and the
+        # buttons: scores describe the title, they are not an action.
         self.ratings_row = RatingsRow(
             self, theme=self._theme_name(), cache_dir=platform_support.cache_dir(),
         )
-        column.addWidget(self.ratings_row)
+        body = self.detail_hero.body
+        body.insertWidget(body.indexOf(self.detail_hero.overview), self.ratings_row)
         # Hidden until TMDB says this title has a trailer we can embed. It
         # sits in the hero action row with Watch Now and My List, not beside
         # Back, where a viewing action does not belong.
@@ -1480,7 +1484,7 @@ class MediaPage(QWidget):
             self._pages_bits["movies"][1].set_cards(movies)
             self._pages_bits["tv"][1].set_cards(shows)
             self._render_history()
-            self._load_posters()
+            self._load_posters_when_shown()
             self.refresh_home()
 
         run_async(work, done, lambda exc: self._note_error(exc))
@@ -1499,9 +1503,14 @@ class MediaPage(QWidget):
             )
             self._anime_grid.set_cards(cards)
             self._anime_empty.setVisible(not cards)
-            self._load_posters()
+            self._load_posters_when_shown()
 
         run_async(work, done, lambda exc: self._note_error(exc))
+
+    def showEvent(self, event) -> None:  # noqa: N802 - Qt naming
+        """Artwork catches up when the page is first shown or shown again."""
+        super().showEvent(event)
+        self._load_posters()
 
     def _note_error(self, exc: object) -> None:
         window = self.window()
@@ -1510,6 +1519,16 @@ class MediaPage(QWidget):
             toast.show_message(str(exc), error=True)
 
     # posters ---------------------------------------------------------------
+    def _load_posters_when_shown(self) -> None:
+        """Bulk artwork waits until the page is on screen.
+
+        A hidden stack page used to start dozens of downloads at window
+        construction and keep the worker pool busy long after the window was
+        gone; ``showEvent`` picks the pictures up when the page is opened.
+        """
+        if self.isVisible():
+            self._load_posters()
+
     def _load_posters(self) -> None:
         for card in self._all_cards():
             if not card.poster_url or card.key in self._pix:
@@ -1678,7 +1697,7 @@ class MediaPage(QWidget):
             else:
                 self._anilist_match = None
                 self.anilist_btn.setVisible(False)
-            self._load_posters()
+            self._load_posters_when_shown()
 
         run_async(work, done, lambda exc: self._note_error(exc))
 
@@ -1737,7 +1756,7 @@ class MediaPage(QWidget):
         self._list_head.count.setText(str(len(cards)))
         self._list_grid.set_cards(cards)
         self._list_empty.setVisible(not cards)
-        self._load_posters()
+        self._load_posters_when_shown()
 
     def _history(self) -> list[dict]:
         if self.settings is None:
@@ -1752,7 +1771,7 @@ class MediaPage(QWidget):
         carousel = getattr(self, "_home_carousels", {}).get("continue")
         if carousel is not None:
             carousel.set_cards(cards[:14])
-        self._load_posters()
+        self._load_posters_when_shown()
 
     # detail / playback -----------------------------------------------------
     def open_card(self, card: object) -> None:

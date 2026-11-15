@@ -63,6 +63,20 @@ def link_is_file(record: object) -> bool:
     )
 
 
+def needs_reclassification(record: object) -> bool:
+    """A stored ``verified`` that never came with a file classification.
+
+    ``verified`` is only meaningful next to ``url_kind == "file"``; the pair
+    is what a probe writes.  A record holding the word alone cannot be
+    downloaded and is not quietly re-probed from the Download button either -
+    the user is asked to run Check, which records both fields again.
+    """
+    return (
+        str(getattr(record, "check_status", "")) == "verified"
+        and not link_is_file(record)
+    )
+
+
 def http_links(store: CatalogStore, game_key: str) -> list[MirrorRecord]:
     """The recorded http(s) links of one game, in the order the importer stored."""
     try:
@@ -201,6 +215,14 @@ def download_mirror(
 
     if link_is_file(record):
         proceed()
+        return
+
+    if needs_reclassification(record):
+        on_message(
+            "That link is marked verified but was never classified as a file. "
+            "Press Check to probe it again.",
+            True,
+        )
         return
 
     on_message(f"Checking {getattr(record, 'host', '') or 'the link'} before downloading…", False)
@@ -679,6 +701,7 @@ __all__ = [
     "CatalogMagnetsSection",
     "NOT_AFFILIATED",
     "check_mirror",
+    "needs_reclassification",
     "confirm_download",
     "download_mirror",
     "http_links",

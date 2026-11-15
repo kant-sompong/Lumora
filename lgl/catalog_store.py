@@ -99,6 +99,23 @@ def _as_int(value: Any, default: int = 0) -> int:
     return max(0, value)
 
 
+def _coherent_status(status: Any, kind: Any) -> str:
+    """The stored check status, with an unclassifiable "verified" dropped.
+
+    ``verified`` is the probe's word for "a file response was seen", and a
+    probe always records the kind beside it.  A record that carries the word
+    without the classification (an older catalogue, or one imported with a
+    status and no kind) cannot be trusted as a download, so it loads as
+    ``unchecked`` and is probed again on request.
+    """
+    text = str(status or "unchecked")
+    if text not in MirrorRecord.STATUSES:
+        return "unchecked"
+    if text == "verified" and str(kind or "") != "file":
+        return "unchecked"
+    return text
+
+
 @dataclass
 class CatalogGame:
     """One imported game record, keyed by its source and source game id."""
@@ -407,9 +424,13 @@ class MirrorRecord:
             version=meta.clean_text(raw.get("version"), 60),
             discovered_at=_as_float(raw.get("discovered_at")),
             last_checked=_as_float(raw.get("last_checked")),
+            # A "verified" status only means something next to the file
+            # classification the probe stored with it.  Records written before
+            # ``url_kind`` existed (or imported with a status from the scraper)
+            # carry the word alone, so they load as unchecked and get probed
+            # again instead of being offered to the download manager.
             check_status=(
-                str(raw.get("check_status"))
-                if str(raw.get("check_status")) in cls.STATUSES else "unchecked"
+                _coherent_status(raw.get("check_status"), raw.get("url_kind"))
             ),
             requires_auth=bool(raw.get("requires_auth", False)),
             label=meta.clean_text(raw.get("label"), 260),
