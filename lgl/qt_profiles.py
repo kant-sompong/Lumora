@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
 )
 
 from .profiles import DEFAULT_ID, Profiles
+from .qt_widgets import style_dialog
 
 
 class ProfilesDialog(QDialog):
@@ -32,6 +33,8 @@ class ProfilesDialog(QDialog):
         self.on_switch = on_switch
 
         layout = QVBoxLayout(self)
+
+        style_dialog(self)
         heading = QLabel("PROFILES", self)
         heading.setObjectName("detailEyebrow")
         layout.addWidget(heading)

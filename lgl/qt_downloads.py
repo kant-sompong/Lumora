@@ -33,7 +33,7 @@ from . import external_dm, platform_support
 from .archive import ArchiveFile, ArchiveItem
 from .downloader import DownloadManager, DownloadStatus, TaskSnapshot
 from .library import game_folder, write_manifest
-from .qt_widgets import EmptyState, Toast, clear_layout, label, run_async
+from .qt_widgets import EmptyState, Toast, clear_layout, label, run_async, style_dialog
 from .util import AppError, check_download_dir, human_eta, human_size, human_speed
 
 #: Row refreshes closer together than this are merged into one.
@@ -672,8 +672,7 @@ class FilePickDialog(QDialog):
         self.setMinimumSize(520, 420)
         self._files = list(files)
         col = QVBoxLayout(self)
-        col.setContentsMargins(20, 18, 20, 16)
-        col.setSpacing(10)
+        style_dialog(self)
         head = label(title, "pageTitle", wrap=True)
         col.addWidget(head)
         col.addWidget(label("Game files are ticked. Tick the extras only if you want them.",

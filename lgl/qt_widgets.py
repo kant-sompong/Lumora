@@ -16,6 +16,7 @@ from typing import Callable, Iterable, Sequence
 
 from PySide6.QtCore import (
     QEasingCurve,
+    QEvent,
     QObject,
     QPoint,
     QPropertyAnimation,
@@ -42,6 +43,9 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import (
     QAbstractButton,
+    QAbstractItemView,
+    QComboBox,
+    QDialogButtonBox,
     QFrame,
     QGraphicsDropShadowEffect,
     QGridLayout,
@@ -49,9 +53,14 @@ from PySide6.QtWidgets import (
     QLabel,
     QLayout,
     QLayoutItem,
+    QLineEdit,
+    QListWidget,
+    QPlainTextEdit,
     QPushButton,
     QScrollArea,
     QSizePolicy,
+    QSpinBox,
+    QTextEdit,
     QVBoxLayout,
     QWidget,
 )
@@ -898,6 +907,100 @@ class FieldError(QLabel):
         self.setVisible(False)
 
 
+#: The inputs a sheet offers as its first Tab stop, most specific first.
+_FIRST_FOCUS_KINDS = (
+    QLineEdit,
+    QComboBox,
+    QSpinBox,
+    QPlainTextEdit,
+    QTextEdit,
+    QListWidget,
+    QAbstractItemView,
+)
+
+
+def _sheet_first_focus(dialog: QWidget) -> QWidget | None:
+    """The first usable input in a sheet, if it has one."""
+    for kind in _FIRST_FOCUS_KINDS:
+        for child in dialog.findChildren(kind):
+            if not child.isVisible() or not child.isEnabled():
+                continue
+            if child.focusPolicy() & Qt.TabFocus:
+                return child
+    return None
+
+
+def _sheet_primary(dialog: QWidget) -> QPushButton | None:
+    """The one primary button a sheet sends Enter to.
+
+    ``#suggested`` is the stylesheet's primary, so it wins; otherwise the
+    button box's accept role is the primary, which is what a dialog means by
+    Save, Apply or OK.
+    """
+    buttons = [
+        button for button in dialog.findChildren(QPushButton)
+        if button.isVisible() and button.isEnabled()
+    ]
+    for button in buttons:
+        if button.objectName() == "suggested":
+            return button
+    box = dialog.findChild(QDialogButtonBox)
+    if box is not None:
+        standard = QDialogButtonBox.StandardButton
+        for role in (standard.Ok, standard.Save, standard.Apply, standard.Yes):
+            button = box.button(role)
+            if isinstance(button, QPushButton) and button.isVisible():
+                return button
+    return None
+
+
+class _SheetFocus(QObject):
+    """Puts the cursor in the right place the first time a sheet is shown.
+
+    The widgets do not all exist when the dialog is built, so this waits for
+    the show event: start on the first input (or the primary button), and make
+    the primary the default button, which is what Enter triggers.
+    """
+
+    def __init__(self, dialog: QWidget, first: QWidget | None) -> None:
+        super().__init__(dialog)
+        self._dialog = dialog
+        self._first = first
+
+    def eventFilter(self, obj: QObject, event: QEvent) -> bool:  # noqa: N802 - Qt API
+        if event.type() == QEvent.Show:
+            self.apply()
+        return False
+
+    def apply(self) -> None:
+        dialog = self._dialog
+        primary = _sheet_primary(dialog)
+        if primary is not None:
+            for other in dialog.findChildren(QPushButton):
+                if other is not primary and other.isDefault():
+                    other.setDefault(False)
+            primary.setDefault(True)
+        target = self._first if self._first is not None else _sheet_first_focus(dialog)
+        if target is None:
+            target = primary
+        if target is not None and target.isVisible():
+            target.setFocus()
+        else:
+            # A sheet with nothing focusable still takes the keyboard, so
+            # Escape closes it without a click first.
+            dialog.setFocus()
+
+
+def literal(text: str) -> str:
+    """Return ``text`` for a widget that must show a literal ampersand.
+
+    Qt reads a single ``&`` in a button or label as a mnemonic: it hides the
+    ampersand and underlines the next character ("Movies & TV" became
+    "Movies _TV").  Doubling it is the documented way to ask for a plain one.
+    """
+    return text.replace("&", "&&")
+
+
 def style_dialog(
     dialog: QWidget,
     *,
@@ -905,11 +1008,12 @@ def style_dialog(
     gap: int = design_components.DIALOG_GAP,
     first: QWidget | None = None,
 ) -> None:
-    """Give a sheet the shared surface, padding, gap and starting focus.
+    """Give a sheet the shared surface, padding, gap, focus and default button.
 
     Qt ignores padding on a QDialog's own style rule, so the padding and the
     gap are applied to the dialog's layout here, from the same constants the
-    stylesheet uses for the radius and the border.
+    stylesheet uses for the radius and the border.  The starting focus and the
+    Enter target are wired on the first show, when every widget exists.
     """
     dialog.setObjectName("sheet")
     dialog.setAttribute(Qt.WA_StyledBackground, True)
@@ -917,8 +1021,11 @@ def style_dialog(
     if layout is not None:
         layout.setContentsMargins(padding, padding, padding, padding)
         layout.setSpacing(gap)
-    if first is not None:
-        QTimer.singleShot(0, first.setFocus)
+    helper = _SheetFocus(dialog, first)
+    dialog._sheet_focus = helper  # keep the filter alive with its dialog
+    dialog.installEventFilter(helper)
+    if dialog.isVisible():
+        QTimer.singleShot(0, helper.apply)
 
 
 class CardStateMixin:
@@ -1337,6 +1444,7 @@ __all__ = [
     "HeroBanner",
     "IconButton",
     "Popover",
+    "literal",
     "RailButton",
     "ScrollRow",
     "SectionTitle",

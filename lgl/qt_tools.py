@@ -27,7 +27,7 @@ from PySide6.QtWidgets import (
 )
 
 from . import __version__, backup, diagnostics, platform_support, tool_panels
-from .qt_widgets import run_async
+from .qt_widgets import run_async, style_dialog
 from .settings import Settings
 
 
@@ -81,6 +81,8 @@ class ToolsDialog(QDialog):
         self._panel = tool_panels.Panel()
 
         layout = QVBoxLayout(self)
+
+        style_dialog(self)
         body = QHBoxLayout()
         self._nav = QListWidget()
         self._nav.setFixedWidth(200)

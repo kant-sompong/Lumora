@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
 )
 
 from .collections import CollectionStore
+from .qt_widgets import style_dialog
 
 
 def _title(entry: Any) -> str:
@@ -50,6 +51,8 @@ class CollectionsDialog(QDialog):
         self.entries = list(entries)
 
         layout = QVBoxLayout(self)
+
+        style_dialog(self)
         heading = QLabel("COLLECTIONS", self)
         heading.setObjectName("detailEyebrow")
         layout.addWidget(heading)
