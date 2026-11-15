@@ -254,6 +254,20 @@ def _screen_rect(app):
     return app.primaryScreen().availableGeometry()
 
 
+def _expected_position(app, picker):
+    """Where the panel should be, from the same rule the picker uses.
+
+    The expected side depends on the screen the runner has, so the test asks
+    ``panel_geometry`` rather than assuming "below": on a short CI desktop the
+    panel legitimately flips above.
+    """
+    anchor = QRect(picker.mapToGlobal(qt_season_picker.QPoint(0, 0)), picker.size())
+    point, height = qt_season_picker.panel_geometry(
+        anchor, picker.panel.size(), _screen_rect(app)
+    )
+    return point, height
+
+
 def test_the_panel_hangs_directly_below_the_header(app):
     picker = _floating_picker(app, 100, 100)
     anchor = picker.mapToGlobal(qt_season_picker.QPoint(0, 0))
@@ -261,9 +275,13 @@ def test_the_panel_hangs_directly_below_the_header(app):
     pump(app, 0.1)
 
     panel = picker.panel
-    assert abs(panel.pos().x() - anchor.x()) <= 4
-    assert abs(panel.pos().y() - (anchor.y() + picker.height() + 4)) <= 4
+    expected, height = _expected_position(app, picker)
+    assert abs(panel.pos().x() - expected.x()) <= 4
+    assert abs(panel.pos().y() - expected.y()) <= 4
+    assert abs(panel.height() - height) <= 4
     assert panel.height() <= PANEL_MAX_HEIGHT
+    # 100 px from the top there is room below on any desktop: no flip here.
+    assert panel.pos().y() >= anchor.y()
     picker.close_panel()
     picker.close()
 
@@ -371,8 +389,9 @@ def test_the_panel_follows_the_window_when_it_moves(app):
     anchor_after = picker.mapToGlobal(qt_season_picker.QPoint(0, 0))
     assert anchor_after != anchor_before
     assert picker.panel.pos() != before
-    assert abs(picker.panel.pos().x() - anchor_after.x()) <= 4
-    assert abs(picker.panel.pos().y() - (anchor_after.y() + picker.height() + 4)) <= 4
+    expected, _height = _expected_position(app, picker)
+    assert abs(picker.panel.pos().x() - expected.x()) <= 4
+    assert abs(picker.panel.pos().y() - expected.y()) <= 4
     picker.close_panel()
     host.close()
 
