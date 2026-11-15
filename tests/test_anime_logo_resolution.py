@@ -15,7 +15,7 @@ import types
 
 import pytest
 
-from lgl import anipm, movies_ui, tmdb
+from lgl import anipm, tmdb
 
 KEY = "0123456789abcdef0123456789abcdef"
 
@@ -85,7 +85,14 @@ def client(
 
 
 def tmdb_kind(item: object) -> str:
-    """The GTK page's own answer, bound to a bare object."""
+    """The GTK page's own answer, bound to a bare object.
+
+    The Windows job runs this file too and has no GTK, so the import happens
+    here: the tests that need the page skip instead of failing the job.
+    """
+    pytest.importorskip("gi")
+    from lgl import movies_ui  # noqa: PLC0415 - GTK is optional here
+
     return types.MethodType(
         movies_ui.MoviesWindow._anime_tmdb_kind, object()
     )(item)
