@@ -13,7 +13,7 @@ from math import ceil
 from pathlib import Path
 from typing import Callable, Iterable, Sequence
 
-from PySide6.QtCore import QRect, QRectF, QSize, Qt, QTimer, Signal
+from PySide6.QtCore import QLocale, QRect, QRectF, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import (
     QColor,
     QFontMetrics,
@@ -50,6 +50,7 @@ from . import (
     view_prefs,
 )
 from . import ratings, recently_viewed
+from .design_tokens import TOKENS
 from .qt_icons import icon
 from .qt_feed import PosterRow, ScheduleStrip, ThreeColumnList
 from .qt_library import ArtworkBackdrop
@@ -104,6 +105,10 @@ class Card:
     kind: str = "movie"       # movie | tv | anime
     tmdb_id: int = 0
     mal_id: int = 0
+    #: Anime only: the MAL media type (``"tv"``/``"movie"``/``"ona"``...) and the
+    #: episode count together decide which TMDB side to ask for wide art.
+    episodes: int = 0
+    media_type: str = ""
 
     @property
     def noun(self) -> str:
@@ -139,6 +144,8 @@ def card_from_anime(item: object) -> Card:
         rating=getattr(item, "rating", None),
         kind="anime",
         mal_id=int(getattr(item, "id", 0) or 0),
+        episodes=int(getattr(item, "episodes", 0) or 0),
+        media_type=str(getattr(item, "media_type", "") or ""),
     )
 
 
@@ -426,6 +433,38 @@ class HeroPanel(HeroBanner):
         actions.addWidget(self.save)
         actions.addStretch(1)
         column.addLayout(actions)
+        self._sync_plate_text()
+
+    #: The hero keeps its dark look with no art, so the labels go light.
+    _PLATE_QSS = (
+        "QLabel#heroKind, QLabel#heroMeta, QLabel#heroTitle, QLabel#heroOverview"
+        " {{ color: {text}; }}"
+        " QPushButton#heroAction {{ color: {text2}; }}"
+    ).format(text=TOKENS["dark"]["text"], text2=TOKENS["dark"]["text2"])
+
+    def set_pixmap(self, pix: QPixmap | None) -> None:
+        super().set_pixmap(pix)
+        self._sync_plate_text()
+
+    def _sync_plate_text(self) -> None:
+        """Light labels while the hero has no art to read them against."""
+        wanted = self._PLATE_QSS if self._pixmap is None else ""
+        if self.styleSheet() != wanted:
+            self.setStyleSheet(wanted)
+
+    def paintEvent(self, event) -> None:  # noqa: N802 - Qt's name
+        """Keep a bare hero dark, so a white logo stays readable.
+
+        With wide art the backdrop covers the hero; with none, ``HeroBanner``
+        fills the theme surface, which is near-white in the light theme.  A
+        title logo is white in both themes, so a hero without art gets the
+        dark page colour behind it instead of the light surface.
+        """
+        super().paintEvent(event)
+        if self._pixmap is not None:
+            return
+        painter = QPainter(self)
+        painter.fillRect(self.rect(), QColor(TOKENS["dark"]["bg"]))
 
     def show_card(self, card: Card, *, in_list: bool = False) -> None:
         rating = rating_text(card.rating)
@@ -1846,13 +1885,37 @@ class MediaPage(QWidget):
         if card.kind in ("movie", "tv") and card.tmdb_id > 0 and client is not None:
             self._fetch_detail_images(card, client, token)
         elif card.kind == "anime":
-            self._fetch_anime_backdrop(card, token)
+            self._fetch_anime_images(card, token)
+
+    def _logo_language(self) -> str | None:
+        """The two-letter display language a logo should be in, if any.
+
+        Lumora has no display-language setting - ``anime_language`` picks the
+        audio track, not the interface - so the system locale is the only real
+        answer here.  ``tmdb._best_logo`` then falls back to English and to a
+        language-neutral logo by itself, which is the order the detail page
+        wants.
+        """
+        tag = str(QLocale.system().name() or "").split("_")[0]
+        return tag.strip().lower() or None
+
+    def _client_images(self, kind: str, tmdb_id: int) -> object:
+        """Wide art in the display language, when one is known.
+
+        The keyword is left off the call otherwise, so a client that predates
+        the language argument (or a test stub without it) keeps working.
+        """
+        client = getattr(self, "_tmdb", None)
+        language = self._logo_language()
+        if language:
+            return client.images(kind, tmdb_id, language=language)  # type: ignore[attr-defined]
+        return client.images(kind, tmdb_id)  # type: ignore[attr-defined]
 
     def _fetch_detail_images(self, card: Card, client: object, token: int) -> None:
         """The title's own logo and textless backdrop, if TMDB has them."""
 
         def work() -> object:
-            return client.images(card.kind, card.tmdb_id)  # type: ignore[attr-defined]
+            return self._client_images(card.kind, card.tmdb_id)
 
         def done(result: object) -> None:
             if token != getattr(self, "_detail_art_token", 0):
@@ -1873,23 +1936,52 @@ class MediaPage(QWidget):
 
         run_async(work, done, lambda _exc: None)
 
-    def _fetch_anime_backdrop(self, card: Card, token: int) -> None:
-        """Anime has no TMDB id, so the title is looked up by name."""
+    def _anime_tmdb_kind(self, card: Card) -> str:
+        """A series anime answers to TMDB's TV side, a film to its movie one.
+
+        Anime titles come from MyAnimeList, which knows the media type and the
+        episode count but not a TMDB id.  A film is a film; anything else - a
+        series, an OVA, or a title MAL has not typed yet - asks the TV side,
+        which is where almost every anime lives and what the previous backdrop
+        lookup did.
+        """
+        media_type = str(getattr(card, "media_type", "") or "").strip().lower()
+        if media_type in ("movie", "film"):
+            return "movie"
+        return "tv"
+
+
+    def _fetch_anime_images(self, card: Card, token: int) -> None:
+        """Anime has no TMDB id, so one title lookup fetches logo and backdrop.
+
+        ``tmdb_images_for_title`` is the shared, cached title-based lookup the
+        Linux page uses: it does the search, picks the exact match and asks for
+        the wide art in the display language, so this page adds no second
+        lookup, cache or provider.
+        """
         client = getattr(self, "_tmdb", None)
 
-        def work() -> str:
-            return tmdb.tmdb_backdrop_for_title(
-                card.title, card.year, client=client
+        def work() -> object:
+            return tmdb.tmdb_images_for_title(
+                card.title, card.year, self._anime_tmdb_kind(card),
+                client=client, language=self._logo_language(),
             )
 
-        def done(url: object) -> None:
+        def done(result: object) -> None:
             if token != getattr(self, "_detail_art_token", 0):
                 return
-            found = str(url or "")
-            if found:
+            backdrop = str(getattr(result, "backdrop_url", "") or "")
+            if backdrop:
                 self._apply_detail_backdrop(
-                    card, found, "backdrop", token,
+                    card, backdrop, "backdrop", token,
                     cache_key=f"backdrop-anime-{card.key}",
+                )
+            logo = str(getattr(result, "logo_url", "") or "")
+            if logo:
+                self._load_image(
+                    logo,
+                    f"logo-anime-{card.key}",
+                    lambda pix: self._apply_detail_logo(pix, card, token),
                 )
 
         run_async(work, done, lambda _exc: None)
