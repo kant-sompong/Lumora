@@ -58,7 +58,7 @@ from .qt_library import ArtworkBackdrop
 from .qt_player import EmbeddedPlayer, make_player
 from .qt_ratings import RatingsRow
 from .qt_season_picker import SeasonPicker
-from . import design_components
+from . import design_components, qt_theme
 from .qt_widgets import (
     CardStateMixin,
     CoverArt,
@@ -112,6 +112,8 @@ class Card:
     #: episode count together decide which TMDB side to ask for wide art.
     episodes: int = 0
     media_type: str = ""
+    #: TMDB flags this title adult; the card marks it with an "18+" badge.
+    adult: bool = False
 
     @property
     def noun(self) -> str:
@@ -134,6 +136,7 @@ def card_from_tmdb(item: object) -> Card:
         rating=getattr(item, "rating", None),
         kind=str(getattr(item, "kind", "movie") or "movie"),
         tmdb_id=int(getattr(item, "tmdb_id", 0) or 0),
+        adult=bool(getattr(item, "adult", False)),
     )
 
 
@@ -228,6 +231,37 @@ def rating_text(rating: float | None) -> str:
 # --------------------------------------------------------------------------
 
 
+class AdultBadge(QLabel):
+    """The 18+ mark on a card whose TMDB entry is flagged adult.
+
+    Styled from the shared palette here rather than in the app stylesheet so
+    the badge travels with the card that owns it.
+    """
+
+    def __init__(self, parent: QWidget) -> None:
+        super().__init__("18+", parent)
+        self.setObjectName("adultBadge")
+        self.setToolTip("Marked adult (18+) by TMDB")
+        # The card underneath stays clickable: the badge is a label, not a
+        # button, and never swallows the click that opens the title.
+        self.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+        self.setStyleSheet(self._sheet())
+        self.adjustSize()
+        self.move(6, 6)
+
+    def _sheet(self) -> str:
+        dark = self.palette().window().color().lightness() < 128
+        colours = qt_theme.palette("dark" if dark else "light")
+        return (
+            "QLabel#adultBadge {"
+            f" background-color: {colours['danger_text']};"
+            f" color: {colours['on_accent']};"
+            " border-radius: 5px; padding: 1px 5px;"
+            " font-size: 10px; font-weight: 700;"
+            "}"
+        )
+
+
 class PosterCard(CardStateMixin, QFrame):
     """Poster (2:3) with title and meta below, used by grids and carousels."""
 
@@ -255,6 +289,8 @@ class PosterCard(CardStateMixin, QFrame):
             radius=design_components.POSTER_RADIUS, crop=True, title=card.title,
         )
         column.addWidget(self.cover)
+        if card.adult:
+            self.adult_badge = AdultBadge(self.cover)
 
         self.title = ElideLabel(card.title)
         self.title.setObjectName("posterTitle")

@@ -747,6 +747,22 @@ def _rating_text(rating) -> str:
         return ""
 
 
+def _adult_badge() -> "Gtk.Label":
+    """The "18+" mark for a card whose TMDB entry is flagged adult.
+
+    Same class as the badge the anime pages already show, so the two cannot
+    drift apart in colour or weight.
+    """
+    badge = Gtk.Label(label="18+")
+    badge.set_halign(Gtk.Align.START)
+    badge.set_valign(Gtk.Align.START)
+    badge.set_margin_top(7)
+    badge.set_margin_start(7)
+    badge.get_style_context().add_class("movie-adult-badge")
+    badge.set_tooltip_text("Marked adult (18+) by TMDB")
+    return badge
+
+
 def _tmdb_page_url(item) -> str:
     kind = "tv" if getattr(item, "kind", "") == "tv" else "movie"
     return f"https://www.themoviedb.org/{kind}/{int(getattr(item, 'tmdb_id', 0))}"
@@ -867,6 +883,9 @@ class MediaCard(Gtk.Button):
             badge.get_style_context().add_class("movie-card-rating")
             badge.set_tooltip_text(f"Rated {item.rating:g} out of 10")
             holder.add_overlay(badge)
+        # The rating sits top-right, so the adult mark takes the free corner.
+        if bool(getattr(item, "adult", False)):
+            holder.add_overlay(_adult_badge())
         box.pack_start(holder, False, False, 0)
 
         title = Gtk.Label(label=item.title, xalign=0)
@@ -919,7 +938,13 @@ class PosterTile(Gtk.FlowBoxChild):
         # The poster keeps its 2:3 shape; a long title ellipsizes instead of
         # stretching the artwork (which made missing posters look like slabs).
         poster.set_halign(Gtk.Align.START)
-        box.pack_start(poster, False, False, 0)
+        if bool(getattr(item, "adult", False)):
+            tiles = Gtk.Overlay()
+            tiles.add(poster)
+            tiles.add_overlay(_adult_badge())
+            box.pack_start(tiles, False, False, 0)
+        else:
+            box.pack_start(poster, False, False, 0)
 
         title = Gtk.Label(label=item.title, xalign=0)
         title.set_ellipsize(Pango.EllipsizeMode.END)
