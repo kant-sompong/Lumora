@@ -179,6 +179,190 @@ def css_variables(resolved: str, *, accent: str | None = None) -> str:
     return "\n".join(lines) + "\n"
 
 
+
+def component_css() -> str:
+    """The card, button, field and sheet rules, built from the shared numbers.
+
+    GTK's CSS has no variables for lengths, so the component metrics cannot be
+    written in ``style.css`` without copying them by hand.  This renders them
+    from :mod:`lgl.design_components` instead: the Windows stylesheet and this
+    one are then the same table, and a changed number moves both.  Colours still
+    come from the palette above, so the sheet stays token-only.
+    """
+    from . import design_components as components
+    from .design_tokens import TEXT_SIZES
+
+    lines: list[str] = [
+        "/* Generated from lgl/design_components.py - do not edit by hand. */",
+        "/* Card, button, field and sheet metrics, shared with the Windows app. */",
+    ]
+
+    def rule(selectors: str, **declarations: object) -> None:
+        body = " ".join(
+            f"{name.replace('_', '-')}: {value};" for name, value in declarations.items()
+        )
+        lines.append(f"{selectors} {{ {body} }}")
+
+    # -- buttons -----------------------------------------------------------
+    kinds = ", ".join(f"button.btn-{kind}" for kind in components.BUTTON_KINDS)
+    kind_focus = ", ".join(
+        f"button.btn-{kind}:focus-visible" for kind in components.BUTTON_KINDS
+    )
+    rule(
+        kinds,
+        min_height=f"{components.BUTTON_CONTENT}px",
+        padding=f"0 {components.BUTTON_PADDING_X}px",
+        border=f"{components.BORDER_WIDTH}px solid transparent",
+        border_radius=f"{components.BUTTON_RADIUS}px",
+        font_size=f"{components.BUTTON_LABEL_SIZE}px",
+        font_weight="600",
+    )
+    rule(kind_focus, outline="2px solid @accent", outline_offset="2px")
+
+    rule(
+        "button.btn-primary",
+        background_color="@accent_fill",
+        border_color="@accent_fill",
+        color="@on_accent",
+    )
+    rule(
+        "button.btn-primary:hover",
+        background_color="@accent_fill_hover",
+        border_color="@accent_fill_hover",
+    )
+    rule(
+        "button.btn-primary:active",
+        background_color="@accent_fill_hover",
+        border_color="@on_accent",
+        box_shadow="none",
+    )
+    rule(
+        "button.btn-primary:disabled",
+        background_color="alpha(@accent_fill, 0.40)",
+        border_color="transparent",
+        color="alpha(@on_accent, 0.70)",
+    )
+    rule("button.btn-primary:focus-visible", outline_color="@fg")
+
+    rule(
+        "button.btn-secondary",
+        background_color="alpha(@fg, 0.06)",
+        border_color="@divider",
+        color="@fg",
+    )
+    rule("button.btn-secondary:hover", background_color="alpha(@fg, 0.12)")
+    rule(
+        "button.btn-secondary:active",
+        background_color="alpha(@fg, 0.16)",
+        box_shadow="none",
+    )
+    rule(
+        "button.btn-secondary:disabled",
+        background_color="alpha(@fg, 0.03)",
+        color="@faint",
+    )
+
+    rule(
+        "button.btn-quiet",
+        background_color="transparent",
+        border_color="transparent",
+        color="@muted",
+    )
+    rule("button.btn-quiet:hover", background_color="alpha(@fg, 0.08)", color="@fg")
+    rule("button.btn-quiet:active", background_color="alpha(@fg, 0.12)", color="@fg")
+    rule("button.btn-quiet:disabled", background_color="transparent", color="@faint")
+
+    rule(
+        "button.btn-danger",
+        background_color="transparent",
+        border_color="alpha(@danger, 0.55)",
+        color="@danger",
+    )
+    rule("button.btn-danger:hover", background_color="alpha(@danger, 0.12)")
+    rule("button.btn-danger:active", background_color="alpha(@danger, 0.18)")
+    rule(
+        "button.btn-danger:disabled",
+        color="@faint",
+        border_color="alpha(@danger, 0.25)",
+    )
+
+    rule(
+        "button.btn-small",
+        min_height=f"{components.BUTTON_SMALL_CONTENT}px",
+        padding=f"0 {components.INPUT_PADDING_X}px",
+        font_size=f"{TEXT_SIZES['body']}px",
+    )
+    rule(
+        "button.btn-icon",
+        min_width=f"{components.ICON_BUTTON_CONTENT}px",
+        min_height=f"{components.ICON_BUTTON_CONTENT}px",
+        padding="0",
+        border_radius=f"{components.BUTTON_RADIUS}px",
+    )
+
+    # -- fields ------------------------------------------------------------
+    fields = "entry, entry.search, searchentry, spinbutton, combobox button"
+    rule(
+        fields,
+        min_height=f"{components.INPUT_CONTENT}px",
+        padding=f"0 {components.INPUT_PADDING_X}px",
+        border=f"{components.BORDER_WIDTH}px solid @divider",
+        border_radius=f"{components.INPUT_RADIUS}px",
+        background_color="@raised",
+        box_shadow="none",
+    )
+    rule(
+        "entry:focus, entry.search:focus, spinbutton:focus, combobox button:focus",
+        border_color="@accent",
+        box_shadow=(
+            f"inset 0 0 0 {components.INPUT_FOCUS_RING}px "
+            f"alpha(@accent, {components.INPUT_FOCUS_ALPHA:.2f})"
+        ),
+    )
+    rule(
+        "entry:disabled, spinbutton:disabled, combobox button:disabled",
+        background_color="@surface",
+        border_color="alpha(@divider, 0.60)",
+        color="@faint",
+    )
+    rule("entry placeholder", color="@faint")
+    rule(
+        "entry.field-error, entry.field-error:focus",
+        border_color="@danger",
+        box_shadow=(
+            f"inset 0 0 0 {components.INPUT_ERROR_BORDER}px alpha(@danger, 0.22)"
+        ),
+    )
+    rule(
+        "label.field-error-text",
+        color="@danger",
+        font_size=f"{components.FIELD_ERROR_SIZE}px",
+    )
+    indicator = components.CHECK_INDICATOR - 2 * components.BORDER_WIDTH
+    rule(
+        "checkbutton check, radiobutton radio",
+        min_width=f"{indicator}px",
+        min_height=f"{indicator}px",
+        border=f"{components.BORDER_WIDTH}px solid @divider",
+        border_radius=f"{components.CHECK_RADIUS}px",
+        background_color="@raised",
+        color="@fg",
+    )
+    rule(
+        "checkbutton check:checked, radiobutton radio:checked",
+        background_color="@accent",
+        border_color="@accent",
+        color="@on_accent",
+    )
+    rule(
+        "checkbutton:focus-visible check, radiobutton:focus-visible radio",
+        outline="2px solid @accent",
+        outline_offset="1px",
+    )
+
+    return "\n".join(lines) + "\n"
+
+
 _HEX = re.compile(r"^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$")
 _RGBA = re.compile(
     r"^rgba?\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*(?:,\s*([0-9.]+)\s*)?\)$"
@@ -308,6 +492,7 @@ __all__ = [
     "TYPE",
     "ThemeError",
     "contrast_ratio",
+    "component_css",
     "css_name",
     "css_variables",
     "is_dark_theme_name",
