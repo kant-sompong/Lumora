@@ -923,6 +923,11 @@ class MediaPage(QWidget):
         #: The seasons fetched in full: details carries only their summaries.
         self._season_cache: dict[int, object] = {}
         self._detail_seasons: tuple[object, ...] = ()
+        #: Bumped for every episode or season request; a reply carrying an older
+        #: number belongs to a show the page has already left.
+        self._episodes_token = 0
+        #: The card whose seasons the picker is listing.
+        self._seasons_card: Card | None = None
         self.stack.addWidget(self.player)
         self._player_return: QWidget | None = None
         self.show_section("home")
@@ -1820,6 +1825,7 @@ class MediaPage(QWidget):
         card = self._fullest_card(card)
         self._detail_card = card
         self._detail_seasons = ()
+        self._seasons_card = None
         self._season_cache.clear()
         self._playing_episode = None
         self._playing_card = None
@@ -2057,6 +2063,9 @@ class MediaPage(QWidget):
         self.spoiler_note.setVisible(bool(text))
 
     def _load_episodes(self, card: Card) -> None:
+        # Whatever season request is still in flight is for the show being left.
+        self._episodes_token += 1
+        token = self._episodes_token
         clear_layout(self.episode_column)
         self._sync_spoiler_note()
         client = getattr(self, "_tmdb", None)
@@ -2077,11 +2086,14 @@ class MediaPage(QWidget):
             return client.details("tv", card.tmdb_id)
 
         def done(result: object) -> None:
+            if token != self._episodes_token or card is not self._detail_card:
+                return
             seasons = [
                 season for season in (getattr(result, "seasons", ()) or ())
                 if int(getattr(season, "number", 0) or 0) > 0
             ]
             self._detail_seasons = tuple(seasons)
+            self._seasons_card = card
             self._apply_ratings(card, result, ratings.read_omdb_key(self.settings))
             self.episode_head.count.setText(f"{len(seasons)} seasons")
             self.season_combo.set_seasons(seasons, card.poster_url)
@@ -2136,12 +2148,18 @@ class MediaPage(QWidget):
         number = self.season_combo.currentData()
         if card is None or number is None:
             return
+        if getattr(self, "_seasons_card", None) is not card:
+            # The picker still lists the show just left, so its numbers are not
+            # this card's seasons and must not be fetched for it.
+            return
         self._show_season(card, int(number))
 
     def _show_season(self, card: Card, number: int) -> None:
         client = getattr(self, "_tmdb", None)
         if client is None:
             return
+        self._episodes_token += 1
+        token = self._episodes_token
         clear_layout(self.episode_column)
         self.episode_head.count.setText(f"Season {number} · loading…")
 
@@ -2149,6 +2167,8 @@ class MediaPage(QWidget):
             return client.season(card.tmdb_id, number)
 
         def done(result: object) -> None:
+            if token != self._episodes_token or card is not self._detail_card:
+                return
             self._season_cache[int(getattr(result, "number", number))] = result
             clear_layout(self.episode_column)
             episodes = list(getattr(result, "episodes", ()) or ())
