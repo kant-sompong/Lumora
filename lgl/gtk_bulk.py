@@ -350,6 +350,8 @@ class BulkActions:
         entry.set_activates_default(True)
         box.pack_start(entry, False, False, 0)
         dialog.show_all()
+        from . import ui as ui_module
+        ui_module.polish_message(dialog)
         response = dialog.run()
         tag = entry.get_text()
         remove = mode.get_active_id() == "remove"
@@ -385,6 +387,8 @@ class BulkActions:
         hint.set_max_width_chars(70)
         box.pack_start(hint, False, False, 0)
         dialog.show_all()
+        from . import ui as ui_module
+        ui_module.polish_message(dialog)
         response = dialog.run()
         name = entry.get_text()
         dialog.destroy()
@@ -412,6 +416,8 @@ class BulkActions:
         entry.set_activates_default(True)
         box.pack_start(entry, False, False, 0)
         dialog.show_all()
+        from . import ui as ui_module
+        ui_module.polish_message(dialog)
         response = dialog.run()
         value = entry.get_text()
         field_name = picker.get_active_id() or "year"
@@ -431,6 +437,8 @@ class BulkActions:
         )
         dialog.set_title("Bulk action")
         dialog.set_default_response(Gtk.ResponseType.OK)
+        from . import ui as ui_module
+        ui_module.polish_message(dialog)
         response = dialog.run()
         dialog.destroy()
         return response == Gtk.ResponseType.OK

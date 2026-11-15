@@ -388,10 +388,36 @@ def test_every_text_pair_meets_wcag_aa(label, foreground, background, mode):
     assert ratio >= theme.CONTRAST_TEXT, f"{label} is {ratio:.2f}:1 in {mode} mode"
 
 
-def test_no_text_pair_needs_to_be_pinned():
-    """The pinned clashes are gone; a new failure must fail this suite."""
-    for mode in ("dark", "light"):
-        palette = theme.PALETTES[mode]
-        for _label, foreground, background in PAIRS:
-            ratio = design_tokens.contrast_ratio(palette[foreground], palette[background])
-            assert ratio >= theme.CONTRAST_TEXT, f"{mode}: {foreground} on {background}"
+def blend(foreground: str, background: str, alpha: float) -> str:
+    """``foreground`` at ``alpha`` drawn over ``background``, as the eye sees it."""
+    top = [int(foreground[index:index + 2], 16) / 255 for index in (1, 3, 5)]
+    under = [int(background[index:index + 2], 16) / 255 for index in (1, 3, 5)]
+    mixed = [top[i] * alpha + under[i] * (1 - alpha) for i in range(3)]
+    return "#%02x%02x%02x" % tuple(round(channel * 255) for channel in mixed)
+
+
+#: The sheet paints some labels over a tint, not over a flat token, so those
+#: pairs are measured against the blended fill the eye actually sees.  The
+#: rows below are the ones this slice's sheets (and the rail) put ink on.
+FILL_PAIRS = (
+    ("danger button label on its hover tint", "danger_text", "danger", 0.05, "surface"),
+    ("selected card title on its fill", "text", "accent",
+     dc.CARD_SELECTED_ALPHA, "surface"),
+    ("selected card meta on its fill", "muted", "accent",
+     dc.CARD_SELECTED_ALPHA, "surface"),
+    ("secondary button label on its fill", "text", "text", 0.06, "surface"),
+    ("hovered card title on its fill", "text", "text", 0.035, "surface"),
+)
+
+
+@pytest.mark.parametrize("mode", ("dark", "light"))
+@pytest.mark.parametrize("label,foreground,fill,alpha,under", FILL_PAIRS)
+def test_every_label_over_a_tint_still_reads(
+    label, foreground, fill, alpha, under, mode
+):
+    palette = theme.PALETTES[mode]
+    background = blend(palette[fill], palette[under], alpha)
+    ratio = design_tokens.contrast_ratio(palette[foreground], background)
+    assert ratio >= theme.CONTRAST_TEXT, (
+        f"{label} is {ratio:.2f}:1 in {mode} mode on {background}"
+    )

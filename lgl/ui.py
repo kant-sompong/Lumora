@@ -811,6 +811,45 @@ def polish_dialog(dialog, *, primary=None, cancel=None,
     return focus
 
 
+def polish_message(dialog, *, primary_response=Gtk.ResponseType.OK,
+                   primary_kind: str = "primary"):
+    """Put a ``Gtk.MessageDialog`` on the sheet rules without touching its text.
+
+    A message dialog already carries its buttons, so the primary is looked up by
+    response value: OK, then Yes, then Close; Cancel, then No, is the quiet one.
+    The response that button belongs to becomes the dialog's default, so Enter
+    takes the action the sheet offers and Escape leaves.  A dialog a caller has
+    already polished keeps its own primary.
+    """
+    if dialog.get_style_context().has_class("sheet"):
+        return None
+    getter = getattr(dialog, "get_widget_for_response", None)
+    primary = None
+    for value in (primary_response, Gtk.ResponseType.YES, Gtk.ResponseType.CLOSE):
+        primary = getter(value) if getter is not None else None
+        if primary is not None:
+            break
+    cancel = None
+    if getter is not None:
+        for value in (Gtk.ResponseType.CANCEL, Gtk.ResponseType.NO):
+            cancel = getter(value)
+            if cancel is not None:
+                break
+    if cancel is primary:
+        cancel = None
+    if primary is None:
+        return None
+    response = dialog.get_response_for_widget(primary)
+    if response != Gtk.ResponseType.NONE:
+        primary_response = response
+    return polish_dialog(
+        dialog, primary=primary, cancel=cancel,
+        primary_response=primary_response,
+        cancel_response=Gtk.ResponseType.CANCEL,
+        primary_kind=primary_kind,
+    )
+
+
 def _first_field(widget):
     """The first focusable field anywhere in ``widget``, depth first.
 
@@ -1737,6 +1776,7 @@ class DownloadsPanel(Gtk.Box):
             "The queue entry is forgotten. Files already downloaded are kept; "
             "nothing on disk is deleted."
         )
+        polish_message(confirm)
         response = confirm.run()
         confirm.destroy()
         if response != Gtk.ResponseType.OK:
@@ -3042,6 +3082,7 @@ class LibraryDetail(Gtk.Box):
         dialog = MetadataDialog(self._view, self._entry)
         try:
             while True:
+                polish_message(dialog)
                 response = dialog.run()
                 if response != Gtk.ResponseType.OK:
                     break
@@ -3086,6 +3127,7 @@ class LibraryDetail(Gtk.Box):
         ok = dialog.get_widget_for_response(Gtk.ResponseType.OK)
         if ok is not None:
             ok.get_style_context().add_class("destructive-action")
+        polish_message(dialog)
         response = dialog.run()
         dialog.destroy()
         if response == Gtk.ResponseType.OK:
@@ -3980,6 +4022,7 @@ class LibraryView(Gtk.Box):
             "changed; nothing on disk is deleted."
         )
         dialog.set_default_response(Gtk.ResponseType.CANCEL)
+        polish_message(dialog)
         response = dialog.run()
         dialog.destroy()
         if response != Gtk.ResponseType.OK:
@@ -4364,6 +4407,7 @@ class LibraryView(Gtk.Box):
         dialog.set_current_name("library.json")
         if hasattr(dialog, "set_do_overwrite_confirmation"):
             dialog.set_do_overwrite_confirmation(True)
+        polish_message(dialog)
         response = dialog.run()
         path = dialog.get_filename()
         dialog.destroy()
@@ -4396,6 +4440,7 @@ class LibraryView(Gtk.Box):
         filter_json.set_name("JSON files")
         filter_json.add_pattern("*.json")
         dialog.add_filter(filter_json)
+        polish_message(dialog)
         response = dialog.run()
         path = dialog.get_filename()
         dialog.destroy()
@@ -4597,13 +4642,15 @@ class LibraryView(Gtk.Box):
             modal=True,
         )
         dialog.set_default_size(620, 460)
-        dialog.add_button("Close", Gtk.ResponseType.CLOSE)
+        close = dialog.add_button("Close", Gtk.ResponseType.CLOSE)
+        polish_dialog(dialog, primary=close,
+                      primary_response=Gtk.ResponseType.CLOSE)
         content = dialog.get_content_area()
-        content.set_spacing(8)
-        content.set_margin_start(18)
-        content.set_margin_end(18)
-        content.set_margin_top(14)
-        content.set_margin_bottom(14)
+        content.set_spacing(design_components.DIALOG_GAP)
+        content.set_margin_start(design_components.DIALOG_PADDING)
+        content.set_margin_end(design_components.DIALOG_PADDING)
+        content.set_margin_top(design_components.DIALOG_PADDING)
+        content.set_margin_bottom(design_components.DIALOG_PADDING)
 
         header = Gtk.Label(
             label=(
@@ -4646,6 +4693,7 @@ class LibraryView(Gtk.Box):
         content.pack_start(scroller, True, True, 0)
 
         content.show_all()
+        polish_message(dialog)
         dialog.run()
         dialog.destroy()
 
@@ -4656,13 +4704,15 @@ class LibraryView(Gtk.Box):
             modal=True,
         )
         dialog.set_default_size(680, 480)
-        dialog.add_button("Close", Gtk.ResponseType.CLOSE)
+        close = dialog.add_button("Close", Gtk.ResponseType.CLOSE)
+        polish_dialog(dialog, primary=close,
+                      primary_response=Gtk.ResponseType.CLOSE)
         content = dialog.get_content_area()
-        content.set_spacing(8)
-        content.set_margin_start(18)
-        content.set_margin_end(18)
-        content.set_margin_top(14)
-        content.set_margin_bottom(14)
+        content.set_spacing(design_components.DIALOG_GAP)
+        content.set_margin_start(design_components.DIALOG_PADDING)
+        content.set_margin_end(design_components.DIALOG_PADDING)
+        content.set_margin_top(design_components.DIALOG_PADDING)
+        content.set_margin_bottom(design_components.DIALOG_PADDING)
 
         note = Gtk.Label(
             label=(
@@ -4730,6 +4780,7 @@ class LibraryView(Gtk.Box):
 
         _spawn(work, success, failure)
         content.show_all()
+        polish_message(dialog)
         dialog.run()
         dialog.destroy()
 
@@ -4850,7 +4901,9 @@ class ScreenshotLightbox(Gtk.Dialog):
         self._pixbuf: GdkPixbuf.Pixbuf | None = None
         self._token = 0
         self.set_default_size(980, 680)
-        self.add_button("Close", Gtk.ResponseType.CLOSE)
+        close = self.add_button("Close", Gtk.ResponseType.CLOSE)
+        polish_dialog(self, primary=close,
+                      primary_response=Gtk.ResponseType.CLOSE)
         self.connect("response", lambda dialog, _r: dialog.destroy())
         self.connect("key-press-event", self._on_key_press)
 
@@ -6127,6 +6180,7 @@ class DetailsView(Gtk.Box):
             self._owner.fetch_poster,
         )
         self._lightbox = dialog
+        polish_message(dialog)
         dialog.run()
         self._lightbox = None
 
@@ -8673,6 +8727,7 @@ class MainWindow(Gtk.ApplicationWindow):
                 self._attach_catalog_artwork(record, chosen, source)
                 return
             dialog = ArtworkMatchDialog(self, title, candidates)
+            polish_message(dialog)
             response = dialog.run()
             picked = dialog.selected if response == Gtk.ResponseType.OK else None
             dialog.destroy()
@@ -9283,6 +9338,7 @@ class MainWindow(Gtk.ApplicationWindow):
                 "An aria2c path can be set in Settings → General. Leave it "
                 "empty to use the built-in torrent engine."
             )
+            polish_message(dialog)
             dialog.run()
             dialog.destroy()
             return
@@ -9301,6 +9357,7 @@ class MainWindow(Gtk.ApplicationWindow):
             "seeding is off, and only content you have the right to download "
             "should be fetched."
         )
+        polish_message(confirm)
         response = confirm.run()
         confirm.destroy()
         if response != Gtk.ResponseType.OK:
@@ -9369,6 +9426,7 @@ class MainWindow(Gtk.ApplicationWindow):
             dialog.set_current_folder(str(self._download_dir))
         except GLib.Error:
             pass
+        polish_message(dialog)
         response = dialog.run()
         path = dialog.get_filename()
         dialog.destroy()
@@ -9520,6 +9578,7 @@ class MainWindow(Gtk.ApplicationWindow):
         content.pack_start(check, False, False, 0)
 
         content.show_all()
+        polish_message(dialog)
         response = dialog.run()
         approved = check.get_active()
         dialog.destroy()
@@ -9600,16 +9659,19 @@ class MainWindow(Gtk.ApplicationWindow):
             text=title,
         )
         dialog.format_secondary_text(message)
+        polish_message(dialog)
         dialog.run()
         dialog.destroy()
 
     def show_website_sources(self) -> None:
         dialog = WebsiteSourcesDialog(self)
+        polish_message(dialog)
         dialog.run()
         dialog.destroy()
 
     def show_kryoto_catalog(self) -> None:
         dialog = KryotoCatalogDialog(self)
+        polish_message(dialog)
         dialog.run()
         dialog.destroy()
 
@@ -9829,6 +9891,7 @@ class MainWindow(Gtk.ApplicationWindow):
             f"It is saved to {_shorten_home(self._download_dir)} and never "
             "executed automatically."
         )
+        polish_message(confirm)
         response = confirm.run()
         confirm.destroy()
         if response != Gtk.ResponseType.OK:
@@ -9858,6 +9921,7 @@ class MainWindow(Gtk.ApplicationWindow):
         """
         target = page or ("shortcuts" if shortcuts else "general")
         dialog = SettingsDialog(self, page=target)
+        polish_message(dialog)
         dialog.run()
 
     def show_movies(self) -> None:
@@ -9924,6 +9988,7 @@ class MainWindow(Gtk.ApplicationWindow):
         dialog.set_website("https://archive.org/details/native-linux-games-collection")
         dialog.set_website_label("Collection on archive.org")
         dialog.set_logo_icon_name("applications-games")
+        polish_message(dialog)
         dialog.run()
         dialog.destroy()
 
@@ -10018,32 +10083,6 @@ class SettingsDialog(Gtk.Dialog):
         content.set_margin_top(0)
         content.set_margin_bottom(0)
 
-        # Force solid backgrounds on all dialog widgets to prevent
-        # system-theme black/gray blocks from leaking through.
-        from gi.repository import Gdk
-        # Use @surface (lighter) instead of @bg (near-black) to eliminate
-        # the "black block" effect in the settings dialog.
-        css = b'''
-            dialog, dialog *, notebook, notebook *, scrolledwindow, scrolledwindow *,
-            viewport, viewport *, box, box * {
-                background-color: @surface;
-                background-image: none;
-                border: none;
-                box-shadow: none;
-            }
-            notebook > header {
-                background-color: @surface;
-            }
-            notebook > header tab:checked {
-                background-color: @bg;
-            }
-        '''
-        prov = Gtk.CssProvider()
-        prov.load_from_data(css)
-        Gtk.StyleContext.add_provider_for_screen(
-            Gdk.Screen.get_default(), prov, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION + 3
-        )
-
         notebook = Gtk.Notebook()
         notebook.set_border_width(0)
         notebook.append_page(self._build_general(), Gtk.Label(label="General"))
@@ -10052,27 +10091,11 @@ class SettingsDialog(Gtk.Dialog):
         notebook.append_page(self._build_media(), Gtk.Label(label="Media"))
         notebook.append_page(self._build_shortcuts(), Gtk.Label(label="Shortcuts"))
         content.pack_start(notebook, True, True, 0)
-        # Force solid backgrounds on all key containers to eliminate black blocks.
-        for widget in (content, notebook):
-            ctx = widget.get_style_context()
-            ctx.add_class("settings-solid-bg")
         self._notebook = notebook
         self._pages = {"general": 0, "locations": 1, "providers": 2, "media": 3, "shortcuts": 4}
 
         self.connect("response", lambda dialog, _r: dialog.destroy())
         content.show_all()
-        # Walk all children and force solid @bg backgrounds to eliminate
-        # any system-theme black/gray blocks.
-        def _solidify(widget):
-            ctx = widget.get_style_context()
-            ctx.add_class("settings-solid-bg")
-            try:
-                widget.override_background_color(Gtk.StateFlags.NORMAL, Gdk.RGBA(0.063, 0.071, 0.086, 1.0))
-            except (AttributeError, TypeError):
-                pass
-            for child in getattr(widget, "get_children", lambda: [])():
-                _solidify(child)
-        _solidify(self)
         notebook.set_current_page(self._pages.get(page, 0))
 
     # -- pages --------------------------------------------------------------
@@ -11058,17 +11081,20 @@ class WebsiteSourcesDialog(Gtk.Dialog):
         self._report: CapabilityReport | None = None
         self.set_default_size(820, 620)
         self.set_resizable(True)
-        self.add_button("Close", Gtk.ResponseType.CLOSE)
+        close = self.add_button("Close", Gtk.ResponseType.CLOSE)
+        polish_dialog(self, primary=close,
+                      primary_response=Gtk.ResponseType.CLOSE)
 
         content = self.get_content_area()
         content.set_spacing(0)
         scroller = Gtk.ScrolledWindow()
         scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
-        box.set_margin_start(20)
-        box.set_margin_end(20)
-        box.set_margin_top(16)
-        box.set_margin_bottom(16)
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL,
+                      spacing=design_components.DIALOG_GAP)
+        box.set_margin_start(design_components.DIALOG_PADDING)
+        box.set_margin_end(design_components.DIALOG_PADDING)
+        box.set_margin_top(design_components.DIALOG_PADDING)
+        box.set_margin_bottom(design_components.DIALOG_PADDING)
         scroller.add(box)
         content.pack_start(scroller, True, True, 0)
 
@@ -11859,6 +11885,7 @@ class WebsiteSourcesDialog(Gtk.Dialog):
             "Each link is requested once; records that already have an answer are "
             "skipped. No files are downloaded."
         )
+        polish_message(confirm)
         response = confirm.run()
         confirm.destroy()
         if response != Gtk.ResponseType.OK:
@@ -11946,6 +11973,7 @@ class WebsiteSourcesDialog(Gtk.Dialog):
             "Imported catalog records, magnets, and mirror records for this source are "
             "forgotten. Files on disk and your local library are not touched."
         )
+        polish_message(confirm)
         response = confirm.run()
         confirm.destroy()
         if response != Gtk.ResponseType.OK:
@@ -11990,15 +12018,18 @@ class KryotoCatalogDialog(Gtk.Dialog):
         self._selected_key = ""
         self.set_default_size(1080, 760)
         self.set_resizable(True)
-        self.add_button("Close", Gtk.ResponseType.CLOSE)
+        close = self.add_button("Close", Gtk.ResponseType.CLOSE)
+        polish_dialog(self, primary=close,
+                      primary_response=Gtk.ResponseType.CLOSE)
 
         content = self.get_content_area()
         content.set_spacing(0)
-        outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
-        outer.set_margin_start(18)
-        outer.set_margin_end(18)
-        outer.set_margin_top(14)
-        outer.set_margin_bottom(14)
+        outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL,
+                        spacing=design_components.DIALOG_GAP)
+        outer.set_margin_start(design_components.DIALOG_PADDING)
+        outer.set_margin_end(design_components.DIALOG_PADDING)
+        outer.set_margin_top(design_components.DIALOG_PADDING)
+        outer.set_margin_bottom(design_components.DIALOG_PADDING)
         content.pack_start(outer, True, True, 0)
 
         heading = Gtk.Label(label="Kryoto catalog", xalign=0)
@@ -12250,6 +12281,7 @@ class KryotoCatalogDialog(Gtk.Dialog):
 
     def _on_other_sources(self) -> None:
         dialog = WebsiteSourcesDialog(self._owner)
+        polish_message(dialog)
         dialog.run()
         dialog.destroy()
         self._refresh_view()

@@ -251,6 +251,8 @@ class ProfilesWindow(Gtk.Window):
             text=title,
         )
         dialog.format_secondary_text(message)
+        from . import ui as ui_module
+        ui_module.polish_message(dialog)
         dialog.run()
         dialog.destroy()
 
@@ -271,6 +273,8 @@ class ProfilesWindow(Gtk.Window):
         content = dialog.get_content_area()
         content.pack_start(entry, False, False, 0)
         dialog.show_all()
+        from . import ui as ui_module
+        ui_module.polish_message(dialog)
         response = dialog.run()
         text = entry.get_text()
         dialog.destroy()
@@ -322,6 +326,8 @@ class ProfilesWindow(Gtk.Window):
             "The profile's entry is removed; the files in its folder are kept, "
             "and game files are never deleted."
         )
+        from . import ui as ui_module
+        ui_module.polish_message(dialog)
         response = dialog.run()
         dialog.destroy()
         if response == Gtk.ResponseType.YES:

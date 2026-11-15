@@ -815,6 +815,19 @@ def _configure_button(label: str = "Configure providers") -> Gtk.Button:
     return button
 
 
+def _open_card_from_keyboard(button, event) -> bool:
+    """Enter or Space opens the focused card by the path a click takes.
+
+    A card is a button, but a canvas of buttons is not a sheet: the keyboard
+    path has to be stated here so a card opened from the grid behaves the same
+    as one opened with the mouse.
+    """
+    if event.keyval not in (Gdk.KEY_Return, Gdk.KEY_KP_Enter, Gdk.KEY_space):
+        return False
+    button.emit("clicked")
+    return True
+
+
 class MediaCard(Gtk.Button):
     """A poster card used by carousels and lists."""
 
@@ -839,6 +852,7 @@ class MediaCard(Gtk.Button):
         except (AttributeError, TypeError):
             pass
         self.connect("clicked", lambda *_a: on_open(item))
+        self.connect("key-press-event", _open_card_from_keyboard)
 
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=7)
         poster = Poster(size[0], size[1], radius=9)
@@ -897,6 +911,7 @@ class PosterTile(Gtk.FlowBoxChild):
         except (AttributeError, TypeError):
             pass
         button.connect("clicked", lambda *_a: on_open(item))
+        button.connect("key-press-event", _open_card_from_keyboard)
 
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=7)
         box.set_size_request(POSTER_SIZE[0], -1)
@@ -951,6 +966,7 @@ class AniPmTile(Gtk.FlowBoxChild):
         except (AttributeError, TypeError):
             pass
         button.connect("clicked", lambda *_a: on_open(item))
+        button.connect("key-press-event", _open_card_from_keyboard)
 
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=7)
         box.set_size_request(POSTER_SIZE[0], -1)
@@ -1809,6 +1825,8 @@ class MoviesWindow(Gtk.Box):
     def open_provider_health(self) -> None:
         """Open the health sheet; checks start only when it is asked to."""
         dialog = ProviderHealthDialog(self, self._settings)
+        from . import ui as ui_module
+        ui_module.polish_message(dialog)
         dialog.run()
         dialog.destroy()
 
@@ -4314,6 +4332,8 @@ class MoviesWindow(Gtk.Box):
         clear.get_style_context().add_class("destructive-action")
         from . import ui as ui_module
         ui_module.polish_dialog(dialog, primary=clear, primary_kind="danger")
+        from . import ui as ui_module
+        ui_module.polish_message(dialog)
         response = dialog.run()
         dialog.destroy()
         if response != Gtk.ResponseType.OK:
