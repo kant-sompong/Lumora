@@ -195,6 +195,20 @@ jobs:
     permissions:
       contents: write
     steps:
+      # The notes live in the repository, so they have to be on disk here; the
+      # job otherwise only downloads artifacts.  Publishing fails when the
+      # version has no notes file rather than shipping a bare commit list.
+      - uses: actions/checkout@v4
+      - name: Use this version's release notes as the body
+        id: notes
+        run: |
+          version=$(sed -n 's/^__version__ *= *"\([^"]*\)".*/\1/p' lgl/__init__.py)
+          notes="docs/release-notes-$version.md"
+          if [ ! -f "$notes" ]; then
+            echo "::error::$notes is missing: a release must ship the notes it announces"
+            exit 1
+          fi
+          echo "path=$notes" >> "$GITHUB_OUTPUT"
       - uses: actions/download-artifact@v4
         with:
           path: assets
@@ -202,4 +216,6 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           files: assets/*
-          generate_release_notes: true
+          # Deliberately not generate_release_notes: the action prepends a body
+          # to GitHub's commit list, and these notes replace it.
+          body_path: ${{ steps.notes.outputs.path }}
