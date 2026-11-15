@@ -496,6 +496,13 @@ QDialog#sheet {{
     border-radius: {dc.DIALOG_RADIUS}px;
 }}
 QDialog#sheet QLabel#pageTitle {{ font-size: {dc.DIALOG_HEADER_SIZE}px; font-weight: 700; }}
+/* The catalogue's game page sits on the sheet as a card of its own. */
+QWidget#catalogPane {{
+    background: {c['raised']};
+    border: {dc.CARD_BORDER_WIDTH}px solid {c['border']};
+    border-radius: {dc.CARD_RADIUS}px;
+    padding: {dc.CARD_PADDING}px;
+}}
 QDialog#sheet QLabel#sectionTitle {{ font-size: {dc.DIALOG_TITLE_SIZE}px; font-weight: 600; }}
 QDialog#sheet QPushButton#suggested {{ min-width: 96px; }}
 QFrame#sheetHeader {{

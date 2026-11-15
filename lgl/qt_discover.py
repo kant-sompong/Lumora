@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
 
 from . import anime_calendar, discovery, stats
 from .qt_hidden import HiddenGemsPanel
+from .qt_widgets import style_dialog
 
 
 def _row(item: Mapping[str, Any]) -> str:
@@ -76,6 +77,8 @@ class DiscoverDialog(QDialog):
         self.owned = [str(key) for key in owned]
 
         layout = QVBoxLayout(self)
+
+        style_dialog(self)
         heading = QLabel("DISCOVER", self)
         heading.setObjectName("detailEyebrow")
         # The page that embeds this dialog draws its own heading and button.
@@ -185,6 +188,8 @@ class FavouritesDialog(QDialog):
         ]
 
         layout = QVBoxLayout(self)
+
+        style_dialog(self)
         heading = QLabel("FAVOURITES", self)
         heading.setObjectName("detailEyebrow")
         layout.addWidget(heading)
@@ -235,6 +240,8 @@ class ActivityTimelineDialog(QDialog):
         self.rows = stats.timeline(events, limit=60)
 
         layout = QVBoxLayout(self)
+
+        style_dialog(self)
         heading = QLabel("ACTIVITY", self)
         heading.setObjectName("detailEyebrow")
         layout.addWidget(heading)
@@ -283,6 +290,8 @@ class CompleteTheSetDialog(QDialog):
         self.owned = [str(key) for key in owned]
 
         layout = QVBoxLayout(self)
+
+        style_dialog(self)
         heading = QLabel("COMPLETE THE SET", self)
         heading.setObjectName("detailEyebrow")
         layout.addWidget(heading)

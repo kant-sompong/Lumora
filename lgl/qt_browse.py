@@ -73,6 +73,7 @@ from .qt_widgets import (
     pixmap_from_bytes,
     run_async,
     scroll_page,
+    style_dialog,
 )
 from .qt_downloads import FilePickDialog
 from .settings import ARCHIVE_SORT_KEYS
@@ -593,8 +594,8 @@ class ScreenshotViewer(QDialog):
         self._index = max(0, min(index, len(self._shots) - 1)) if self._shots else 0
 
         column = QVBoxLayout(self)
-        column.setContentsMargins(0, 0, 0, 0)
-        column.setSpacing(0)
+
+        style_dialog(self, padding=0)
         self.view = QLabel()
         self.view.setAlignment(Qt.AlignCenter)
         self.view.setMinimumSize(320, 200)

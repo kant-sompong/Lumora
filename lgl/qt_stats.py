@@ -10,6 +10,7 @@ from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import QDialog, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
 from . import stats
+from .qt_widgets import style_dialog
 
 ACCENT = QColor(124, 92, 255)
 
@@ -101,6 +102,8 @@ class StatisticsDialog(QDialog):
         )
 
         layout = QVBoxLayout(self)
+
+        style_dialog(self)
         heading = QLabel("STATISTICS", self)
         heading.setObjectName("detailEyebrow")
         layout.addWidget(heading)

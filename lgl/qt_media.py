@@ -71,10 +71,12 @@ from .qt_widgets import (
     clear_layout,
     color,
     label,
+    literal,
     pixmap_from_bytes,
     cached_image_bytes,
     run_async,
     scroll_page,
+    style_dialog,
 )
 from .settings import Settings
 from .util import human_size  # noqa: F401 - kept for a stable import surface
@@ -706,8 +708,7 @@ class TrailerDialog(QDialog):
         self.setWindowTitle(f"Trailer · {title}" if title else "Trailer")
         self.resize(1120, 700)
         column = QVBoxLayout(self)
-        column.setContentsMargins(0, 0, 0, 0)
-        column.setSpacing(0)
+        style_dialog(self, padding=0)
         view = None
         try:
             from PySide6.QtWebEngineCore import QWebEngineSettings  # type: ignore
@@ -799,7 +800,7 @@ class MediaPage(QWidget):
         brand.setSpacing(10)
         dot = _Dot()
         brand.addWidget(dot, 0, Qt.AlignVCenter)
-        brand.addWidget(label("Movies & TV", "mediaBrand"))
+        brand.addWidget(label(literal("Movies & TV"), "mediaBrand"))
         bar.addLayout(brand)
 
         bar.addStretch(1)
@@ -966,7 +967,7 @@ class MediaPage(QWidget):
     # home ------------------------------------------------------------------
     def _build_home(self, column: QVBoxLayout) -> None:
         self._home_provider_card = self._provider_card(
-            "Add a TMDB key to unlock Movies & TV",
+            literal("Add a TMDB key to unlock Movies & TV"),
             "Add a free TMDB API key in Settings → Providers. Anime also uses a "
             "MyAnimeList Client ID. Playback itself uses the provider you pick in "
             "Settings → Media.",
