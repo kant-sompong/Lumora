@@ -360,6 +360,65 @@ def component_css() -> str:
         outline_offset="1px",
     )
 
+    # -- cards -------------------------------------------------------------
+    cards = (
+        "flowboxchild.library-tile .cover-card, .browse-tile .cover-card, "
+        "button.movie-card, button.feed-card"
+    )
+    rule(
+        cards,
+        background_color="@surface",
+        border=f"{components.CARD_BORDER_WIDTH}px solid @divider",
+        border_radius=f"{components.CARD_RADIUS}px",
+        padding=f"{components.CARD_PADDING}px",
+        box_shadow="none",
+    )
+    # The tile is what the pointer lands on, the card is what is painted, so the
+    # hover rules watch both the parent and the card itself.
+    hovered = [
+        "flowboxchild.library-tile:hover .cover-card",
+        ".browse-tile:hover .cover-card",
+        "flowboxchild.library-tile .cover-card:hover",
+        ".browse-tile .cover-card:hover",
+        "button.movie-card:hover",
+        "button.feed-card:hover",
+    ]
+    rule(
+        ", ".join(hovered),
+        border_color=f"alpha(@accent, {components.CARD_HOVER_BORDER_ALPHA:.2f})",
+        box_shadow=f"0 {components.CARD_LIFT}px 6px alpha(@bg, 0.35)",
+    )
+    selected_padding = components.CARD_PADDING - (
+        components.CARD_SELECTED_BORDER - components.CARD_BORDER_WIDTH
+    )
+    rule(
+        "flowboxchild.library-tile:selected .cover-card",
+        border=f"{components.CARD_SELECTED_BORDER}px solid @accent",
+        padding=f"{selected_padding}px",
+        background_color=f"alpha(@accent, {components.CARD_SELECTED_ALPHA:.2f})",
+    )
+    rule(
+        "flowboxchild.library-tile:focus-visible, .browse-tile:focus-visible, "
+        "button.movie-card:focus-visible",
+        outline=f"{components.CARD_FOCUS_RING}px solid @accent",
+        outline_offset="-2px",
+    )
+    rule(
+        ".tile-cover, .movie-card-poster, .movie-poster-frame, .browse-cover",
+        border_radius=f"{components.POSTER_RADIUS}px",
+    )
+    rule(
+        ".tile-title, .movie-card-title",
+        color="@fg",
+        font_size=f"{components.CARD_TITLE_SIZE}px",
+        font_weight="600",
+    )
+    rule(
+        ".tile-meta, .movie-card-meta",
+        color="@muted",
+        font_size=f"{components.CARD_META_SIZE}px",
+    )
+
     return "\n".join(lines) + "\n"
 
 

@@ -2051,6 +2051,10 @@ class LibraryTile(Gtk.FlowBoxChild):
             else self._measure_cover(entry.cover_path)
         )
         self.get_style_context().add_class("library-tile")
+        # Keyboard users reach the grid: the tile takes focus, draws its ring
+        # and opens on Enter or Space, the same path a click takes.
+        self.set_can_focus(True)
+        self.connect("key-press-event", _open_tile_from_keyboard)
         # The flow itself fills the viewport, but a tile keeps its own height:
         # with only a few games the rows used to stretch to the window bottom.
         self.set_valign(Gtk.Align.START)
