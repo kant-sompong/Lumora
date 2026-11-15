@@ -250,6 +250,9 @@ class MediaItem:
     backdrop_url: str = ""
     overview: str = ""
     rating: float | None = None
+    #: TMDB's own flag.  Searches include adult titles, so the cards mark the
+    #: results that carry it (an "18+" badge) instead of hiding them.
+    adult: bool = False
 
     @property
     def key(self) -> str:
@@ -584,7 +587,8 @@ class TmdbClient:
             return []
         data = self._get(
             "/search/multi",
-            {"query": text[:200], "include_adult": "false", "page": max(1, int(page))},
+            {"query": text[:200], "include_adult": INCLUDE_ADULT,
+             "page": max(1, int(page))},
         )
         return self._items(data.get("results"), default_kind="")
 
@@ -671,6 +675,7 @@ class TmdbClient:
             title = " ".join(str(entry.get("title") or entry.get("name") or "").split())
             if not title:
                 continue
+            adult = entry.get("adult") is True
             items.append(
                 MediaItem(
                     kind=kind,
@@ -681,6 +686,7 @@ class TmdbClient:
                     backdrop_url=backdrop_url(entry.get("backdrop_path")),
                     overview=" ".join(str(entry.get("overview") or "").split())[:1200],
                     rating=_rating(entry),
+                    adult=adult,
                 )
             )
         return items
@@ -777,7 +783,13 @@ class TmdbClient:
 
 
 #: Title -> wide art, for the anime page: it has no TMDB id of its own.
-_TITLE_IMAGES: dict[tuple[str, str, str, str], MediaImages] = {}
+#: Adult titles are always searched for: the owner asked for the whole TMDB
+#: catalogue, and the cards badge the results TMDB flags instead of hiding
+#: them.  The value also sits in the cache keys below, so results cached while
+#: adult titles were filtered out are never served in their place.
+INCLUDE_ADULT = "true"
+
+_TITLE_IMAGES: dict[tuple[object, ...], MediaImages] = {}
 
 #: The same dict under its older name, so a caller clearing one clears both.
 _TITLE_BACKDROPS = _TITLE_IMAGES
@@ -810,7 +822,7 @@ def tmdb_images_for_title(
     if not wanted:
         return MediaImages()
     asked = _language_code(language) or ""
-    key = (wanted, arrival, chosen, asked)
+    key = (wanted, arrival, chosen, asked, INCLUDE_ADULT)
     cached = _TITLE_IMAGES.get(key)
     if cached is not None:
         return cached
