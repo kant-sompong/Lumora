@@ -398,8 +398,10 @@ def test_library_exposes_the_magnet_action_and_media_a_search_driven_lookup(app)
     assert hasattr(LibraryPage, "magnet_requested")
     assert hasattr(LibraryPage, "external_requested")
     # The lookup is the search field now (Linux parity): no separate button or
-    # second title box, just the match the search resolved.
-    assert hasattr(MediaPage, "_play_anilist_match")
+    # second title box.  Search is TMDB only, so the play route starts from the
+    # TMDB title and resolves its AniList entry in a worker.
+    assert hasattr(MediaPage, "_resolve_anime_play")
+    assert not hasattr(MediaPage, "_play_anilist_match")
     assert not hasattr(MediaPage, "lookup_anime")
 
 

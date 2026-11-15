@@ -222,20 +222,9 @@ def test_media_lookup_lives_in_the_search_bar(app):
     qt_main.apply_theme(app, "dark")
     page = MediaPage(None)
     assert not hasattr(page, "lookup_btn")
-    assert page.anilist_btn.isHidden()
-    page.deleteLater()
-
-
-def test_search_anilist_match_is_one_button(app):
-    from lgl.qt_media import MediaPage
-
-    qt_main.apply_theme(app, "dark")
-    page = MediaPage(None)
-    page._anilist_match = ("Example Anime", 42)
-    page.anilist_btn.setText("Play “Example Anime” on ani.pm (AniList)")
-    page.anilist_btn.setVisible(True)
-    assert not page.anilist_btn.isHidden()
-    assert "Example Anime" in page.anilist_btn.text()
+    # The search page is TMDB only, so the old "Play on AniList…" shortcut is
+    # gone with the ani.pm catalogue search it depended on.
+    assert not hasattr(page, "anilist_btn")
     page.deleteLater()
 
 

@@ -12,7 +12,7 @@ from dataclasses import dataclass, replace
 from datetime import date
 from math import ceil
 from pathlib import Path
-from typing import Callable, Iterable, Sequence
+from typing import Callable, Iterable, Mapping, Sequence
 
 from PySide6.QtCore import QLocale, QRect, QRectF, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import (
@@ -40,6 +40,8 @@ from PySide6.QtWidgets import (
 )
 
 from . import (
+    anime_map,
+    anipm,
     mal,
     media_history,
     platform_support,
@@ -224,6 +226,42 @@ def air_date_status(air_date: object, today: date | None = None) -> str:
 
 def rating_text(rating: float | None) -> str:
     return f"{rating:.1f}" if isinstance(rating, (int, float)) and rating else ""
+
+
+#: TMDB's Animation genre id, and the original language anime is made in.
+ANIME_GENRE = 16
+ANIME_LANGUAGE = "ja"
+
+
+def _genre_ids(document: Mapping) -> set[int]:
+    """Every genre id a TMDB document carries, in either shape TMDB uses.
+
+    Search rows send ``genre_ids``; a details document sends ``genres`` as
+    objects.  Reading both keeps the anime rule independent of which call the
+    document came from.
+    """
+    ids: set[int] = set()
+    for field in ("genre_ids", "genres"):
+        raw = document.get(field)
+        if not isinstance(raw, Sequence) or isinstance(raw, (str, bytes)):
+            continue
+        for entry in raw:
+            value = entry.get("id") if isinstance(entry, Mapping) else entry
+            if isinstance(value, int) and not isinstance(value, bool):
+                ids.add(value)
+    return ids
+
+
+def is_anime(document: object) -> bool:
+    """A TMDB title in Japanese that TMDB files under Animation.
+
+    That is the whole definition the Search page uses: origin language and
+    genre id, nothing inferred from a title or a provider.
+    """
+    if not isinstance(document, Mapping):
+        return False
+    language = str(document.get("original_language") or "").strip().lower()
+    return language == ANIME_LANGUAGE and ANIME_GENRE in _genre_ids(document)
 
 
 # --------------------------------------------------------------------------
@@ -850,6 +888,74 @@ class TrailerDialog(QDialog):
         column.addLayout(bottom)
 
 
+class WhichPartDialog(QDialog):
+    """Ask which AniList entry a TMDB season or film is.
+
+    The anime list can point one TMDB season at more than one AniList entry
+    (Attack on Titan's third season is two of them), and only the viewer knows
+    which part the episode they pressed belongs to.  This asks instead of
+    guessing, and it is a sheet like every other dialog: 24 px of padding,
+    16 px between blocks, the first part as the default button, Escape closes.
+    """
+
+    def __init__(self, parts: Sequence[object], title: str = "",
+                 parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Which part?")
+        #: ``(label, target)`` pairs, in the order the anime list gave them.
+        self._parts = [(str(text), target) for text, target in parts]
+        self._picked: object | None = None
+        column = QVBoxLayout(self)
+        style_dialog(self)
+        column.addWidget(label("WHICH PART", "detailEyebrow"))
+        heading = label(
+            f"Which part of {title}?" if title else "Which part?", "pageTitle"
+        )
+        heading.setWordWrap(True)
+        column.addWidget(heading)
+        column.addWidget(label(
+            "The anime list links this title to more than one AniList entry, so "
+            "pick the part you were about to watch.",
+            "detailNote", wrap=True,
+        ))
+        for index, (text, target) in enumerate(self._parts):
+            button = QPushButton(text, self)
+            if index == 0:
+                # One primary per sheet: Enter plays the first part, and every
+                # other candidate stays a plain button.
+                button.setObjectName("suggested")
+            button.setCursor(Qt.PointingHandCursor)
+            reason = str(getattr(target, "reason", "") or "")
+            if reason:
+                button.setToolTip(reason)
+            button.clicked.connect(
+                lambda _checked=False, pick=target: self._choose(pick)
+            )
+            column.addWidget(button)
+        footer = QHBoxLayout()
+        footer.addStretch(1)
+        self.cancel_btn = QPushButton("Cancel", self)
+        self.cancel_btn.clicked.connect(self.reject)
+        footer.addWidget(self.cancel_btn)
+        column.addLayout(footer)
+
+    def labels(self) -> list[str]:
+        """The part labels on screen, in order."""
+        return [text for text, _target in self._parts]
+
+    def buttons(self) -> list[QPushButton]:
+        """The part buttons, in order (the footer's Cancel is not one)."""
+        return self.findChildren(QPushButton)[: len(self._parts)]
+
+    def _choose(self, target: object) -> None:
+        self._picked = target
+        self.accept()
+
+    def chosen(self) -> object | None:
+        """The part the viewer picked, or ``None`` when the sheet was closed."""
+        return self._picked
+
+
 # --------------------------------------------------------------------------
 # page
 # --------------------------------------------------------------------------
@@ -870,6 +976,9 @@ class MediaPage(QWidget):
         self.settings = settings
         self._cache_root = cache_root or platform_support.cache_dir()
         self._pix: dict[str, QPixmap] = {}
+        #: TMDB does not say "anime" on a search row, so the details answer is
+        #: kept per card once a play has read it.
+        self._anime_flags: dict[str, bool] = {}
         self._section = "home"
         self._search_timer = QTimer(self)
         self._search_timer.setSingleShot(True)
@@ -1373,7 +1482,7 @@ class MediaPage(QWidget):
         column.addWidget(label(
             "Popular anime from MyAnimeList. Metadata comes from MAL; playback uses the "
             "anime provider picked in the bar above (or Settings → Media). The main "
-            "search also queries the ani.pm catalogue, where titles missing from MAL live.",
+            "search is TMDB only; the anime provider plays the anime it finds there.",
             "detailNote", wrap=True,
         ))
         self.anime_note = label("Popular now", "mediaNote")
@@ -1392,28 +1501,16 @@ class MediaPage(QWidget):
     # search ----------------------------------------------------------------
     def _build_search(self, column: QVBoxLayout) -> None:
         head = self._section_head(column, "Search")
-        self.search_note = label("Type a title above to search TMDB and MyAnimeList.", "mediaNote")
+        self.search_note = label("Type a title above to search TMDB.", "mediaNote")
         column.addWidget(self.search_note)
         self.search_result_title = label("", "mediaNote")
         column.addWidget(self.search_result_title)
-        self.anilist_btn = QPushButton("Play on AniList…")
-        self.anilist_btn.setObjectName("suggested")
-        self.anilist_btn.setCursor(Qt.PointingHandCursor)
-        self.anilist_btn.setToolTip(
-            "Play the AniList match for this search, for titles with no TMDB or "
-            "MyAnimeList id"
-        )
-        self.anilist_btn.setVisible(False)
-        self.anilist_btn.clicked.connect(self._play_anilist_match)
-        self._anilist_match: tuple[str, int] | None = None
-        column.addWidget(self.anilist_btn, 0, Qt.AlignLeft)
         grid = PosterGrid()
         grid.item_clicked.connect(self.open_card)
         column.addWidget(grid)
         empty = EmptyState(
             "search", "Search movies, TV and anime",
-            "Results come straight from TMDB and the MAL catalogue — nothing is "
-            "suggested or invented.",
+            "Results come straight from TMDB — nothing is suggested or invented.",
         )
         column.addWidget(empty)
         column.addStretch(1)
@@ -1781,64 +1878,43 @@ class MediaPage(QWidget):
             self.stack.setCurrentWidget(self._pages["search"])
 
     def _run_search(self) -> None:
+        """Search TMDB, and only TMDB: ani.pm is the player, not a catalogue."""
         query = self.search.text().strip()
         if not query:
             self._search_grid.set_cards([])
             self._search_empty.setVisible(True)
             self.search_result_title.setText("")
-            self._anilist_match = None
-            self.anilist_btn.setVisible(False)
+            self.search_note.setText("Type a title above to search TMDB.")
             return
         if self.settings is None:
             return
         self._search_empty.setVisible(False)
         self.search_note.setText(f"Searching for “{query}”…")
         tmdb_client = getattr(self, "_tmdb", None)
-        mal_client = getattr(self, "_mal", None)
 
-        def work() -> dict[str, list[object]]:
-            found: dict[str, list[object]] = {"tmdb": [], "anime": [], "errors": []}
+        def work() -> dict[str, object]:
+            found: dict[str, object] = {"tmdb": [], "errors": []}
             if tmdb_client is not None and tmdb_client.configured:
                 try:
                     found["tmdb"] = tmdb_client.search(query)
                 except Exception as exc:  # noqa: BLE001 - reported below
                     found["errors"].append(f"TMDB: {exc}")  # type: ignore[union-attr]
-            if mal_client is not None and mal_client.configured:
-                try:
-                    found["anime"] = mal_client.search(query)
-                except Exception as exc:  # noqa: BLE001
-                    found["errors"].append(f"MyAnimeList: {exc}")  # type: ignore[union-attr]
-            # The search *is* the lookup: resolve the anime provider's AniList
-            # route in the same pass instead of asking for the title a second
-            # time in a dialog.
-            if self._anime_provider() in streaming.ANILIST_ANIME_PROVIDERS:
-                try:
-                    found["anilist"] = streaming.anilist_search(query)
-                except Exception as exc:  # noqa: BLE001
-                    found["errors"].append(f"AniList: {exc}")  # type: ignore[union-attr]
             return found
 
         def done(result: object) -> None:
             data = result if isinstance(result, dict) else {}
             cards = [card_from_tmdb(item) for item in data.get("tmdb", [])]  # type: ignore[union-attr]
-            cards += [card_from_anime(item) for item in data.get("anime", [])]  # type: ignore[union-attr]
             self._search_grid.set_cards(cards)
             self._search_empty.setVisible(not cards)
-            self.search_note.setText(
-                f"“{query}” · {len(cards)} result{'s' if len(cards) != 1 else ''}"
-                if cards else f"No results for “{query}”."
-            )
-            anilist_id = int(data.get("anilist") or 0)  # type: ignore[arg-type]
-            if anilist_id:
-                self._anilist_match = (query, anilist_id)
-                provider = self._anime_provider()
-                self.anilist_btn.setText(
-                    f"Play “{query}” on {streaming.LABELS.get(provider, provider)} (AniList)"
+            errors = [str(error) for error in (data.get("errors") or [])]  # type: ignore[union-attr]
+            if cards:
+                self.search_note.setText(
+                    f"“{query}” · {len(cards)} result{'s' if len(cards) != 1 else ''}"
                 )
-                self.anilist_btn.setVisible(True)
+            elif errors:
+                self.search_note.setText("; ".join(errors))
             else:
-                self._anilist_match = None
-                self.anilist_btn.setVisible(False)
+                self.search_note.setText(f"No results for “{query}”.")
             self._load_posters_when_shown()
 
         run_async(work, done, lambda exc: self._note_error(exc))
@@ -2712,9 +2788,24 @@ class MediaPage(QWidget):
         )
 
     def _play_tmdb(self, card: Card, season: int | None = None, episode: object | None = None) -> None:
+        """Play a TMDB title: ani.pm for anime, the chosen provider otherwise.
+
+        A search row does not say whether its title is anime, so the answer is
+        read from the details document on a worker and remembered per card.
+        A build with no TMDB client cannot ask, and keeps the provider route.
+        """
         if card.tmdb_id <= 0:
             self._note_error("This title has no TMDB id, so it cannot be played.")
             return
+        client = getattr(self, "_tmdb", None)
+        if client is not None and getattr(client, "configured", False):
+            self._resolve_anime_play(card, season, episode, client)
+            return
+        self._play_provider_video(card, season, episode)
+
+    def _play_provider_video(self, card: Card, season: int | None = None,
+                             episode: object | None = None) -> None:
+        """Today's route: the streaming provider plays by TMDB id."""
         provider = self._provider()
         try:
             if card.kind == "tv":
@@ -2727,6 +2818,11 @@ class MediaPage(QWidget):
         except (streaming.EmbedUrlError, ValueError) as exc:
             self._note_error(str(exc))
             return
+        self._start_playback(card, url, season, episode)
+
+    def _start_playback(self, card: Card, url: str, season: int | None = None,
+                        episode: object | None = None) -> None:
+        """Record, remember the episode and show the player."""
         self._record_history(card)
         # Next episode belongs to TV episodes only; a card's Watch button has
         # no season or episode to move on from.
@@ -2741,33 +2837,105 @@ class MediaPage(QWidget):
         self.play_embedded(url, card.title)
         self._refresh_next_episode()
 
-    def _play_anilist_match(self) -> None:
-        """Play the AniList match the search already resolved.
+    def _resolve_anime_play(self, card: Card, season: int | None,
+                            episode: object | None, client: object) -> None:
+        """Decide anime-ness and the AniList entry off the UI thread, then play.
 
-        The AniList routes need an id that TMDB and MyAnimeList do not provide
-        for every title, so the search resolves it for the term that was typed
-        and offers it as one button, instead of a second lookup box.
+        Everything that touches the network - the details document that says
+        whether the title is anime, the weekly mapping cache, the AniList title
+        search and the part names - runs here.
         """
-        match = getattr(self, "_anilist_match", None)
-        if match is None:
-            return
-        title, anilist_id = match
+        number = max(1, int(getattr(episode, "number", 1) or 1)) if episode is not None else 1
+        season_number = int(season or 1)
         provider = self._anime_provider()
-        if provider not in streaming.ANILIST_ANIME_PROVIDERS:
-            self._note_error(
-                "Pick ToFlix or CineLite as the anime provider first; those two "
-                "routes take an AniList id."
+        language = self._language()
+        key = card.key
+        known = self._anime_flags.get(key)
+        title = card.title
+
+        def work() -> dict[str, object]:
+            anime = known
+            if anime is None:
+                try:
+                    anime = is_anime(client.get(f"/{card.kind}/{card.tmdb_id}"))  # type: ignore[attr-defined]
+                except Exception:  # noqa: BLE001 - unreadable is not anime
+                    anime = False
+            if not anime or provider != streaming.ANI_PROVIDER:
+                return {"anime": bool(anime), "routed": False}
+            target = anime_map.tmdb_to_anilist(
+                card.kind, card.tmdb_id, season_number, number, title=title,
             )
-            return
+            if target is None:
+                # The mapping list knew nothing and its own title search found
+                # nothing either; today's behaviour asks AniList once more by
+                # name, and only then does the title stay unplayable.
+                found = streaming.anilist_search(title)
+                if found:
+                    target = anime_map.PlayTarget(
+                        anilist_id=int(found), episode=number, confident=True,
+                        reason="matched by title on AniList",
+                    )
+            if target is None or getattr(target, "confident", False):
+                return {"anime": True, "routed": True, "target": target}
+            return {
+                "anime": True, "routed": True, "target": target,
+                "parts": self._part_labels(target.candidates),
+            }
+
+        def done(result: object) -> None:
+            data = result if isinstance(result, dict) else {}
+            self._anime_flags[key] = bool(data.get("anime"))
+            if not data.get("routed"):
+                self._play_provider_video(card, season, episode)
+                return
+            target = data.get("target")
+            if target is None:
+                self._note_error(
+                    "No AniList entry matched this title, so ani.pm cannot play it."
+                )
+                return
+            if not getattr(target, "confident", False):
+                dialog = WhichPartDialog(data.get("parts") or (), card.title, self)
+                if dialog.exec() != QDialog.Accepted:
+                    return
+                target = dialog.chosen()
+                if target is None:
+                    return
+            try:
+                url = streaming.ani_url(
+                    getattr(target, "anilist_id", 0),
+                    getattr(target, "episode", 1), language=language,
+                )
+            except (streaming.EmbedUrlError, ValueError) as exc:
+                self._note_error(str(exc))
+                return
+            self._start_playback(card, url)
+
+        run_async(work, done, lambda exc: self._note_error(exc))
+
+    @staticmethod
+    def _part_labels(candidates: Sequence[object]) -> list[tuple[str, object]]:
+        """A name for each candidate, or ``Part i/N`` when ani.pm has none."""
+        candidates = list(candidates)
+        ids = [int(getattr(candidate, "anilist_id", 0) or 0) for candidate in candidates]
+        names: dict[int, str] = {}
         try:
-            url = streaming.anime_url(provider, anilist_id, 1)
-        except (streaming.EmbedUrlError, ValueError) as exc:
-            self._note_error(str(exc))
-            return
-        self._playing_episode = None
-        self._playing_card = None
-        self.play_embedded(url, title)
-        self._refresh_next_episode()
+            for title in anipm.AniPmClient().lookup(anilist=[i for i in ids if i]):
+                number = int(getattr(title, "anilist_id", 0) or 0)
+                text = str(getattr(title, "title", "") or "").strip()
+                if number and text:
+                    names[number] = text
+        except Exception:  # noqa: BLE001 - names are a nicety, the parts still play
+            names = {}
+        total = len(candidates)
+        return [
+            (
+                names.get(int(getattr(candidate, "anilist_id", 0) or 0), "")
+                or f"Part {index}/{total}",
+                candidate,
+            )
+            for index, candidate in enumerate(candidates, start=1)
+        ]
 
     def _play_anime(self, card: Card) -> None:
         provider = self._anime_provider()
@@ -2992,8 +3160,10 @@ __all__ = [
     "MediaPage",
     "PosterCard",
     "PosterGrid",
+    "WhichPartDialog",
     "card_from_anime",
     "card_from_history",
     "card_from_tmdb",
+    "is_anime",
     "rating_text",
 ]
