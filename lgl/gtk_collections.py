@@ -356,9 +356,10 @@ class CollectionsWindow(Gtk.Window):
 
     def _ask_name(self, title: str, initial: str = "") -> str | None:
         dialog = Gtk.Dialog(title=title, transient_for=self, modal=True)
-        dialog.add_button("Cancel", Gtk.ResponseType.CANCEL)
-        dialog.add_button("Save", Gtk.ResponseType.OK)
-        dialog.set_default_response(Gtk.ResponseType.OK)
+        cancel = dialog.add_button("Cancel", Gtk.ResponseType.CANCEL)
+        save = dialog.add_button("Save", Gtk.ResponseType.OK)
+        from . import ui as ui_module
+        ui_module.polish_dialog(dialog, primary=save, cancel=cancel)
         entry = Gtk.Entry()
         entry.set_text(initial)
         entry.set_activates_default(True)

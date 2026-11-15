@@ -312,9 +312,10 @@ class BulkActions:
     # -- input ---------------------------------------------------------------
     def _dialog(self, title: str, action: str) -> Gtk.Dialog:
         dialog = Gtk.Dialog(title=title, transient_for=self._window(), flags=0)
-        dialog.add_button("Cancel", Gtk.ResponseType.CANCEL)
-        dialog.add_button(action, Gtk.ResponseType.OK)
-        dialog.set_default_response(Gtk.ResponseType.OK)
+        cancel = dialog.add_button("Cancel", Gtk.ResponseType.CANCEL)
+        confirm = dialog.add_button(action, Gtk.ResponseType.OK)
+        from . import ui as ui_module
+        ui_module.polish_dialog(dialog, primary=confirm, cancel=cancel)
         box = dialog.get_content_area()
         box.set_spacing(8)
         box.set_margin_start(14)

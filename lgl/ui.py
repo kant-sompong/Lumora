@@ -739,6 +739,106 @@ def field_error_label(text: str = "") -> Gtk.Label:
     return label
 
 
+def polish_dialog(dialog, *, primary=None, cancel=None,
+                  primary_response=Gtk.ResponseType.OK,
+                  cancel_response=Gtk.ResponseType.CANCEL,
+                  primary_kind: str = "primary"):
+    """Bring one dialog onto the sheet rules and give it its keyboard defaults.
+
+    The stylesheet already covers every ``Gtk.Dialog``; this adds what CSS
+    cannot: one primary button per sheet, a default response for Enter, Escape
+    for Cancel, and focus starting on the first field, or on the primary button
+    when the sheet has none.
+    """
+    dialog.get_style_context().add_class("sheet")
+    content = dialog.get_content_area()
+    content.set_spacing(max(content.get_spacing(), design_components.DIALOG_GAP))
+    # A dialog that pads itself is brought up to the sheet's 24 px; one that
+    # deliberately runs full-bleed (margins of zero, like Settings' notebook)
+    # keeps its own layout.
+    margins = [
+        getattr(content, f"get_margin_{side}")()
+        for side in ("start", "end", "top", "bottom")
+    ]
+    if min(margins) >= design_components.SPACING[1]:
+        for side in ("start", "end", "top", "bottom"):
+            setter = getattr(content, f"set_margin_{side}")
+            getter = getattr(content, f"get_margin_{side}")
+            setter(max(getter(), design_components.DIALOG_PADDING))
+
+    buttons = []
+    getter = getattr(dialog, "get_action_area", None)
+    if getter is not None:
+        try:
+            area = getter()
+        except (TypeError, AttributeError):
+            area = None
+        if area is not None:
+            buttons = list(area.get_children())
+    if primary is None:
+        for button in buttons:
+            if button.get_style_context().has_class("suggested-action"):
+                primary = button
+                break
+    for button in buttons:
+        if button is primary:
+            style_button(button, primary_kind)
+        elif button is cancel:
+            style_button(button, "quiet")
+        else:
+            style_button(button, "secondary")
+    if primary is not None:
+        dialog.set_default(primary)
+        dialog.set_default_response(primary_response)
+
+    def _on_key(_widget, event):
+        if event.keyval != Gdk.KEY_Escape:
+            return False
+        dialog.response(cancel_response)
+        if dialog.get_visible():
+            dialog.close()
+        return True
+
+    dialog.connect("key-press-event", _on_key)
+
+    focus = _first_field(dialog) or primary
+    if focus is not None:
+        # Enter in the first field is the sheet's primary action, not a no-op.
+        if isinstance(focus, Gtk.Entry):
+            focus.set_activates_default(True)
+        focus.grab_focus()
+    return focus
+
+
+def _first_field(widget):
+    """The first focusable field anywhere in ``widget``, depth first.
+
+    ``Gtk.Dialog.forall`` only visits the dialog's own children, so a walker of
+    our own is what reaches the entry inside the content box.
+    """
+    if isinstance(widget, (Gtk.Entry, Gtk.SpinButton, Gtk.ComboBoxText)):
+        if widget.get_sensitive() and widget.get_can_focus():
+            return widget
+        return None
+    children = widget.get_children() if isinstance(widget, Gtk.Container) else []
+    for child in children:
+        found = _first_field(child)
+        if found is not None:
+            return found
+    return None
+
+
+def _open_tile_from_keyboard(tile, event) -> bool:
+    """Enter or Space opens the focused tile by the path a click takes."""
+    if event.keyval not in (Gdk.KEY_Return, Gdk.KEY_KP_Enter, Gdk.KEY_space):
+        return False
+    parent = tile.get_parent()
+    if isinstance(parent, Gtk.FlowBox):
+        parent.select_child(tile)
+        return True
+    return False
+
+
 # -- toast -------------------------------------------------------------------
 
 
@@ -3043,6 +3143,7 @@ class MetadataDialog(Gtk.Dialog):
         self.add_button("Cancel", Gtk.ResponseType.CANCEL)
         save = self.add_button("Save", Gtk.ResponseType.OK)
         save.get_style_context().add_class("suggested-action")
+        polish_dialog(self, primary=save)
 
         content = self.get_content_area()
         content.set_spacing(0)
@@ -9338,7 +9439,7 @@ class MainWindow(Gtk.ApplicationWindow):
         )
         action.get_style_context().add_class("suggested-action")
         action.set_sensitive(False)
-        dialog.set_default_response(Gtk.ResponseType.OK)
+        polish_dialog(dialog, primary=action)
 
         content = dialog.get_content_area()
         content.set_spacing(14)
@@ -9902,7 +10003,8 @@ class SettingsDialog(Gtk.Dialog):
         self.set_default_size(640, 520)
         self.set_size_request(480, 360)
         self.set_resizable(True)
-        self.add_button("Close", Gtk.ResponseType.CLOSE)
+        close = self.add_button("Close", Gtk.ResponseType.CLOSE)
+        polish_dialog(self, primary=close, primary_response=Gtk.ResponseType.CLOSE)
 
         content = self.get_content_area()
         content.set_spacing(0)
@@ -10836,7 +10938,8 @@ class ArtworkMatchDialog(Gtk.Dialog):
         self._candidates = list(candidates)
         self._choose = self.add_button("Use selected", Gtk.ResponseType.OK)
         self._choose.get_style_context().add_class("suggested-action")
-        self.add_button("Cancel", Gtk.ResponseType.CANCEL)
+        cancel = self.add_button("Cancel", Gtk.ResponseType.CANCEL)
+        polish_dialog(self, primary=self._choose, cancel=cancel)
         self.selected: ArtworkCandidate | None = None
 
         content = self.get_content_area()

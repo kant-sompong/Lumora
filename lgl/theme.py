@@ -419,6 +419,39 @@ def component_css() -> str:
         font_size=f"{components.CARD_META_SIZE}px",
     )
 
+    # -- sheets ------------------------------------------------------------
+    rule(
+        "dialog, messagedialog",
+        border=f"{components.BORDER_WIDTH}px solid @divider",
+        border_radius=f"{components.DIALOG_RADIUS}px",
+    )
+    rule(
+        ".sheet-content",
+        padding=f"{components.DIALOG_PADDING}px",
+    )
+    rule(
+        "dialog .dialog-action-area, dialog actionbar",
+        border_top=f"{components.BORDER_WIDTH}px solid @divider",
+        padding=f"{components.DIALOG_GAP}px {components.DIALOG_PADDING}px",
+    )
+    rule(
+        ".sheet-title",
+        color="@fg",
+        font_size=f"{components.DIALOG_HEADER_SIZE}px",
+        font_weight="700",
+    )
+    rule(
+        ".sheet-heading",
+        color="@fg",
+        font_size=f"{components.DIALOG_TITLE_SIZE}px",
+        font_weight="600",
+    )
+    rule(
+        ".sheet-body",
+        color="@muted",
+        font_size=f"{TEXT_SIZES['body']}px",
+    )
+
     return "\n".join(lines) + "\n"
 
 
