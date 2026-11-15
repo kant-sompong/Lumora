@@ -66,13 +66,17 @@ class Client:
         self._results = list(results or ())
         self._season = season
         self.asked: list[tuple[str, int]] = []
+        #: The display language each call asked for, like the real client.
+        self.languages: list[str | None] = []
 
     @property
     def configured(self) -> bool:
         return True
 
-    def images(self, kind: str, tmdb_id: int) -> tmdb.MediaImages:
+    def images(self, kind: str, tmdb_id: int,
+               language: str | None = None) -> tmdb.MediaImages:
         self.asked.append((kind, tmdb_id))
+        self.languages.append(language)
         return self._images
 
     def search(self, _query: str, *, page: int = 1) -> list:

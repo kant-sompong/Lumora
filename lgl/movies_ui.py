@@ -45,6 +45,7 @@ from . import (  # noqa: E402
     framextv,
     mal,
     media_history,
+    ratings,
     provider_health,
     streaming,
     tmdb,
@@ -1170,6 +1171,363 @@ def _gem_poster_url(entry: dict) -> str:
     )
 
 
+class SeasonPicker(Gtk.MenuButton):
+    """The season header: a name, a chevron and a popover list.
+
+    Contract section 2: header text at 22 px semibold with a chevron that turns
+    over when the panel opens, then a 300 px overlay panel (radius 14, 1 px
+    border, soft shadow, 420 px at most, scrolling inside) of 76 px rows, each
+    with a 44x64 portrait thumbnail, the season name and its episode count.
+    """
+
+    PANEL_WIDTH = 300
+    PANEL_HEIGHT = 420
+    ROW_HEIGHT = 76
+    THUMB = (44, 64)
+    FADE_MS = 120
+
+    def __init__(self, on_choose) -> None:
+        super().__init__()
+        self._on_choose = on_choose
+        self._seasons: list = []
+        self._rows: dict[int, Gtk.ListBoxRow] = {}
+        self._images = None
+        self._show_poster = ""
+        self._current: int | None = None
+
+        self.set_relief(Gtk.ReliefStyle.NONE)
+        self.set_valign(Gtk.Align.CENTER)
+        self.get_style_context().add_class("season-picker-button")
+        head = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        self._label = Gtk.Label(label="Season")
+        self._label.get_style_context().add_class("season-picker-title")
+        self._chevron = Gtk.Image.new_from_icon_name(
+            "pan-down-symbolic", Gtk.IconSize.BUTTON
+        )
+        self._chevron.get_style_context().add_class("season-chevron")
+        head.pack_start(self._label, False, False, 0)
+        head.pack_start(self._chevron, False, False, 0)
+        self.add(head)
+
+        self._revealer = Gtk.Revealer()
+        self._revealer.set_transition_type(Gtk.RevealerTransitionType.CROSSFADE)
+        self._revealer.set_transition_duration(self.FADE_MS)
+        panel = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        panel.set_size_request(self.PANEL_WIDTH, -1)
+        panel.get_style_context().add_class("season-panel")
+        scroller = Gtk.ScrolledWindow()
+        scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        scroller.set_max_content_height(self.PANEL_HEIGHT)
+        scroller.set_propagate_natural_height(True)
+        scroller.get_style_context().add_class("season-scroll")
+        self._list = Gtk.ListBox()
+        self._list.set_selection_mode(Gtk.SelectionMode.SINGLE)
+        self._list.get_style_context().add_class("season-list")
+        self._list.connect("row-activated", self._row_activated)
+        self._list.connect("key-press-event", self._on_key_press)
+        scroller.add(self._list)
+        panel.pack_start(scroller, True, True, 0)
+        self._revealer.add(panel)
+        # The popover is not part of the window's show_all, so show the panel
+        # here; the revealer keeps it invisible until the panel opens.
+        self._revealer.show_all()
+
+        self._popover = Gtk.Popover()
+        self._popover.get_style_context().add_class("season-popover")
+        self._popover.set_position(Gtk.PositionType.BOTTOM)
+        self._popover.add(self._revealer)
+        self.set_popover(self._popover)
+        self.connect("toggled", self._on_toggled)
+        self._popover.connect("closed", self._on_closed)
+
+    # -- content ------------------------------------------------------------
+    def load(self, seasons, images, show_poster: str = "") -> None:
+        """Fill the panel with ``seasons`` and select the first one."""
+        self._images = images
+        self._show_poster = str(show_poster or "")
+        self._seasons = sorted(
+            seasons, key=lambda season: int(getattr(season, "number", 0) or 0)
+        )
+        for child in self._list.get_children():
+            self._list.remove(child)
+        self._rows = {}
+        for season in self._seasons:
+            self._list.add(self._build_row(season))
+        self._list.show_all()
+        if self._seasons:
+            self.choose(int(self._seasons[0].number))
+
+    def choose(self, number: int, *, notify: bool = True) -> None:
+        """Select ``number``, move the check mark and tell the page."""
+        season = next(
+            (item for item in self._seasons if int(item.number) == number), None
+        )
+        if season is None:
+            return
+        self._current = number
+        for key, row in self._rows.items():
+            context = row.get_style_context()
+            if key == number:
+                context.add_class("season-row-on")
+            else:
+                context.remove_class("season-row-on")
+            row.check.set_visible(key == number)
+        self._label.set_text(season.name or f"Season {number}")
+        if notify:
+            self._fade_out()
+            self._on_choose(season)
+
+    # -- rows ---------------------------------------------------------------
+    def _build_row(self, season) -> Gtk.ListBoxRow:
+        number = int(getattr(season, "number", 0) or 0)
+        row = Gtk.ListBoxRow()
+        row.season_number = number
+        row.set_size_request(self.PANEL_WIDTH - 14, self.ROW_HEIGHT)
+        row.get_style_context().add_class("season-row")
+
+        line = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        line.set_margin_start(12)
+        line.set_margin_end(12)
+        line.set_valign(Gtk.Align.CENTER)
+
+        url = tmdb.season_poster_url(season, self._show_poster)
+        if url and self._images is not None:
+            thumb = Gtk.Image()
+            thumb.set_size_request(*self.THUMB)
+            thumb.get_style_context().add_class("season-thumb")
+            size = (self.THUMB[0] * 2, self.THUMB[1] * 2)
+            self._images.load(
+                url, size,
+                lambda pixbuf, image=thumb: self._apply_thumb(pixbuf, image),
+            )
+        else:
+            # No artwork anywhere: the season number, never an empty hole.
+            thumb = Gtk.Label(label=str(number))
+            thumb.set_size_request(*self.THUMB)
+            thumb.get_style_context().add_class("season-placeholder")
+        line.pack_start(thumb, False, False, 0)
+
+        text = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        text.set_valign(Gtk.Align.CENTER)
+        name = Gtk.Label(label=season.name or f"Season {number}", xalign=0)
+        name.set_ellipsize(Pango.EllipsizeMode.END)
+        name.get_style_context().add_class("season-name")
+        count = season.episode_count or len(getattr(season, "episodes", ()) or ())
+        words = f"{count} episode" + ("" if count == 1 else "s")
+        count_label = Gtk.Label(label=words, xalign=0)
+        count_label.get_style_context().add_class("season-count")
+        text.pack_start(name, False, False, 0)
+        text.pack_start(count_label, False, False, 0)
+        line.pack_start(text, True, True, 0)
+
+        # A drawn tick rather than an icon, so the panel never depends on the
+        # desktop's icon theme.
+        check = Gtk.Label(label="✓")
+        check.get_style_context().add_class("season-check")
+        check.set_no_show_all(True)
+        check.set_valign(Gtk.Align.CENTER)
+        row.check = check
+        line.pack_end(check, False, False, 0)
+
+        row.add(line)
+        row.show_all()
+        check.hide()
+        self._rows[number] = row
+        return row
+
+    def _apply_thumb(self, pixbuf, image) -> bool:
+        if pixbuf is None:
+            return False
+        try:
+            image.set_from_pixbuf(
+                _rounded_pixbuf(pixbuf, self.THUMB[0], self.THUMB[1], 6)
+            )
+        except Exception:  # noqa: BLE001 - the panel may have been rebuilt
+            pass
+        return False
+
+    # -- panel behaviour ----------------------------------------------------
+    def _on_toggled(self, _button) -> None:
+        opened = self.get_active()
+        self._chevron.set_from_icon_name(
+            "pan-up-symbolic" if opened else "pan-down-symbolic", Gtk.IconSize.BUTTON
+        )
+        if opened:
+            self._revealer.set_reveal_child(True)
+            current = self._rows.get(self._current or -1)
+            if current is not None:
+                self._list.select_row(current)
+                current.grab_focus()
+
+    def _on_closed(self, _popover) -> None:
+        self._revealer.set_reveal_child(False)
+        self._chevron.set_from_icon_name("pan-down-symbolic", Gtk.IconSize.BUTTON)
+
+    def _fade_out(self) -> None:
+        """Close the panel through one fade, then pop it down for real."""
+        self._revealer.set_reveal_child(False)
+        GLib.timeout_add(self.FADE_MS, self._popdown_later)
+
+    def _popdown_later(self) -> bool:
+        self._popover.popdown()
+        return False
+
+    def _row_activated(self, _list, row) -> None:
+        self.choose(int(getattr(row, "season_number", 0)))
+
+    def _on_key_press(self, _list, event) -> bool:
+        key = event.keyval
+        rows = list(self._rows.values())
+        if not rows:
+            return False
+        selected = self._list.get_selected_row() or rows[0]
+        index = rows.index(selected)
+        if key == Gdk.KEY_Down:
+            self._list.select_row(rows[min(index + 1, len(rows) - 1)])
+            return True
+        if key == Gdk.KEY_Up:
+            self._list.select_row(rows[max(index - 1, 0)])
+            return True
+        if key in (Gdk.KEY_Return, Gdk.KEY_KP_Enter, Gdk.KEY_space):
+            self.choose(int(getattr(selected, "season_number", 0)))
+            return True
+        if key == Gdk.KEY_Escape:
+            self._fade_out()
+            return True
+        return False
+
+
+def _tmdb_score(details) -> int | None:
+    """TMDB's user score as a whole percentage.
+
+    The shared ``MediaDetails`` reports TMDB's average but no vote count, so
+    the count is used only when a title really carries one; otherwise the
+    percentage comes from the average itself, which ``tmdb._rating`` only sets
+    when TMDB has votes.  A count is never made up to satisfy the helper.
+    """
+    vote = getattr(details, "rating", None)
+    try:
+        votes = int(getattr(details, "vote_count", 0) or 0)
+    except (TypeError, ValueError):
+        votes = 0
+    if votes:
+        return ratings.tmdb_percent(vote, votes)
+    try:
+        average = float(vote)
+    except (TypeError, ValueError):
+        return None
+    if average <= 0:
+        return None
+    percent = round(average * 10)
+    return percent if 0 < percent <= 100 else None
+
+
+def _rating_glyph(cr, kind: str) -> None:
+    """Paint one 16 px rating mark; the shapes are drawn, never downloaded."""
+    if kind == "imdb":
+        # The yellow rounded square with the site's letters, in dark ink.
+        _rounded_path(cr, 0.5, 0.5, 15, 15, 4)
+        cr.set_source_rgba(0.96, 0.77, 0.09, 1.0)
+        cr.fill()
+        layout = PangoCairo.create_layout(cr)
+        layout.set_text("IMDb", -1)
+        description = Pango.FontDescription("Sans Bold")
+        description.set_absolute_size(5.4 * Pango.SCALE)
+        layout.set_font_description(description)
+        text_w, text_h = layout.get_pixel_size()
+        cr.set_source_rgba(0.08, 0.09, 0.11, 1.0)
+        cr.move_to((16 - text_w) / 2, (16 - text_h) / 2)
+        PangoCairo.show_layout(cr, layout)
+        return
+    if kind == "rotten":
+        # A small splat: a body with a few lobes, in the success green.
+        cr.set_source_rgba(0.13, 0.77, 0.37, 1.0)
+        cr.arc(8, 9, 5.2, 0, 6.2831853)
+        cr.fill()
+        for angle in (0.6, 1.8, 3.0, 4.2, 5.4):
+            cr.save()
+            cr.translate(8, 8)
+            cr.rotate(angle)
+            cr.arc(0, -5.4, 1.8, 0, 6.2831853)
+            cr.fill()
+            cr.restore()
+        cr.arc(8, 5.2, 1.6, 0, 6.2831853)
+        cr.fill()
+        return
+    # TMDB: a small teal circle with the initial.
+    cr.set_source_rgba(0.0, 0.71, 0.89, 1.0)
+    cr.arc(8, 8, 7.4, 0, 6.2831853)
+    cr.fill()
+    layout = PangoCairo.create_layout(cr)
+    layout.set_text("T", -1)
+    description = Pango.FontDescription("Sans Bold")
+    description.set_absolute_size(8.4 * Pango.SCALE)
+    layout.set_font_description(description)
+    text_w, text_h = layout.get_pixel_size()
+    cr.set_source_rgba(1, 1, 1, 1)
+    cr.move_to((16 - text_w) / 2, (16 - text_h) / 2 - 0.5)
+    PangoCairo.show_layout(cr, layout)
+
+
+class RatingsRow(Gtk.Box):
+    """IMDb, Rotten Tomatoes and TMDB user score, 14 px apart (section 3).
+
+    A badge with no data is hidden; with every badge hidden the row hides too,
+    so a title nobody has rated leaves the hero exactly as it was.
+    """
+
+    GAP = 14
+
+    def __init__(self) -> None:
+        super().__init__(orientation=Gtk.Orientation.HORIZONTAL, spacing=self.GAP)
+        self.get_style_context().add_class("ratings-row")
+        self.set_no_show_all(True)
+        self._badges: dict[str, Gtk.Box] = {}
+        for kind, tooltip in (
+            ("imdb", "IMDb"),
+            ("rotten", "Rotten Tomatoes (critics)"),
+            ("tmdb", "TMDB user score"),
+        ):
+            self._badges[kind] = self._badge(kind, tooltip)
+            self.pack_start(self._badges[kind], False, False, 0)
+
+    def _badge(self, kind: str, tooltip: str) -> Gtk.Box:
+        badge = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        badge.get_style_context().add_class("rating-badge")
+        badge.set_tooltip_text(tooltip)
+        area = Gtk.DrawingArea()
+        area.set_size_request(16, 16)
+        area.set_valign(Gtk.Align.CENTER)
+        area.connect("draw", self._on_draw, kind)
+        badge.pack_start(area, False, False, 0)
+        value = Gtk.Label(label="")
+        value.set_valign(Gtk.Align.CENTER)
+        value.get_style_context().add_class("rating-value")
+        badge.pack_start(value, False, False, 0)
+        badge.value = value
+        return badge
+
+    def _on_draw(self, area, cr, kind: str) -> bool:
+        _rating_glyph(cr, kind)
+        return False
+
+    def show_values(self, values) -> bool:
+        """Draw whichever scores exist; hide the row when none do."""
+        texts = {
+            "imdb": f"{float(values.imdb):.1f}" if values.imdb else "",
+            "rotten": f"{int(values.rotten)}%" if values.rotten else "",
+            "tmdb": f"{int(values.tmdb_percent)}%" if values.tmdb_percent else "",
+        }
+        for kind, badge in self._badges.items():
+            # The row is no-show-all, so each badge shows itself and its mark.
+            badge.show_all()
+            text = texts[kind]
+            badge.value.set_text(text)
+            badge.set_visible(bool(text))
+        self.set_visible(any(texts.values()))
+        return False
+
+
 class MoviesWindow(Gtk.Box):
     """The cinematic Movies & TV surface, embedded in the main window."""
 
@@ -1772,10 +2130,20 @@ class MoviesWindow(Gtk.Box):
         return box
 
     def _fill_meta(self, box: Gtk.Box, bits, rating=None, *,
-                   css: str = "movie-meta",
-                   star_css: str = "movie-rating-star") -> None:
+                   css: str | None = None,
+                   star_css: str | None = None) -> None:
         """One meta line.  ``css``/``star_css`` name the classes, so a hero
-        label can use the light-on-artwork set instead of the page tokens."""
+        label can use the light-on-artwork set instead of the page tokens.
+
+        A refill with no classes keeps the ones the box already had: details
+        arriving later must not repaint a hero line in the page's dark ink.
+        """
+        css = css or getattr(box, "meta_css", "") or "movie-meta"
+        star_css = (
+            star_css or getattr(box, "meta_star_css", "") or "movie-rating-star"
+        )
+        box.meta_css = css
+        box.meta_star_css = star_css
         for child in box.get_children():
             box.remove(child)
         written = False
@@ -2187,6 +2555,7 @@ class MoviesWindow(Gtk.Box):
             content.pack_start(overview, False, False, 0)
 
         actions = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        actions.get_style_context().add_class("movie-hero-actions")
         if item is not None:
             actions.pack_start(
                 self._primary_button(
@@ -2242,7 +2611,7 @@ class MoviesWindow(Gtk.Box):
         if item.kind in ("movie", "tv") and item.tmdb_id > 0:
             def work() -> None:
                 try:
-                    found = self._client.images(item.kind, item.tmdb_id)
+                    found = self._client_images(item.kind, item.tmdb_id)
                 except Exception:  # noqa: BLE001 - art must never break home
                     return
                 GLib.idle_add(self._apply_home_hero_images, found, token)
@@ -3024,6 +3393,10 @@ class MoviesWindow(Gtk.Box):
             badge_row.pack_start(adult_badge, False, False, 0)
         content.pack_start(badge_row, False, False, 0)
 
+        # The logo takes the title's place and hides it once one loads.
+        logo = HeroLogo(overlay)
+        content.pack_start(logo, False, False, 0)
+
         title = Gtk.Label(label=getattr(item, "title", ""), xalign=0)
         title.set_line_wrap(True)
         title.set_lines(2)
@@ -3046,6 +3419,7 @@ class MoviesWindow(Gtk.Box):
         content.pack_start(meta, False, False, 0)
 
         actions = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        actions.get_style_context().add_class("movie-hero-actions")
         find = self._primary_button(
             "Watch",
             "media-playback-start-symbolic",
@@ -3154,7 +3528,7 @@ class MoviesWindow(Gtk.Box):
         )
         if isinstance(item, anipm.AniTitle):
             self._build_ani_episode_section(body, item)
-        self._load_detail_art(item, backdrop, None, title, kind="anime")
+        self._load_detail_art(item, backdrop, logo, title, kind="anime")
         state["backdrop"] = backdrop
         page.show_all()
         return page
@@ -4033,7 +4407,11 @@ class MoviesWindow(Gtk.Box):
         )
         content.pack_start(meta, False, False, 0)
 
+        ratings_row = RatingsRow()
+        content.pack_start(ratings_row, False, False, 0)
+
         actions = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        actions.get_style_context().add_class("movie-hero-actions")
         if item.kind == "tv":
             play = self._primary_button(
                 "Choose an episode",
@@ -4114,6 +4492,7 @@ class MoviesWindow(Gtk.Box):
 
         self._detail_state = {
             "backdrop": backdrop,
+            "ratings": ratings_row,
             "title": title,
             "meta": meta,
             "overview": overview,
@@ -4214,7 +4593,7 @@ class MoviesWindow(Gtk.Box):
                           title, token: int) -> None:
         def work() -> None:
             try:
-                found = self._client.images(kind, tmdb_id)
+                found = self._client_images(kind, tmdb_id)
             except Exception:  # noqa: BLE001 - art must never break a page
                 return
             GLib.idle_add(self._apply_art_images, found, backdrop, logo, title, token)
@@ -4258,22 +4637,64 @@ class MoviesWindow(Gtk.Box):
             pass
         return False
 
+    def _logo_language(self) -> str | None:
+        """The two-letter display language a logo should be in, if any."""
+        tag = str(getattr(self._client, "language", "") or "").split("-")[0]
+        return tag.strip().lower() or None
+
+    def _client_images(self, kind: str, tmdb_id: int):
+        """Wide art in the display language, when one is known.
+
+        The keyword is left off the call otherwise, so a client that predates
+        the language argument (or a test stub without it) keeps working.
+        """
+        language = self._logo_language()
+        if language:
+            return self._client.images(kind, tmdb_id, language=language)
+        return self._client.images(kind, tmdb_id)
+
     def _fetch_anime_art(self, item, backdrop, logo, title, token: int) -> None:
         """Anime titles have no TMDB id, so the name is looked up instead."""
 
         def work() -> None:
             try:
-                url = tmdb.tmdb_backdrop_for_title(
+                found = tmdb.tmdb_images_for_title(
                     str(getattr(item, "title", "") or ""),
                     str(getattr(item, "year", "") or ""),
+                    self._anime_tmdb_kind(item),
                     client=self._client,
+                    language=self._logo_language(),
                 )
             except Exception:  # noqa: BLE001 - art must never break a page
                 return
-            if url:
-                GLib.idle_add(self._apply_anime_backdrop, url, backdrop, token)
+            GLib.idle_add(
+                self._apply_anime_images, found, backdrop, logo, title, token
+            )
 
         threading.Thread(target=work, daemon=True, name="lgl-tmdb-anime-art").start()
+
+    def _anime_tmdb_kind(self, item) -> str:
+        """A series anime answers to TMDB's TV side, a film to its movie one."""
+        try:
+            episodes = int(getattr(item, "episodes", 0) or 0)
+        except (TypeError, ValueError):
+            episodes = 0
+        return "tv" if episodes > 0 else "movie"
+
+    def _apply_anime_images(self, found, backdrop, logo, title, token: int) -> bool:
+        """Wide art for an anime page: the backdrop, then the logo on top."""
+        if token != getattr(self, "_art_token", 0):
+            return False
+        url = str(getattr(found, "backdrop_url", "") or "")
+        if url:
+            self._apply_anime_backdrop(url, backdrop, token)
+        logo_url = str(getattr(found, "logo_url", "") or "")
+        if logo_url and logo is not None:
+            self._images.load(
+                logo_url, LOGO_SIZE,
+                lambda pixbuf: self._apply_hero_logo(pixbuf, logo, title, token),
+            )
+        return False
 
     def _apply_anime_backdrop(self, url: str, backdrop, token: int) -> bool:
         if token != getattr(self, "_art_token", 0):
@@ -4445,6 +4866,55 @@ class MoviesWindow(Gtk.Box):
             self._load_detail_image(details.backdrop_url, backdrop)
         if details.kind == "tv" and details.seasons:
             self._render_seasons(details)
+        self._load_ratings(details)
+        return False
+
+    # -- ratings ------------------------------------------------------------
+    def _load_ratings(self, details: MediaDetails) -> None:
+        """Ask OMDb in the background; the row fills in when it answers."""
+        row = self._detail_state.get("ratings")
+        if row is None:
+            return
+        token = self._detail_token
+        key = ratings.read_omdb_key(self._settings)
+        vote = details.rating
+        votes = int(getattr(details, "vote_count", 0) or 0)
+        score = _tmdb_score(details)
+
+        if not key:
+            # Contract section 3: with no OMDb key the row is TMDB's score
+            # alone.  fetch_ratings() would otherwise serve cached IMDb and
+            # Rotten Tomatoes scores from a previous run.
+            GLib.idle_add(
+                self._apply_ratings,
+                row,
+                ratings.Ratings(tmdb_percent=score),
+                token,
+            )
+            return
+
+        def work() -> None:
+            try:
+                values = ratings.fetch_ratings(
+                    details.imdb_id,
+                    vote,
+                    votes,
+                    key=key,
+                    cache_dir=platform_support.cache_dir(),
+                )
+            except Exception:  # noqa: BLE001 - a rating is never worth an error
+                return
+            values = ratings.Ratings(
+                imdb=values.imdb, rotten=values.rotten, tmdb_percent=score
+            )
+            GLib.idle_add(self._apply_ratings, row, values, token)
+
+        threading.Thread(target=work, daemon=True, name="lgl-ratings").start()
+
+    def _apply_ratings(self, row, values, token: int) -> bool:
+        if token != self._detail_token:
+            return False
+        row.show_values(values)
         return False
 
     def _render_seasons(self, details: MediaDetails) -> None:
@@ -4465,44 +4935,20 @@ class MoviesWindow(Gtk.Box):
             hint.get_style_context().add_class("movie-meta")
             box.pack_start(hint, False, False, 0)
 
-        tabs_scroller = Gtk.ScrolledWindow()
-        tabs_scroller.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.NEVER)
-        tabs_scroller.set_overlay_scrolling(False)
-        tabs_scroller.set_size_request(-1, 44)
-        tabs_scroller.get_style_context().add_class("movie-scroll")
-        tabs = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        tabs_scroller.add(tabs)
-        buttons: list[Gtk.ToggleButton] = []
-
         episodes = Gtk.ListBox()
         episodes.set_selection_mode(Gtk.SelectionMode.NONE)
         episodes.get_style_context().add_class("movie-episode-list")
 
-        def select(number: int, chosen: Gtk.ToggleButton) -> None:
-            for button in buttons:
-                button.set_active(button is chosen)
-            self._load_season(details.tmdb_id, number, episodes)
+        def select(season) -> None:
+            self._load_season(details.tmdb_id, int(season.number), episodes)
 
-        for season in details.seasons:
-            label = season.name or f"Season {season.number}"
-            button = Gtk.ToggleButton(label=label)
-            button.set_relief(Gtk.ReliefStyle.NONE)
-            button.get_style_context().add_class("movie-btn-dark")
-            button.get_style_context().add_class("movie-btn-small")
-            button.set_tooltip_text(f"{season.episode_count} episodes")
-            button.connect(
-                "clicked",
-                lambda current, number=season.number: select(number, current),
-            )
-            tabs.pack_start(button, False, False, 0)
-            buttons.append(button)
+        picker = SeasonPicker(select)
+        picker.load(details.seasons, self._images, details.poster_url)
+        self._season_picker = picker
 
-        box.pack_start(tabs_scroller, False, False, 0)
+        box.pack_start(picker, False, False, 0)
         box.pack_start(episodes, False, False, 0)
         box.show_all()
-        if buttons:
-            buttons[0].set_active(True)
-            select(details.seasons[0].number, buttons[0])
 
     def _load_season(self, tmdb_id: int, number: int, box: Gtk.ListBox) -> None:
         self._season_token += 1
