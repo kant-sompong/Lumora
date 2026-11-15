@@ -242,7 +242,7 @@ def component_css() -> str:
     # -- buttons -----------------------------------------------------------
     kinds = ", ".join(f"button.btn-{kind}" for kind in components.BUTTON_KINDS)
     kind_focus = ", ".join(
-        f"button.btn-{kind}:focus-visible" for kind in components.BUTTON_KINDS
+        f"button.btn-{kind}:focus" for kind in components.BUTTON_KINDS
     )
     rule(
         kinds,
@@ -278,7 +278,7 @@ def component_css() -> str:
         border_color="transparent",
         color="alpha(@on_accent, 0.70)",
     )
-    rule("button.btn-primary:focus-visible", outline_color="@fg")
+    rule("button.btn-primary:focus", outline_color="@fg")
 
     rule(
         "button.btn-secondary",
@@ -314,8 +314,19 @@ def component_css() -> str:
         border_color=f"alpha({danger}, 0.55)",
         color=danger_ink,
     )
-    rule("button.btn-danger:hover", background_color="alpha(@danger, 0.12)")
-    rule("button.btn-danger:active", background_color="alpha(@danger, 0.18)")
+    # The label is the danger ink, so the fill stays a hint: a 12% red wash put
+    # the label at 4.21:1 on a dark sheet.  The border carries the hover instead.
+    rule(
+        "button.btn-danger:hover",
+        background_color="alpha(@danger, 0.05)",
+        border_color="alpha(@danger, 0.85)",
+    )
+    rule(
+        "button.btn-danger:active",
+        background_color="alpha(@danger, 0.05)",
+        border_color="@danger",
+        box_shadow="none",
+    )
     rule(
         "button.btn-danger:disabled",
         color="@faint",
@@ -394,7 +405,7 @@ def component_css() -> str:
         color="@on_accent",
     )
     rule(
-        "checkbutton:focus-visible check, radiobutton:focus-visible radio",
+        "checkbutton:focus check, radiobutton:focus radio",
         outline="2px solid @accent",
         outline_offset="1px",
     )
@@ -437,8 +448,8 @@ def component_css() -> str:
         background_color=f"alpha(@accent, {components.CARD_SELECTED_ALPHA:.2f})",
     )
     rule(
-        "flowboxchild.library-tile:focus-visible, .browse-tile:focus-visible, "
-        "button.movie-card:focus-visible",
+        "flowboxchild.library-tile:focus, .browse-tile:focus, "
+        "button.movie-card:focus",
         outline=f"{components.CARD_FOCUS_RING}px solid @accent",
         outline_offset="-2px",
     )

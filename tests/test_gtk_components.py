@@ -402,3 +402,37 @@ def test_the_clash_table_holds_exactly_the_two_shared_tokens():
         ("light", "danger", "surface"),
     }
     assert all(ratio < theme.CONTRAST_TEXT for ratio in TOKEN_CLASHES.values())
+
+
+def blend(foreground: str, background: str, alpha: float) -> str:
+    """``foreground`` at ``alpha`` drawn over ``background``, as the eye sees it."""
+    top = [int(foreground[index:index + 2], 16) / 255 for index in (1, 3, 5)]
+    under = [int(background[index:index + 2], 16) / 255 for index in (1, 3, 5)]
+    mixed = [top[i] * alpha + under[i] * (1 - alpha) for i in range(3)]
+    return "#%02x%02x%02x" % tuple(round(channel * 255) for channel in mixed)
+
+
+#: Every new pair this slice introduces is a label over a fill the sheet paints,
+#: so each one is measured against the blended fill, not the flat token.
+FILL_PAIRS = (
+    ("danger button label on its hover tint", "danger_text", "danger", 0.05, "surface"),
+    ("danger button label on a sheet", "danger_text", None, 0.0, "surface"),
+    ("quiet label on a sheet", "muted", None, 0.0, "surface"),
+    ("selected card title on its fill", "text", "accent", 0.10, "surface"),
+    ("selected card meta on its fill", "muted", "accent", 0.10, "surface"),
+    ("secondary button label on its fill", "text", "text", 0.06, "surface"),
+    ("hovered card title on its fill", "text", "text", 0.035, "surface"),
+)
+
+
+@pytest.mark.parametrize("mode", ("dark", "light"))
+@pytest.mark.parametrize("label,foreground,fill,alpha,under", FILL_PAIRS)
+def test_every_new_label_reads_on_the_fill_it_sits_on(
+    label, foreground, fill, alpha, under, mode
+):
+    pal = theme.PALETTES[mode]
+    background = pal[under] if not fill else blend(pal[fill], pal[under], alpha)
+    ratio = design_tokens.contrast_ratio(pal[foreground], background)
+    assert ratio >= theme.CONTRAST_TEXT, (
+        f"{label} is {ratio:.2f}:1 in {mode} mode on {background}"
+    )
