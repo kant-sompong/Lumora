@@ -19,12 +19,15 @@ from PySide6.QtCore import (
     QEvent,
     QPoint,
     QPropertyAnimation,
+    QRect,
     QRectF,
+    QSize,
     Qt,
     Signal,
 )
 from PySide6.QtGui import QColor, QFont, QPainter, QPixmap
 from PySide6.QtWidgets import (
+    QApplication,
     QFrame,
     QGraphicsDropShadowEffect,
     QGraphicsOpacityEffect,
@@ -42,6 +45,8 @@ from .tmdb import Season, season_poster_url
 PANEL_WIDTH = 300
 PANEL_MAX_HEIGHT = 420
 ROW_HEIGHT = 76
+#: The gap between the header and its open panel, in pixels.
+PANEL_GAP = 4
 ROW_PADDING = 12
 THUMB_WIDTH = 44
 THUMB_HEIGHT = 64
@@ -65,6 +70,39 @@ def _alpha(colour: str, opacity: float) -> QColor:
 def _spaced(step: int) -> int:
     """The nearest step on the shared spacing scale."""
     return min(SPACING, key=lambda value: abs(value - step))
+
+
+def panel_geometry(
+    anchor: QRect, size: QSize, area: QRect, gap: int = PANEL_GAP
+) -> tuple[QPoint, int]:
+    """Where the open panel goes, and how tall it may be.
+
+    ``anchor`` is the header's rectangle in global coordinates, ``area`` the
+    available screen rectangle.  The panel hangs directly below the header when
+    its full height fits there, flips above when it does not, and is shortened
+    to the room on whichever side is chosen so it never leaves the screen.  The
+    return value is the global top-left and the height to apply.
+    """
+    width = min(size.width(), area.width())
+    wanted = min(size.height(), area.height())
+    below_top = anchor.bottom() + 1 + gap
+    above_bottom = anchor.top() - gap
+    room_below = area.bottom() + 1 - below_top
+    room_above = above_bottom - area.top()
+    if room_below >= wanted:
+        below = True
+    elif room_above >= wanted:
+        below = False
+    else:
+        # Neither side holds the whole panel: use the roomier one and shorten.
+        below = room_below >= room_above
+    room = room_below if below else room_above
+    height = max(1, min(wanted, room))
+    y = below_top if below else above_bottom - height
+    x = min(anchor.left(), area.right() + 1 - width)
+    x = max(area.left(), x)
+    y = max(area.top(), min(y, area.bottom() + 1 - height))
+    return QPoint(x, y), height
 
 
 class Chevron(QWidget):
@@ -520,6 +558,7 @@ class SeasonPicker(QWidget):
         self.panel = SeasonPanel(theme, self)
         self.panel.set_loader(image_loader)
         self.panel.chosen.connect(self._chosen)
+        self._watching = False
         self.apply_theme(theme)
         self.setVisible(False)
 
@@ -596,16 +635,55 @@ class SeasonPicker(QWidget):
         self.panel.set_seasons(self._seasons, self._show_poster, self._current)
         self.panel.adjustSize()
         height = min(PANEL_MAX_HEIGHT, max(ROW_HEIGHT, ROW_HEIGHT * len(self._seasons)))
-        self.panel.setFixedHeight(min(PANEL_MAX_HEIGHT, height))
-        position = self.mapToGlobal(QPoint(0, self.height() + 4))
-        self.panel.move(position)
+        self.panel.setFixedHeight(height)
         self.chevron.set_open(True)
         self.panel.load_posters()
         self.panel.fade_in()
+        # The platform gives a popup its first geometry when it is shown, so the
+        # place is set afterwards: otherwise the move is silently lost and the
+        # panel opens wherever the window system decided (in practice, nowhere
+        # near the header).
+        self.place_panel()
+        self._watch_window(True)
         self.panel.setFocus()
+
+    def place_panel(self) -> None:
+        """Hang the open panel off the header, flipped and clamped to the screen."""
+        screen = self.screen() or QApplication.primaryScreen()
+        if screen is None:  # pragma: no cover - a window always has a screen
+            return
+        anchor = QRect(self.mapToGlobal(QPoint(0, 0)), self.size())
+        point, height = panel_geometry(
+            anchor, self.panel.size(), screen.availableGeometry()
+        )
+        self.panel.setFixedHeight(height)
+        self.panel.move(point)
+
+    def _watch_window(self, watching: bool) -> None:
+        """Follow the window while the panel is open, so a move cannot strand it."""
+        window = self.window()
+        if watching and window is not None:
+            if not self._watching:
+                window.installEventFilter(self)
+                self._watching = True
+        elif not watching and self._watching:
+            if window is not None:
+                window.removeEventFilter(self)
+            self._watching = False
+
+    def eventFilter(self, watched, event) -> bool:  # noqa: N802 - Qt naming
+        if (
+            self._watching
+            and watched is self.window()
+            and event.type() in (QEvent.Move, QEvent.Resize)
+            and self.panel.isVisible()
+        ):
+            self.place_panel()
+        return super().eventFilter(watched, event)
 
     def close_panel(self) -> None:
         self.chevron.set_open(False)
+        self._watch_window(False)
         self.panel.fade_out()
 
     def _chosen(self, number: int) -> None:
@@ -613,10 +691,12 @@ class SeasonPicker(QWidget):
         self._current = number
         self._update_header()
         self.chevron.set_open(False)
+        self._watch_window(False)
         self.panel.fade_out()
         self.currentIndexChanged.emit(number)
 
     def hideEvent(self, event) -> None:  # noqa: N802 - Qt naming
+        self._watch_window(False)
         self.panel.hide()
         super().hideEvent(event)
 
@@ -632,6 +712,7 @@ class SeasonPicker(QWidget):
 
 
 __all__ = [
+    "PANEL_GAP",
     "PANEL_MAX_HEIGHT",
     "PANEL_WIDTH",
     "ROW_HEIGHT",
@@ -639,4 +720,5 @@ __all__ = [
     "SeasonPicker",
     "SeasonRow",
     "SeasonThumb",
+    "panel_geometry",
 ]
