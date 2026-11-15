@@ -12,6 +12,7 @@ Skipped without GTK 3 or a display, like the rest of the GTK suite.
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
 import pytest
 
@@ -137,15 +138,36 @@ def test_every_card_class_is_on_the_same_surface():
         rule = COMPONENT[selector]
         assert rule["border-radius"] == f"{dc.CARD_RADIUS}px"
         assert rule["padding"] == f"{dc.CARD_PADDING}px"
-        assert rule["border"] == f"{dc.CARD_BORDER_WIDTH}px solid @divider"
+        assert rule["border"] == (
+            f"{dc.CARD_BORDER_WIDTH}px solid @{theme.css_name('divider')}"
+        )
 
 
-def test_the_sheet_only_names_tokens_for_its_colours():
+STYLE_CSS = (Path(__file__).resolve().parents[1] / "lgl" / "style.css").read_text(
+    encoding="utf-8"
+)
+
+
+def test_every_sheet_names_only_published_tokens():
+    """A name theme.py does not publish paints nothing, silently.
+
+    Both sheets are checked: the shared ``style.css`` main keeps, and the
+    component sheet this slice renders.  The published names come from
+    ``theme.css_name``, which renames raised to overlay, divider to border,
+    muted to text2 and faint to muted, so neither sheet may name the internal
+    keys.
+    """
     published = {theme.css_name(token) for token in theme.DARK}
-    used = set(re.findall(r"@([a-z_]+)", COMPONENT_CSS))
-    assert used <= published, f"not published by theme.py: {sorted(used - published)}"
-    literals = re.findall(r"#[0-9a-fA-F]{3,8}\b", COMPONENT_CSS)
-    assert literals == [], f"literal colours in the component sheet: {literals}"
+    for label, text in (("style.css", STYLE_CSS), ("the component sheet", COMPONENT_CSS)):
+        # ``@define-color`` is the provider syntax, not a token reference.
+        used = set(re.findall(r"@([a-z_]+)", text)) - {"define"}
+        assert used <= published, (
+            f"{label} names tokens theme.py does not publish: "
+            f"{sorted(used - published)}"
+        )
+    assert re.findall(r"#[0-9a-fA-F]{3,8}\b", COMPONENT_CSS) == [], (
+        "literal colours in the component sheet"
+    )
 
 
 # -- the widgets measure what the table says -------------------------------
@@ -331,14 +353,31 @@ def test_a_sheet_and_a_card_fit_a_nine_hundred_pixel_window():
 
 # -- contrast, both themes -------------------------------------------------
 
+#: The two pairs the shared tokens cannot bring to 4.5:1.  Both come from
+#: ``design_tokens.py``, which is read-only for this slice, so the ratios are
+#: pinned here rather than skipped: a token change that fixes one of them fails
+#: this table on purpose, and the table is then updated with the new number.
+TOKEN_CLASHES: dict[tuple[str, str, str], float] = {
+    # White on the dark accent fill: the accent itself is the fill colour.
+    ("dark", "on_accent", "accent"): 4.23,
+    # The light danger ink on a white surface.
+    ("light", "danger", "surface"): 3.76,
+}
+
+#: Every other pair must reach AA.  ``danger_text`` is the shade the sheet
+#: actually draws error text in, and it passes in both themes.
 PAIRS = (
     ("text on page", "text", "bg"),
     ("text on surface", "text", "surface"),
-    ("muted on page", "muted", "bg"),
-    ("muted on surface", "muted", "surface"),
-    ("text on raised", "text", "raised"),
+    ("text on overlay", "text", "raised"),
+    ("secondary text on page", "muted", "bg"),
+    ("secondary text on surface", "muted", "surface"),
+    ("muted text on page", "faint", "bg"),
     ("label on the accent fill", "on_accent", "accent_fill"),
-    ("danger on surface", "danger", "surface"),
+    ("error text on surface", "danger_text", "surface"),
+    ("error text on page", "danger_text", "bg"),
+    ("clash: white on the dark accent", "on_accent", "accent"),
+    ("clash: light danger on the surface", "danger", "surface"),
 )
 
 
@@ -347,19 +386,19 @@ PAIRS = (
 def test_every_text_pair_meets_wcag_aa(label, foreground, background, mode):
     palette = theme.PALETTES[mode]
     ratio = design_tokens.contrast_ratio(palette[foreground], palette[background])
+    pinned = TOKEN_CLASHES.get((mode, foreground, background))
+    if pinned is not None:
+        assert round(ratio, 2) == pinned, (
+            f"{label} is {ratio:.2f}:1 in {mode} mode, not the pinned {pinned}:1 "
+            "the shared tokens give it"
+        )
+        return
     assert ratio >= theme.CONTRAST_TEXT, f"{label} is {ratio:.2f}:1 in {mode} mode"
 
 
-def test_the_two_shared_token_pairs_below_aa_are_unchanged():
-    """The pairs the brief asks to report, held at their shared values.
-
-    ``design_tokens`` is read-only for this slice: white on the dark accent is
-    4.23:1 and the light danger ink on white is 3.76:1.  If somebody fixes the
-    tokens, this test fails and the report's proposal can be struck out.
-    """
-    dark = design_tokens.TOKENS["dark"]
-    light = design_tokens.TOKENS["light"]
-    white_on_accent = design_tokens.contrast_ratio("#ffffff", dark["accent"])
-    danger_on_white = design_tokens.contrast_ratio(light["danger"], "#ffffff")
-    assert round(white_on_accent, 2) == 4.23, white_on_accent
-    assert round(danger_on_white, 2) == 3.76, danger_on_white
+def test_the_clash_table_holds_exactly_the_two_shared_tokens():
+    assert set(TOKEN_CLASHES) == {
+        ("dark", "on_accent", "accent"),
+        ("light", "danger", "surface"),
+    }
+    assert all(ratio < theme.CONTRAST_TEXT for ratio in TOKEN_CLASHES.values())

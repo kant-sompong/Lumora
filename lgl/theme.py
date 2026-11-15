@@ -212,6 +212,22 @@ def component_css() -> str:
     from . import design_components as components
     from .design_tokens import TEXT_SIZES
 
+    def token(name: str) -> str:
+        """``@``-name of a palette token, as published by :func:`css_variables`.
+
+        The sheet names tokens by what the palette publishes, never by the
+        internal key, so a rename in :data:`CSS_NAMES` moves this sheet with it.
+        """
+        return "@" + css_name(name)
+
+    text = token("text")
+    text2 = token("muted")
+    muted = token("faint")
+    border = token("divider")
+    overlay = token("raised")
+    danger = token("danger")
+    danger_ink = token("danger_text")
+
     lines: list[str] = [
         "/* Generated from lgl/design_components.py - do not edit by hand. */",
         "/* Card, button, field and sheet metrics, shared with the Windows app. */",
@@ -295,8 +311,8 @@ def component_css() -> str:
     rule(
         "button.btn-danger",
         background_color="transparent",
-        border_color="alpha(@danger, 0.55)",
-        color="@danger",
+        border_color=f"alpha({danger}, 0.55)",
+        color=danger_ink,
     )
     rule("button.btn-danger:hover", background_color="alpha(@danger, 0.12)")
     rule("button.btn-danger:active", background_color="alpha(@danger, 0.18)")
@@ -322,13 +338,16 @@ def component_css() -> str:
 
     # -- fields ------------------------------------------------------------
     fields = "entry, entry.search, searchentry, spinbutton, combobox button"
+    # Only the metrics and the states style.css does not cover.  The base fill
+    # and ink stay with style.css, whose hero rules repaint a field that sits on
+    # the artwork; painting the fill here would win over them, because this
+    # provider is added last, and the hero's light inks would be lost.
     rule(
         fields,
         min_height=f"{components.INPUT_CONTENT}px",
         padding=f"0 {components.INPUT_PADDING_X}px",
-        border=f"{components.BORDER_WIDTH}px solid @divider",
+        border_width=f"{components.BORDER_WIDTH}px",
         border_radius=f"{components.INPUT_RADIUS}px",
-        background_color="@raised",
         box_shadow="none",
     )
     rule(
@@ -355,7 +374,7 @@ def component_css() -> str:
     )
     rule(
         "label.field-error-text",
-        color="@danger",
+        color=danger_ink,
         font_size=f"{components.FIELD_ERROR_SIZE}px",
     )
     indicator = components.CHECK_INDICATOR - 2 * components.BORDER_WIDTH
@@ -472,7 +491,18 @@ def component_css() -> str:
         font_size=f"{TEXT_SIZES['body']}px",
     )
 
-    return "\n".join(lines) + "\n"
+    # Internal palette keys never reach the sheet: each is swapped for the name
+    # the token provider actually publishes.
+    sheet = "\n".join(lines) + "\n"
+    for internal, published in (
+        ("@fg", text),
+        ("@divider", border),
+        ("@raised", overlay),
+        ("@faint", muted),
+        ("@muted", text2),
+    ):
+        sheet = sheet.replace(internal, published)
+    return sheet
 
 
 _HEX = re.compile(r"^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$")
