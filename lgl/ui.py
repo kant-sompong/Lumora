@@ -11642,6 +11642,7 @@ class WebsiteSourcesDialog(Gtk.Dialog):
         for pattern in ("*.json", "*.jsonl", "*.ndjson", "*.csv"):
             filter_files.add_pattern(pattern)
         chooser.add_filter(filter_files)
+        polish_message(chooser, primary_response=Gtk.ResponseType.ACCEPT)
         response = chooser.run()
         path = chooser.get_filename()
         chooser.destroy()
