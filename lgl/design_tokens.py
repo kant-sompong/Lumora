@@ -14,13 +14,16 @@ Two values are worth explaining:
   ``#858998`` (4.68:1 on overlay, 5.10:1 on surface, 5.46:1 on bg), which is the
   nearest passing value in the same hue.
 * No single purple can be both a fill that carries white text and accent-coloured
-  text on a dark surface: white on a light-enough-for-text purple is about
-  3.9:1, and the purple dark enough for a 4.5:1 white label is about 3.6:1 as
-  text.  The accent therefore has three roles, as the Linux palette already
-  modelled: ``accent`` (the tint used for borders, washes and focus rings),
-  ``accent_fill`` (the background under ``on_accent``) and ``accent_text`` (the
-  same hue as readable text).  ``danger``/``warning``/``success`` follow the
-  same split: the bright value is the fill and the ``*_text`` sibling is the ink.
+  text on a dark surface.  White on the fill shade (``#7c3aed``) is 5.70:1, but
+  that same shade as ink on the dark overlay is only 2.86:1; the shade light
+  enough to read as text (``#a78bfa``, 5.99:1 on the overlay) carries white at
+  just 2.72:1.  The accent therefore has three roles, as the Linux palette
+  already modelled: ``accent`` (the tint used for borders, washes and focus
+  rings, 4.62:1 under white), ``accent_fill`` (the background under
+  ``on_accent``) and ``accent_text`` (the same hue as readable text).
+  ``danger``/``warning``/``success`` follow the same split: the bright value is
+  the fill, and the ``*_text`` sibling is the ink that clears AA on the
+  surfaces (dark danger 4.68:1 on overlay, light danger 6.47:1 on surface).
 """
 
 from __future__ import annotations
