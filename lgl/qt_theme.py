@@ -485,6 +485,10 @@ QLabel#episodeNumber {{ color: {c['muted']}; font-weight: 700; }}
 QLabel#episodeTitle {{ font-weight: 600; }}
 QLabel#episodeMeta {{ color: {c['faint']}; font-size: {small}px; }}
 QLabel#episodePlay {{ color: {c['accent_text']}; font-size: {body}px; }}
+/* An episode that has not aired yet is marked in the danger ink, never as a
+   disabled control: the row stays clickable and the player decides. */
+QFrame#episodeRow[upcoming="true"] QLabel#episodeTitle {{ color: {c['danger_text']}; }}
+QLabel#episodeStatus {{ color: {c['danger_text']}; font-size: {small}px; }}
 QComboBox#seasonPicker {{ padding: 6px 10px; }}
 
 /* ---- toast ------------------------------------------------------------ */

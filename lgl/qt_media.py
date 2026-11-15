@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass, replace
+from datetime import date
 from math import ceil
 from pathlib import Path
 from typing import Callable, Iterable, Sequence
@@ -195,6 +196,27 @@ def episode_meta_text(runtime: object, air_date: object) -> str:
     if date:
         bits.append(date)
     return " · ".join(bits)
+
+
+#: The mark on an episode whose air date has not arrived yet.
+NOT_AIRED_LABEL = "Not aired yet"
+
+
+def air_date_status(air_date: object, today: date | None = None) -> str:
+    """``"upcoming"``, ``"aired"`` or ``"unknown"`` for one TMDB air date.
+
+    The day itself counts as aired: an episode that airs today is not an
+    upcoming one.  A missing or unparseable date is ``"unknown"`` and is drawn
+    exactly like an aired episode, so bad metadata never turns rows red.
+    """
+    text = str(air_date or "").strip()
+    if not text:
+        return "unknown"
+    try:
+        parsed = date.fromisoformat(text[:10])
+    except ValueError:
+        return "unknown"
+    return "upcoming" if parsed > (today or date.today()) else "aired"
 
 
 def rating_text(rating: float | None) -> str:
@@ -645,6 +667,8 @@ class EpisodeRow(QFrame):
         self.setCursor(Qt.PointingHandCursor)
         self.setAttribute(Qt.WA_Hover, True)
         self.still_url = str(still_url or "")
+        self.air_date = str(air_date or "")
+        self._upcoming = False
         row = QHBoxLayout(self)
         row.setContentsMargins(14, 10, 14, 10)
         row.setSpacing(14)
@@ -675,7 +699,18 @@ class EpisodeRow(QFrame):
         self.meta = QLabel(meta_text)
         self.meta.setObjectName("episodeMeta")
         self.meta.setVisible(bool(meta_text))
-        text.addWidget(self.meta)
+        # The "Not aired yet" mark rides beside the date line, so an upcoming
+        # episode adds no height and the row layout stays as it is.
+        meta_row = QHBoxLayout()
+        meta_row.setContentsMargins(0, 0, 0, 0)
+        meta_row.setSpacing(8)
+        meta_row.addWidget(self.meta)
+        self.status = QLabel(NOT_AIRED_LABEL)
+        self.status.setObjectName("episodeStatus")
+        self.status.setVisible(False)
+        meta_row.addWidget(self.status)
+        meta_row.addStretch(1)
+        text.addLayout(meta_row)
         self.overview = ElidedParagraph(overview)
         text.addWidget(self.overview)
         text.addStretch(1)
@@ -685,6 +720,29 @@ class EpisodeRow(QFrame):
         self.play.setObjectName("episodePlay")
         self.play.setToolTip("Play this episode")
         row.addWidget(self.play, 0, Qt.AlignVCenter)
+        self.refresh_air_status()
+
+    def refresh_air_status(self, today: date | None = None) -> bool:
+        """Re-read the air date; returns True while the episode is upcoming.
+
+        Only the ink changes: the row keeps its handlers, its cursor and its
+        enabled state, so an upcoming episode is still opened like any other
+        and the player decides what it can do with it.
+        """
+        upcoming = air_date_status(self.air_date, today) == "upcoming"
+        changed = upcoming != self._upcoming
+        self._upcoming = upcoming
+        # The property is set every time (Qt reads it on every polish) so the
+        # first show already paints the right ink.
+        self.setProperty("upcoming", upcoming)
+        self.status.setVisible(upcoming)
+        if changed:
+            for widget in (self, self.title_label, self.status):
+                style = widget.style()
+                style.unpolish(widget)
+                style.polish(widget)
+            self.update()
+        return upcoming
 
     def set_still(self, pix: QPixmap | None) -> None:
         self.still.set_pixmap(pix)
@@ -781,6 +839,14 @@ class MediaPage(QWidget):
         self._search_timer.setSingleShot(True)
         self._search_timer.setInterval(380)
         self._search_timer.timeout.connect(self._run_search)
+        # "Not aired yet" depends on today's date, so the open episode list is
+        # re-checked while the page lives; a new day is the only thing that can
+        # change an answer.
+        self._air_day = date.today()
+        self._air_timer = QTimer(self)
+        self._air_timer.setInterval(60_000)
+        self._air_timer.timeout.connect(self._refresh_air_dates)
+        self._air_timer.start()
         self._tmdb_items: list[Card] = []
         self._anime_items: list[Card] = []
         self._detail_card: Card | None = None
@@ -2055,6 +2121,15 @@ class MediaPage(QWidget):
         text = view_prefs.spoiler_note(self.settings)
         self.spoiler_note.setText(text)
         self.spoiler_note.setVisible(bool(text))
+
+    def _refresh_air_dates(self, today: date | None = None) -> None:
+        """Re-mark the episode rows once the calendar day has changed."""
+        today = today or date.today()
+        if today == self._air_day:
+            return
+        self._air_day = today
+        for row in self.findChildren(EpisodeRow):
+            row.refresh_air_status(today)
 
     def _load_episodes(self, card: Card) -> None:
         clear_layout(self.episode_column)
