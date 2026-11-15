@@ -1047,7 +1047,11 @@ class ProviderHealthDialog(Gtk.Dialog):
         actions.pack_start(self._fastest, False, False, 0)
         box.pack_start(actions, False, False, 0)
 
-        self.add_button("Close", Gtk.ResponseType.CLOSE)
+        close = self.add_button("Close", Gtk.ResponseType.CLOSE)
+        from . import ui as ui_module
+        ui_module.polish_dialog(
+            self, primary=close, primary_response=Gtk.ResponseType.CLOSE
+        )
         self._results: list[dict[str, Any]] = []
         self._auto = provider_health.AutoSelect(
             settings, on_results=self._received, token="gtk-media"
@@ -4308,6 +4312,8 @@ class MoviesWindow(Gtk.Box):
         dialog.add_button("Cancel", Gtk.ResponseType.CANCEL)
         clear = dialog.add_button("Clear history", Gtk.ResponseType.OK)
         clear.get_style_context().add_class("destructive-action")
+        from . import ui as ui_module
+        ui_module.polish_dialog(dialog, primary=clear, primary_kind="danger")
         response = dialog.run()
         dialog.destroy()
         if response != Gtk.ResponseType.OK:

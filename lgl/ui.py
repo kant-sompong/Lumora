@@ -46,6 +46,8 @@ from gi.repository import (  # noqa: E402
 )
 
 from . import browse_filters
+from . import design_components  # noqa: E402
+from . import theme as theme_tokens  # noqa: E402
 from . import nav_layout  # noqa: E402
 from . import profiles
 from . import recently_viewed
@@ -648,13 +650,194 @@ def _icon_text_button(icon_name: str, label: str, tooltip: str) -> Gtk.Button:
 
 
 def load_css() -> None:
-    """Install the token palette and the structural stylesheet.
+    """Install the token palette, the structural sheet and the component sheet.
 
     The palette is its own provider so :meth:`MainWindow.apply_theme` can swap
     it at runtime.  ``style.css`` only names tokens, never a literal colour, so
-    it never needs reloading and cannot go stale.
+    it never needs reloading and cannot go stale.  The component sheet is built
+    from :mod:`lgl.design_components`, the same table the Windows app uses, so
+    a card, a button or a sheet measures the same on both sides.
     """
     theme_gtk.install()
+    _install_component_css()
+
+
+#: The provider built from ``design_components``, kept so it is added once.
+_COMPONENT_PROVIDER = None
+
+
+def _install_component_css() -> None:
+    """Add the card/button/field/sheet rules above ``style.css``."""
+    global _COMPONENT_PROVIDER
+    if _COMPONENT_PROVIDER is not None:
+        return
+    screen = Gdk.Screen.get_default()
+    if screen is None:
+        return
+    provider = Gtk.CssProvider()
+    try:
+        provider.load_from_data(theme_tokens.component_css().encode("utf-8"))
+    except GLib.Error as exc:
+        print(f"Lumora: could not build the component sheet: {exc}", file=sys.stderr)
+        return
+    # Same priority as the palette and the structural sheet, added afterwards,
+    # so a component rule wins over an older rule for the same selector.
+    Gtk.StyleContext.add_provider_for_screen(screen, provider, theme_gtk.PRIORITY)
+    _COMPONENT_PROVIDER = provider
+
+
+def style_button(button, kind: str = "secondary", *, small: bool = False,
+                 icon: bool = False, tooltip: str | None = None):
+    """Put ``button`` on the shared table: 36 px tall, one of four kinds.
+
+    ``small`` is the 28 px variant, ``icon`` the 36x36 square.  An icon-only
+    button always gets a tooltip and an accessible name, because the label it
+    would have had is the picture.
+    """
+    context = button.get_style_context()
+    for name in design_components.BUTTON_KINDS:
+        context.remove_class(f"btn-{name}")
+    context.remove_class("btn-small")
+    context.remove_class("btn-icon")
+    chosen = kind if kind in design_components.BUTTON_KINDS else "secondary"
+    context.add_class(f"btn-{chosen}")
+    if small:
+        context.add_class("btn-small")
+    if icon:
+        context.add_class("btn-icon")
+    if tooltip:
+        button.set_tooltip_text(tooltip)
+        try:
+            button.get_accessible().set_name(tooltip)
+        except (AttributeError, TypeError):
+            pass
+    return button
+
+
+def set_field_error(entry, message: str | None = None) -> None:
+    """Mark a field as unusable: danger border, and the reason on hover."""
+    entry.get_style_context().add_class("field-error")
+    if message:
+        entry.set_tooltip_text(message)
+        try:
+            entry.get_accessible().set_description(message)
+        except (AttributeError, TypeError):
+            pass
+
+
+def clear_field_error(entry) -> None:
+    """Take the danger state back off a field once it is usable again."""
+    entry.get_style_context().remove_class("field-error")
+    entry.set_tooltip_text(None)
+
+
+def field_error_label(text: str = "") -> Gtk.Label:
+    """The danger line under a field; hidden until there is something to say."""
+    label = Gtk.Label(label=text, xalign=0)
+    label.get_style_context().add_class("field-error-text")
+    label.set_line_wrap(True)
+    label.set_no_show_all(True)
+    return label
+
+
+def polish_dialog(dialog, *, primary=None, cancel=None,
+                  primary_response=Gtk.ResponseType.OK,
+                  cancel_response=Gtk.ResponseType.CANCEL,
+                  primary_kind: str = "primary"):
+    """Bring one dialog onto the sheet rules and give it its keyboard defaults.
+
+    The stylesheet already covers every ``Gtk.Dialog``; this adds what CSS
+    cannot: one primary button per sheet, a default response for Enter, Escape
+    for Cancel, and focus starting on the first field, or on the primary button
+    when the sheet has none.
+    """
+    dialog.get_style_context().add_class("sheet")
+    content = dialog.get_content_area()
+    content.set_spacing(max(content.get_spacing(), design_components.DIALOG_GAP))
+    # A dialog that pads itself is brought up to the sheet's 24 px; one that
+    # deliberately runs full-bleed (margins of zero, like Settings' notebook)
+    # keeps its own layout.
+    margins = [
+        getattr(content, f"get_margin_{side}")()
+        for side in ("start", "end", "top", "bottom")
+    ]
+    if min(margins) >= design_components.SPACING[1]:
+        for side in ("start", "end", "top", "bottom"):
+            setter = getattr(content, f"set_margin_{side}")
+            getter = getattr(content, f"get_margin_{side}")
+            setter(max(getter(), design_components.DIALOG_PADDING))
+
+    buttons = []
+    getter = getattr(dialog, "get_action_area", None)
+    if getter is not None:
+        try:
+            area = getter()
+        except (TypeError, AttributeError):
+            area = None
+        if area is not None:
+            buttons = list(area.get_children())
+    if primary is None:
+        for button in buttons:
+            if button.get_style_context().has_class("suggested-action"):
+                primary = button
+                break
+    for button in buttons:
+        if button is primary:
+            style_button(button, primary_kind)
+        elif button is cancel:
+            style_button(button, "quiet")
+        else:
+            style_button(button, "secondary")
+    if primary is not None:
+        dialog.set_default(primary)
+        dialog.set_default_response(primary_response)
+
+    def _on_key(_widget, event):
+        if event.keyval != Gdk.KEY_Escape:
+            return False
+        dialog.response(cancel_response)
+        if dialog.get_visible():
+            dialog.close()
+        return True
+
+    dialog.connect("key-press-event", _on_key)
+
+    focus = _first_field(dialog) or primary
+    if focus is not None:
+        # Enter in the first field is the sheet's primary action, not a no-op.
+        if isinstance(focus, Gtk.Entry):
+            focus.set_activates_default(True)
+        focus.grab_focus()
+    return focus
+
+
+def _first_field(widget):
+    """The first focusable field anywhere in ``widget``, depth first.
+
+    ``Gtk.Dialog.forall`` only visits the dialog's own children, so a walker of
+    our own is what reaches the entry inside the content box.
+    """
+    if isinstance(widget, (Gtk.Entry, Gtk.SpinButton, Gtk.ComboBoxText)):
+        if widget.get_sensitive() and widget.get_can_focus():
+            return widget
+        return None
+    children = widget.get_children() if isinstance(widget, Gtk.Container) else []
+    for child in children:
+        found = _first_field(child)
+        if found is not None:
+            return found
+    return None
+
+
+def _open_tile_from_keyboard(tile, event) -> bool:
+    """Enter or Space opens the focused tile by the path a click takes."""
+    if event.keyval not in (Gdk.KEY_Return, Gdk.KEY_KP_Enter, Gdk.KEY_space):
+        return False
+    parent = tile.get_parent()
+    if isinstance(parent, Gtk.FlowBox):
+        parent.select_child(tile)
+        return True
+    return False
 
 
 # -- toast -------------------------------------------------------------------
@@ -1969,6 +2152,10 @@ class LibraryTile(Gtk.FlowBoxChild):
             else self._measure_cover(entry.cover_path)
         )
         self.get_style_context().add_class("library-tile")
+        # Keyboard users reach the grid: the tile takes focus, draws its ring
+        # and opens on Enter or Space, the same path a click takes.
+        self.set_can_focus(True)
+        self.connect("key-press-event", _open_tile_from_keyboard)
         # The flow itself fills the viewport, but a tile keeps its own height:
         # with only a few games the rows used to stretch to the window bottom.
         self.set_valign(Gtk.Align.START)
@@ -2957,6 +3144,7 @@ class MetadataDialog(Gtk.Dialog):
         self.add_button("Cancel", Gtk.ResponseType.CANCEL)
         save = self.add_button("Save", Gtk.ResponseType.OK)
         save.get_style_context().add_class("suggested-action")
+        polish_dialog(self, primary=save)
 
         content = self.get_content_area()
         content.set_spacing(0)
@@ -9256,7 +9444,7 @@ class MainWindow(Gtk.ApplicationWindow):
         )
         action.get_style_context().add_class("suggested-action")
         action.set_sensitive(False)
-        dialog.set_default_response(Gtk.ResponseType.OK)
+        polish_dialog(dialog, primary=action)
 
         content = dialog.get_content_area()
         content.set_spacing(14)
@@ -9820,7 +10008,8 @@ class SettingsDialog(Gtk.Dialog):
         self.set_default_size(640, 520)
         self.set_size_request(480, 360)
         self.set_resizable(True)
-        self.add_button("Close", Gtk.ResponseType.CLOSE)
+        close = self.add_button("Close", Gtk.ResponseType.CLOSE)
+        polish_dialog(self, primary=close, primary_response=Gtk.ResponseType.CLOSE)
 
         content = self.get_content_area()
         content.set_spacing(0)
@@ -10542,8 +10731,15 @@ class SettingsDialog(Gtk.Dialog):
         key = typed or self._settings.api_key("rawg")
         if not key:
             self._rawg_status.set_text("Enter a RAWG API key first.")
+            self._rawg_status.get_style_context().add_class("field-error-text")
+            set_field_error(
+                self._rawg_key,
+                "This field needs a RAWG key before it can be tested.",
+            )
             return
         self._rawg_test.set_sensitive(False)
+        clear_field_error(self._rawg_key)
+        self._rawg_status.get_style_context().remove_class("field-error-text")
         self._rawg_status.set_text("Testing the RAWG API…")
 
         def success(result: object) -> None:
@@ -10562,6 +10758,7 @@ class SettingsDialog(Gtk.Dialog):
         def failure(exc: object) -> None:
             self._rawg_test.set_sensitive(True)
             self._rawg_status.set_text(f"RAWG test failed: {_error_text(exc)}")
+            self._rawg_status.get_style_context().add_class("field-error-text")
 
         _spawn(lambda: RawgSource(key).test_connection(), success, failure)
 
@@ -10595,8 +10792,15 @@ class SettingsDialog(Gtk.Dialog):
         key = typed or self._settings.api_key("tmdb")
         if not key:
             self._tmdb_status.set_text("Enter a TMDB API key first.")
+            self._tmdb_status.get_style_context().add_class("field-error-text")
+            set_field_error(
+                self._tmdb_key,
+                "This field needs a TMDB key before it can be tested.",
+            )
             return
         self._tmdb_test.set_sensitive(False)
+        clear_field_error(self._tmdb_key)
+        self._tmdb_status.get_style_context().remove_class("field-error-text")
         self._tmdb_status.set_text("Testing the TMDB API…")
 
         def success(result: object) -> None:
@@ -10615,6 +10819,7 @@ class SettingsDialog(Gtk.Dialog):
         def failure(exc: object) -> None:
             self._tmdb_test.set_sensitive(True)
             self._tmdb_status.set_text(f"TMDB test failed: {_error_text(exc)}")
+            self._tmdb_status.get_style_context().add_class("field-error-text")
 
         _spawn(lambda: TmdbClient(key).test_connection(), success, failure)
 
@@ -10635,8 +10840,15 @@ class SettingsDialog(Gtk.Dialog):
         key = typed or self._settings.api_key("mal")
         if not key:
             self._mal_status.set_text("Enter a MyAnimeList Client ID first.")
+            self._mal_status.get_style_context().add_class("field-error-text")
+            set_field_error(
+                self._mal_key,
+                "This field needs a MyAnimeList key before it can be tested.",
+            )
             return
         self._mal_test.set_sensitive(False)
+        clear_field_error(self._mal_key)
+        self._mal_status.get_style_context().remove_class("field-error-text")
         self._mal_status.set_text("Testing the MyAnimeList API…")
 
         def success(result: object) -> None:
@@ -10657,6 +10869,7 @@ class SettingsDialog(Gtk.Dialog):
             self._mal_status.set_text(
                 f"MyAnimeList test failed: {_error_text(exc)}"
             )
+            self._mal_status.get_style_context().add_class("field-error-text")
 
         _spawn(lambda: MalClient(key).test_connection(), success, failure)
 
@@ -10772,7 +10985,8 @@ class ArtworkMatchDialog(Gtk.Dialog):
         self._candidates = list(candidates)
         self._choose = self.add_button("Use selected", Gtk.ResponseType.OK)
         self._choose.get_style_context().add_class("suggested-action")
-        self.add_button("Cancel", Gtk.ResponseType.CANCEL)
+        cancel = self.add_button("Cancel", Gtk.ResponseType.CANCEL)
+        polish_dialog(self, primary=self._choose, cancel=cancel)
         self.selected: ArtworkCandidate | None = None
 
         content = self.get_content_area()

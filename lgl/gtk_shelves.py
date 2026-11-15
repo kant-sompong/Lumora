@@ -22,7 +22,11 @@ class ShelvesDialog(Gtk.Dialog):
         super().__init__(title="Shelves", transient_for=parent, modal=True)
         self.settings = settings
         self.set_default_size(480, 420)
-        self.add_button("Close", Gtk.ResponseType.CLOSE)
+        close = self.add_button("Close", Gtk.ResponseType.CLOSE)
+        from . import ui as ui_module
+        ui_module.polish_dialog(
+            self, primary=close, primary_response=Gtk.ResponseType.CLOSE
+        )
 
         body = self.get_content_area()
         body.set_spacing(8)
