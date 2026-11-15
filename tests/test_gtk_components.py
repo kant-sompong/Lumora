@@ -353,31 +353,30 @@ def test_a_sheet_and_a_card_fit_a_nine_hundred_pixel_window():
 
 # -- contrast, both themes -------------------------------------------------
 
-#: The two pairs the shared tokens cannot bring to 4.5:1.  Both come from
-#: ``design_tokens.py``, which is read-only for this slice, so the ratios are
-#: pinned here rather than skipped: a token change that fixes one of them fails
-#: this table on purpose, and the table is then updated with the new number.
-TOKEN_CLASHES: dict[tuple[str, str, str], float] = {
-    # White on the dark accent fill: the accent itself is the fill colour.
-    ("dark", "on_accent", "accent"): 4.23,
-    # The light danger ink on a white surface.
-    ("light", "danger", "surface"): 3.76,
-}
-
-#: Every other pair must reach AA.  ``danger_text`` is the shade the sheet
-#: actually draws error text in, and it passes in both themes.
+#: Every text pair the two sheets draw, in both themes.  Fill and ink are
+#: separate tokens now (``accent_fill`` carries white labels, ``accent_text`` is
+#: the accent as text, and danger/warning/success have a ``*_text`` sibling), so
+#: no pair is pinned: each one is asserted at AA directly.
 PAIRS = (
     ("text on page", "text", "bg"),
     ("text on surface", "text", "surface"),
     ("text on overlay", "text", "raised"),
     ("secondary text on page", "muted", "bg"),
     ("secondary text on surface", "muted", "surface"),
+    ("secondary text on overlay", "muted", "raised"),
     ("muted text on page", "faint", "bg"),
+    ("muted text on overlay", "faint", "raised"),
     ("label on the accent fill", "on_accent", "accent_fill"),
-    ("error text on surface", "danger_text", "surface"),
+    ("label on the hovered accent fill", "on_accent", "accent_fill_hover"),
+    ("label on the accent tint", "on_accent", "accent"),
+    ("accent text on page", "accent_text", "bg"),
+    ("accent text on surface", "accent_text", "surface"),
+    ("accent text on overlay", "accent_text", "raised"),
     ("error text on page", "danger_text", "bg"),
-    ("clash: white on the dark accent", "on_accent", "accent"),
-    ("clash: light danger on the surface", "danger", "surface"),
+    ("error text on surface", "danger_text", "surface"),
+    ("error text on overlay", "danger_text", "raised"),
+    ("warning text on surface", "warning_text", "surface"),
+    ("success text on surface", "success_text", "surface"),
 )
 
 
@@ -386,19 +385,13 @@ PAIRS = (
 def test_every_text_pair_meets_wcag_aa(label, foreground, background, mode):
     palette = theme.PALETTES[mode]
     ratio = design_tokens.contrast_ratio(palette[foreground], palette[background])
-    pinned = TOKEN_CLASHES.get((mode, foreground, background))
-    if pinned is not None:
-        assert round(ratio, 2) == pinned, (
-            f"{label} is {ratio:.2f}:1 in {mode} mode, not the pinned {pinned}:1 "
-            "the shared tokens give it"
-        )
-        return
     assert ratio >= theme.CONTRAST_TEXT, f"{label} is {ratio:.2f}:1 in {mode} mode"
 
 
-def test_the_clash_table_holds_exactly_the_two_shared_tokens():
-    assert set(TOKEN_CLASHES) == {
-        ("dark", "on_accent", "accent"),
-        ("light", "danger", "surface"),
-    }
-    assert all(ratio < theme.CONTRAST_TEXT for ratio in TOKEN_CLASHES.values())
+def test_no_text_pair_needs_to_be_pinned():
+    """The pinned clashes are gone; a new failure must fail this suite."""
+    for mode in ("dark", "light"):
+        palette = theme.PALETTES[mode]
+        for _label, foreground, background in PAIRS:
+            ratio = design_tokens.contrast_ratio(palette[foreground], palette[background])
+            assert ratio >= theme.CONTRAST_TEXT, f"{mode}: {foreground} on {background}"

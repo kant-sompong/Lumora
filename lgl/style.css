@@ -11,14 +11,15 @@
 @define-color text #e8e9ee;
 @define-color text2 #a4a7b3;
 @define-color muted #858998;
-@define-color accent #8b5cf6;
+@define-color accent #8557ea;
 @define-color accent_hover #9d74f8;
-@define-color accent_soft rgba(139, 92, 246, 0.18);
+@define-color accent_soft rgba(133, 87, 234, 0.18);
 @define-color success #22c55e;
 @define-color warning #f59e0b;
 @define-color danger #ef4444;
+@define-color success_text #22c55e;
 @define-color warning_text #f59e0b;
-@define-color danger_text #ef4444;
+@define-color danger_text #f05252;
 /* derived tokens the rules below name, never literal values */
 @define-color accent_fill #7c3aed;
 @define-color accent_fill_hover #6d28d9;
@@ -45,8 +46,12 @@
 @define-color success #22c55e;
 @define-color warning #f59e0b;
 @define-color danger #ef4444;
+@define-color success_text #15803d;
 @define-color warning_text #b45309;
 @define-color danger_text #b91c1c;
+@define-color accent_fill #7c3aed;
+@define-color accent_fill_hover #6d28d9;
+@define-color accent_text #6d28d9;
 */
 
 /* -- base --------------------------------------------------------------- */
@@ -771,7 +776,7 @@ button.favorite-star:checked {
 }
 
 .integrity-ok {
-  color: @success;
+  color: @success_text;
 }
 
 .integrity-warn {
@@ -1472,7 +1477,7 @@ flowboxchild.browse-tile:hover .cover-card {
 .season-name { font-size: 14px; font-weight: 600; color: @text; }
 .season-count { font-size: 12px; color: @muted; }
 .season-check {
-  color: @accent;
+  color: @accent_text;
   font-size: 14px;
   font-weight: 700;
 }
@@ -1502,7 +1507,7 @@ flowboxchild.browse-tile:hover .cover-card {
 .rail-button.rail-on {
   background-color: @accent_soft;
   border-left-color: @accent;
-  color: @accent;
+  color: @accent_text;
 }
 
 .rail-button.rail-on:hover {
@@ -1511,7 +1516,7 @@ flowboxchild.browse-tile:hover .cover-card {
 }
 
 .rail-button.rail-on .rail-label {
-  color: @accent;
+  color: @accent_text;
 }
 
 .rail-button:focus {

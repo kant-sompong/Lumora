@@ -12,8 +12,15 @@ Two values are worth explaining:
 * The dark ``muted`` value from the contract (#7c8090) reaches only 4.15:1 on
   the dark overlay colour, below the 4.5:1 floor.  It is lightened to
   ``#858998`` (4.68:1 on overlay, 5.10:1 on surface, 5.46:1 on bg), which is the
-  nearest passing value in the same hue.  This is the only contract value that
-  was changed, and it is recorded here as the contract requires.
+  nearest passing value in the same hue.
+* No single purple can be both a fill that carries white text and accent-coloured
+  text on a dark surface: white on a light-enough-for-text purple is about
+  3.9:1, and the purple dark enough for a 4.5:1 white label is about 3.6:1 as
+  text.  The accent therefore has three roles, as the Linux palette already
+  modelled: ``accent`` (the tint used for borders, washes and focus rings),
+  ``accent_fill`` (the background under ``on_accent``) and ``accent_text`` (the
+  same hue as readable text).  ``danger``/``warning``/``success`` follow the
+  same split: the bright value is the fill and the ``*_text`` sibling is the ink.
 """
 
 from __future__ import annotations
@@ -50,12 +57,20 @@ TOKENS: dict[str, dict[str, object]] = {
         # Contract #7c8090 lightened to the nearest passing value (4.15 -> 4.68
         # on overlay); see the module docstring.
         "muted": "#858998",
-        "accent": "#8b5cf6",
+        # The tint: borders, washes and focus rings.  Also fill-safe on its own
+        # (white reaches 4.62:1), so a one-off accent fill never strands a label.
+        "accent": "#8557ea",
         "accent_hover": "#9d74f8",
+        "accent_fill": "#7c3aed",
+        "accent_fill_hover": "#6d28d9",
+        "accent_text": "#a78bfa",
         "accent_soft_alpha": ACCENT_SOFT_ALPHA,
         "success": "#22c55e",
+        "success_text": "#22c55e",
         "warning": "#f59e0b",
+        "warning_text": "#f59e0b",
         "danger": "#ef4444",
+        "danger_text": "#f05252",
     },
     "light": {
         "bg": "#f4f5f8",
@@ -67,10 +82,16 @@ TOKENS: dict[str, dict[str, object]] = {
         "muted": "#6b7080",
         "accent": "#7c3aed",
         "accent_hover": "#6d28d9",
+        "accent_fill": "#7c3aed",
+        "accent_fill_hover": "#6d28d9",
+        "accent_text": "#6d28d9",
         "accent_soft_alpha": ACCENT_SOFT_ALPHA,
         "success": "#22c55e",
+        "success_text": "#15803d",
         "warning": "#f59e0b",
+        "warning_text": "#b45309",
         "danger": "#ef4444",
+        "danger_text": "#b91c1c",
     },
 }
 

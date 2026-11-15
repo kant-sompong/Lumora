@@ -73,14 +73,17 @@ def palette(resolved: str, accent: str | None = None) -> dict[str, str]:
         "faint": str(tokens["muted"]),
         "accent": str(tokens["accent"]),
         "accent_hover": str(tokens["accent_hover"]),
-        "accent_fill": str(tokens["accent"]),
-        "accent_fill_hover": str(tokens["accent_hover"]),
+        "accent_fill": str(tokens["accent_fill"]),
+        "accent_fill_hover": str(tokens["accent_fill_hover"]),
         "accent_soft": design_tokens.accent_soft(resolved),
-        "accent_text": str(tokens["accent"]),
+        "accent_text": str(tokens["accent_text"]),
         "on_accent": "#ffffff",
         "success": str(tokens["success"]),
         "warning": str(tokens["warning"]),
         "danger": str(tokens["danger"]),
+        "danger_text": str(tokens["danger_text"]),
+        "success_text": str(tokens["success_text"]),
+        "warning_text": str(tokens["warning_text"]),
         # Not in the token table: a favourite star's gold and the shadow ink.
         "favorite": "#b8863b",
         "shadow": "rgba(0, 0, 0, 0.55)" if resolved == "dark" else "rgba(15, 23, 42, 0.12)",
@@ -193,7 +196,7 @@ QPushButton#quiet {{
 QPushButton#quiet:hover {{ background: {alpha(fg, 0.06)}; }}
 QPushButton#danger {{
     background: transparent; border: {dc.BORDER_WIDTH}px solid {alpha(c['danger'], 0.55)};
-    color: {c['danger']}; font-weight: 600;
+    color: {c['danger_text']}; font-weight: 600;
 }}
 QPushButton#danger:hover {{ background: {alpha(c['danger'], 0.12)}; }}
 QPushButton#danger:disabled {{ color: {c['muted']}; border-color: {alpha(fg, 0.10)}; background: transparent; }}
@@ -252,7 +255,7 @@ QLineEdit:disabled, QComboBox:disabled, QSpinBox:disabled {{
 QLineEdit[error="true"], QComboBox[error="true"], QSpinBox[error="true"] {{
     border: {dc.INPUT_ERROR_BORDER}px solid {c['danger']};
 }}
-QLabel#fieldError {{ color: {c['danger']}; font-size: {dc.FIELD_ERROR_SIZE}px; }}
+QLabel#fieldError {{ color: {c['danger_text']}; font-size: {dc.FIELD_ERROR_SIZE}px; }}
 QLineEdit#librarySearch {{
     background: {alpha(fg, 0.05)}; border: 1px solid {alpha(fg, 0.08)};
     border-radius: 18px; padding: 0 16px 0 38px;
@@ -426,8 +429,8 @@ QLabel#kvKey {{
     color: {c['faint']}; font-size: {small - 1}px; font-weight: 700; letter-spacing: 0.4px;
 }}
 QLabel#kvVal {{ color: {fg}; }}
-QLabel#kvWarn {{ color: {c['warning']}; }}
-QLabel#kvOk {{ color: {c['success']}; }}
+QLabel#kvWarn {{ color: {c['warning_text']}; }}
+QLabel#kvOk {{ color: {c['success_text']}; }}
 QLabel#detailNote {{ color: {c['muted']}; font-size: {small + 1}px; }}
 QLabel#detailSection {{ font-weight: 700; font-size: {body}px; }}
 QFrame#kvLine {{ background: transparent; }}
@@ -438,8 +441,8 @@ QFrame#dlRow {{ background: transparent; border-bottom: 1px solid {alpha(fg, 0.0
 QLabel#dlName {{ font-weight: 600; }}
 QLabel#dlGame {{ color: {c['muted']}; font-size: {small}px; }}
 QLabel#dlDetail {{ color: {c['muted']}; font-size: {small}px; }}
-QFrame#dlRow[state="failed"] QLabel#dlDetail {{ color: {c['danger']}; }}
-QFrame#dlRow[state="completed"] QLabel#dlDetail {{ color: {c['success']}; }}
+QFrame#dlRow[state="failed"] QLabel#dlDetail {{ color: {c['danger_text']}; }}
+QFrame#dlRow[state="completed"] QLabel#dlDetail {{ color: {c['success_text']}; }}
 QProgressBar#dlBar {{ background: {alpha(fg, 0.10)}; border: none; border-radius: 3px; }}
 QProgressBar#dlBar::chunk {{ background: {c['accent']}; border-radius: 3px; }}
 QFrame#dlRow[state="failed"] QProgressBar#dlBar::chunk {{ background: {c['danger']}; }}
@@ -478,7 +481,7 @@ QFrame#episodeRow:hover {{
 QLabel#episodeNumber {{ color: {c['muted']}; font-weight: 700; }}
 QLabel#episodeTitle {{ font-weight: 600; }}
 QLabel#episodeMeta {{ color: {c['faint']}; font-size: {small}px; }}
-QLabel#episodePlay {{ color: {c['accent']}; font-size: {body}px; }}
+QLabel#episodePlay {{ color: {c['accent_text']}; font-size: {body}px; }}
 QComboBox#seasonPicker {{ padding: 6px 10px; }}
 
 /* ---- toast ------------------------------------------------------------ */

@@ -329,8 +329,14 @@ def test_library_tab_strip_sits_on_the_page_background(app, tmp_path):
 
 # -- item 5: the new text pairs are readable --------------------------------
 def test_new_text_pairs_meet_contrast(app):
+    """Every ink on the sheet, and white on the fill, clears AA in both themes."""
     for theme in ("dark", "light"):
         colours = qt_theme.palette(theme)
-        for foreground in ("text", "muted", "text2"):
+        for foreground in (
+            "text", "muted", "text2",
+            "accent_text", "danger_text", "warning_text", "success_text",
+        ):
             ratio = contrast_ratio(colours[foreground], colours["raised"])
             assert ratio >= 4.5, f"{theme}: {foreground} on raised is {ratio:.2f}"
+        fill = contrast_ratio(colours["on_accent"], colours["accent_fill"])
+        assert fill >= 4.5, f"{theme}: white on accent_fill is {fill:.2f}"
