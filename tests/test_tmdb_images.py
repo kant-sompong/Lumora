@@ -111,7 +111,8 @@ def test_images_are_cached_for_the_session():
     assert first is second
     assert len(calls) == 1
     assert calls[0][0] == "/tv/1399/images"
-    assert calls[0][1]["include_image_language"] == "en,null"
+    # No language filter: TMDB would otherwise drop logos tagged otherwise.
+    assert calls[0][1] == {}
 
 
 # -- season() ---------------------------------------------------------------

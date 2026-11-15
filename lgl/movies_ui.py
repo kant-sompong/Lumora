@@ -4694,12 +4694,18 @@ class MoviesWindow(Gtk.Box):
         threading.Thread(target=work, daemon=True, name="lgl-tmdb-anime-art").start()
 
     def _anime_tmdb_kind(self, item) -> str:
-        """A series anime answers to TMDB's TV side, a film to its movie one."""
-        try:
-            episodes = int(getattr(item, "episodes", 0) or 0)
-        except (TypeError, ValueError):
-            episodes = 0
-        return "tv" if episodes > 0 else "movie"
+        """A film asks TMDB's movie side, everything else asks its TV one.
+
+        The title's own format decides, never its episode count: a catalogue
+        row can arrive without one, and reading that as "a film" sent the
+        lookup to TMDB's movie index, where a series such as Frieren does not
+        exist, so its logo was never found.  Anime series, OVAs and specials
+        live on the TV side, which is the side the Qt page asks as well.
+        """
+        media = str(
+            getattr(item, "media_type", "") or getattr(item, "format", "") or ""
+        ).strip().lower()
+        return "movie" if media in ("movie", "film") else "tv"
 
     def _apply_anime_images(self, found, backdrop, logo, title, token: int) -> bool:
         """Wide art for an anime page: the backdrop, then the logo on top."""

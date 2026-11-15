@@ -253,6 +253,28 @@ def _as_int(value: object) -> int:
     return 0
 
 
+def _episode_total(value: object) -> int:
+    """How many episodes a title has, from either shape ani.pm sends.
+
+    Catalogue rows and title pages send ``"episodes": {"total": 28,
+    "sub": 28, "dub": 28}``, while older rows and the other sources send a
+    plain number.  Both are read here: a count read as zero makes a series
+    look like a film to everything downstream (the episode picker and the
+    TMDB side a logo is looked up on).  A row that names only track counts
+    falls back to the largest of them.
+    """
+    if isinstance(value, Mapping):
+        total = _as_int(value.get("total"))
+        if total:
+            return total
+        return max(
+            (_as_int(value.get(name)) for name in
+             ("sub", "dub", "subHard", "dubHard", "episodes")),
+            default=0,
+        )
+    return _as_int(value)
+
+
 def _year(value: object) -> str:
     if isinstance(value, int) and not isinstance(value, bool):
         return str(value) if 1900 <= value <= 2999 else ""
@@ -407,7 +429,9 @@ def _parse_title(raw: Any) -> AniTitle | None:
         genres=_genres(raw.get("genres")),
         adult=_boolean(_dig(raw, "adult", "isAdult", "is_adult", "nsfw", "hentai")),
         status=_text(_dig(raw, "status"), 40),
-        episodes=_as_int(_dig(raw, "episodes", "episodeCount", "totalEpisodes", "count")),
+        episodes=_episode_total(
+            _dig(raw, "episodes", "episodeCount", "totalEpisodes", "count")
+        ),
         synopsis=_synopsis(_dig(raw, "synopsis", "description", "overview")),
         slug=_text(raw.get("slug"), 200),
     )

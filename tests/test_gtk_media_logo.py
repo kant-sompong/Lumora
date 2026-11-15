@@ -229,11 +229,30 @@ def test_an_anime_film_looks_on_the_movie_side(monkeypatch):
 
     monkeypatch.setattr(movies_ui.tmdb, "tmdb_images_for_title", lookup)
     anime = item(kind="anime", tmdb_id=0, title="Your Name", year="2016",
-                 episodes=0)
+                 episodes=0, format="MOVIE")
     window(Loader())._load_detail_art(
         anime, movies_ui.Backdrop(420), None, None, kind="anime"
     )
     assert asked == ["movie"]
+
+
+@needs_display
+def test_an_untyped_anime_is_asked_for_on_the_tv_side(monkeypatch):
+    """ani.pm can send a row without an episode count; it is not a film."""
+
+    asked = []
+
+    def lookup(title, year="", kind="tv", *, client=None, language=None):
+        asked.append(kind)
+        return MediaImages()
+
+    monkeypatch.setattr(movies_ui.tmdb, "tmdb_images_for_title", lookup)
+    anime = item(kind="anime", tmdb_id=0, title="Frieren", year="2023",
+                 episodes=0, format="TV")
+    window(Loader())._load_detail_art(
+        anime, movies_ui.Backdrop(420), None, None, kind="anime"
+    )
+    assert asked == ["tv"]
 
 
 @needs_display

@@ -441,23 +441,30 @@ def _language_code(value: Any) -> str | None:
 
 
 def _best_logo(raw: Any, language: str | None = None) -> str:
-    """The logo in ``language``, else English, else a neutral one, else ``""``.
+    """A logo for ``language``, else English, else neutral, else *any* logo.
 
     TMDB stores far more artwork than a page can render: only PNG and SVG
     logos are used, because the rest are photographs of a logo.  A PNG is
     preferred over an SVG within a language, then the best-voted one.
+
+    Language only decides *which* logo is preferred, never whether one is
+    shown: plenty of titles carry a single logo, often Japanese for anime,
+    and some carry one with a null ``iso_639_1``.  A logo in another
+    language still says the title, so it beats falling back to plain text.
     """
     if not isinstance(raw, Sequence):
         return ""
     wanted = _language_code(language)
     order: list[str | None] = [wanted, "en", None] if wanted else ["en", None]
     ranked: dict[str | None, list[Mapping[str, Any]]] = {}
+    usable: list[Mapping[str, Any]] = []
     for entry in raw:
         if not isinstance(entry, Mapping):
             continue
         path = str(entry.get("file_path") or "")
         if not path.lower().endswith(_LOGO_SUFFIXES):
             continue
+        usable.append(entry)
         ranked.setdefault(_language_code(entry.get("iso_639_1")), []).append(entry)
 
     def rank(entry: Mapping[str, Any]) -> tuple[bool, float]:
@@ -469,6 +476,8 @@ def _best_logo(raw: Any, language: str | None = None) -> str:
         if entries:
             best = max(entries, key=rank)
             return _image_url(best.get("file_path"), "w500")
+    if usable:  # no logo in the preferred languages: any logo beats none
+        return _image_url(max(usable, key=rank).get("file_path"), "w500")
     return ""
 
 
@@ -522,10 +531,22 @@ class TmdbClient:
 
     # -- transport ----------------------------------------------------------
 
-    def _get(self, path: str, params: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    def _get(
+        self,
+        path: str,
+        params: Mapping[str, Any] | None = None,
+        *,
+        language: bool = True,
+    ) -> dict[str, Any]:
+        """One TMDB read; *language* is left off the request when it is False.
+
+        ``/images`` is the one read that asks for no language: TMDB filters
+        the returned artwork by it, and a title whose logos are tagged for
+        another language would answer with none at all.
+        """
         if not self._key:
             raise TmdbError(missing_key_message(), kind="missing-key")
-        query: dict[str, Any] = {"language": self.language}
+        query: dict[str, Any] = {"language": self.language} if language else {}
         query.update(params or {})
         try:
             if self._fetch is not None:
@@ -590,8 +611,12 @@ class TmdbClient:
     ) -> MediaImages:
         """A logo and a textless backdrop for one title.
 
-        ``language`` is the display language the logo should be in; English
-        and then a language-neutral logo are used when it has none.  Every
+        ``language`` is the display language the logo should be in; English,
+        a language-neutral logo and then any logo at all are used when it has
+        none, because a title with only a foreign-language logo still wants
+        that logo over plain text.  The request therefore sends no language
+        filter: TMDB would otherwise drop every logo tagged differently, and
+        the filter is a coarse one that also hides untagged artwork.  Every
         failure, including a missing key, is an empty result: wide art is
         decoration, so it must never stop a detail page from opening.
         """
@@ -607,12 +632,8 @@ class TmdbClient:
         cached = self._images.get(key)
         if cached is not None:
             return cached
-        ask = ",".join(dict.fromkeys(x for x in (wanted, "en", "null") if x))
         try:
-            data = self._get(
-                f"/{chosen}/{number}/images",
-                {"include_image_language": ask},
-            )
+            data = self._get(f"/{chosen}/{number}/images", language=False)
         except (TmdbError, OSError, ValueError, TypeError):
             return MediaImages()
         if not isinstance(data, Mapping):
