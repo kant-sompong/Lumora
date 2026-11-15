@@ -231,6 +231,8 @@ class ToolsWindow(Gtk.Window):
             dialog.format_secondary_text(
                 "Restore the shelf order, visibility and sizes to the defaults?"
             )
+            from . import ui as ui_module
+            ui_module.polish_message(dialog)
             response = dialog.run()
             dialog.destroy()
             if response != Gtk.ResponseType.OK:
@@ -239,6 +241,8 @@ class ToolsWindow(Gtk.Window):
             from .gtk_shelves import ShelvesDialog
 
             dialog = ShelvesDialog(self.settings, self)
+            from . import ui as ui_module
+            ui_module.polish_message(dialog)
             dialog.run()
             dialog.destroy()
             self._say("Shelves saved.")

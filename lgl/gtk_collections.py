@@ -372,6 +372,8 @@ class CollectionsWindow(Gtk.Window):
         box.pack_start(Gtk.Label(label="Name", xalign=0), False, False, 0)
         box.pack_start(entry, False, False, 0)
         dialog.show_all()
+        from . import ui as ui_module
+        ui_module.polish_message(dialog)
         response = dialog.run()
         name = entry.get_text()
         dialog.destroy()
@@ -388,6 +390,8 @@ class CollectionsWindow(Gtk.Window):
             text=text,
         )
         dialog.set_title("Delete collection")
+        from . import ui as ui_module
+        ui_module.polish_message(dialog)
         response = dialog.run()
         dialog.destroy()
         return response == Gtk.ResponseType.YES
@@ -400,6 +404,8 @@ class CollectionsWindow(Gtk.Window):
             buttons=Gtk.ButtonsType.CLOSE,
             text=text,
         )
+        from . import ui as ui_module
+        ui_module.polish_message(dialog)
         dialog.run()
         dialog.destroy()
 
