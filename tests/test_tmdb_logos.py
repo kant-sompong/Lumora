@@ -78,16 +78,40 @@ def test_a_full_locale_tag_is_read_as_its_language():
     assert found.logo_url.endswith("/w500/french.png")
 
 
-def test_the_language_is_sent_to_the_images_endpoint():
+def test_the_images_request_carries_no_language_filter():
     calls: list = []
-    client(images(logo("/french.png", "fr")), calls).images(
-        "tv", 1399, language="fr"
+    client(images(logo("/japanese.png", "ja")), calls).images(
+        "tv", 209867, language="en"
     )
 
-    assert calls == [(
-        "/tv/1399/images",
-        {"language": "en-US", "include_image_language": "fr,en,null"},
-    )]
+    # TMDB's filter hides every logo tagged for another language, so the
+    # choice is made here instead of in the request.
+    assert calls == [("/tv/209867/images", {})]
+
+
+def test_a_logo_in_another_language_is_used_when_no_other_exists():
+    found = client(images(logo("/japanese.png", "ja", 4.0))).images(
+        "tv", 209867, language="en"
+    )
+
+    assert found.logo_url.endswith("/w500/japanese.png")
+
+
+def test_a_logo_with_no_language_field_is_still_a_logo():
+    found = client(images(
+        {"file_path": "/untagged.png", "vote_average": 3.0},
+    )).images("movie", 603, language="fr")
+
+    assert found.logo_url.endswith("/w500/untagged.png")
+
+
+def test_the_best_voted_foreign_logo_is_the_one_picked():
+    found = client(images(
+        logo("/frieren-ja.png", "ja", 2.0),
+        logo("/frieren-ko.png", "ko", 9.0),
+    )).images("tv", 209867, language="en")
+
+    assert found.logo_url.endswith("/w500/frieren-ko.png")
 
 
 # -- what counts as a logo --------------------------------------------------
