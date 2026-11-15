@@ -27,6 +27,12 @@ CONTRACT_NAMES = (
     "success",
     "warning",
     "danger",
+    "accent_fill",
+    "accent_fill_hover",
+    "accent_text",
+    "success_text",
+    "warning_text",
+    "danger_text",
 )
 
 _DEFINE = re.compile(r"@define-color\s+([a-z0-9_]+)\s+([^;]+);")

@@ -48,16 +48,6 @@ from lgl.settings import Settings  # noqa: E402
 
 THEMES = ("dark", "light")
 
-#: The two pairs the immutable palette cannot bring to 4.5:1.  The accent and
-#: the danger colour are tokens, so the stylesheet cannot brighten or darken
-#: them here, and neither pairing reaches the threshold with any other token
-#: colour.  They are pinned so a token change is noticed either way.
-TOKEN_CLASHES = {
-    ("dark", "white", "accent"): 4.23,
-    ("light", "danger", "surface"): 3.76,
-}
-
-
 @pytest.fixture(scope="module")
 def app():
     return QApplication.instance() or QApplication([])
@@ -101,22 +91,25 @@ def test_text_on_background_clears_4_5_in_both_themes():
                 assert ratio >= 4.5, f"{theme}: {fg} on {bg} is only {ratio:.2f}:1"
 
 
-def test_only_the_documented_token_clashes_fall_short():
-    measured = {}
+def test_every_ink_and_fill_token_clears_4_5():
+    """No pair is pinned any more: the fill and the ink are separate tokens."""
     for theme in THEMES:
         tokens = TOKENS[theme]
-        measured[(theme, "white", "accent")] = contrast_ratio(
-            "#ffffff", tokens["accent"]
-        )
-        measured[(theme, "danger", "surface")] = contrast_ratio(
-            tokens["danger"], tokens["surface"]
-        )
-    for key, value in TOKEN_CLASHES.items():
-        assert round(measured[key], 2) == value, (
-            f"{key[0]}: {key[1]} on {key[2]} moved to {measured[key]:.2f}:1; "
-            "update the note in this test if the token changed on purpose"
-        )
-        assert value >= 3.5, f"{key} is too low to keep at all: {value}:1"
+        fills = {
+            "white on accent_fill": ("#ffffff", tokens["accent_fill"]),
+            "white on accent": ("#ffffff", tokens["accent"]),
+        }
+        inks = {
+            "accent_text on surface": (tokens["accent_text"], tokens["surface"]),
+            "accent_text on overlay": (tokens["accent_text"], tokens["overlay"]),
+            "danger_text on surface": (tokens["danger_text"], tokens["surface"]),
+            "danger_text on overlay": (tokens["danger_text"], tokens["overlay"]),
+            "warning_text on surface": (tokens["warning_text"], tokens["surface"]),
+            "success_text on surface": (tokens["success_text"], tokens["surface"]),
+        }
+        for label, (foreground, background) in {**fills, **inks}.items():
+            ratio = contrast_ratio(foreground, background)
+            assert ratio >= 4.5, f"{theme}: {label} is only {ratio:.2f}:1"
 
 
 def test_the_light_theme_danger_line_is_not_used_on_overlay():

@@ -45,8 +45,14 @@ def test_the_contract_values_are_kept():
     assert TOKENS["dark"]["border"] == "#2a2d36"
     assert TOKENS["dark"]["text"] == "#e8e9ee"
     assert TOKENS["dark"]["text2"] == "#a4a7b3"
-    assert TOKENS["dark"]["accent"] == "#8b5cf6"
+    # The tint is dark enough to carry a white label too (4.62:1); the fill and
+    # the ink have their own tokens below.
+    assert TOKENS["dark"]["accent"] == "#8557ea"
     assert TOKENS["dark"]["accent_hover"] == "#9d74f8"
+    assert TOKENS["dark"]["accent_fill"] == "#7c3aed"
+    assert TOKENS["dark"]["accent_text"] == "#a78bfa"
+    assert TOKENS["light"]["accent_fill"] == "#7c3aed"
+    assert TOKENS["light"]["accent_text"] == "#6d28d9"
     assert TOKENS["light"]["bg"] == "#f4f5f8"
     assert TOKENS["light"]["surface"] == "#ffffff"
     assert TOKENS["light"]["overlay"] == "#ffffff"
@@ -58,6 +64,11 @@ def test_the_contract_values_are_kept():
     assert TOKENS["dark"]["success"] == TOKENS["light"]["success"] == "#22c55e"
     assert TOKENS["dark"]["warning"] == TOKENS["light"]["warning"] == "#f59e0b"
     assert TOKENS["dark"]["danger"] == TOKENS["light"]["danger"] == "#ef4444"
+    assert TOKENS["dark"]["danger_text"] == "#f05252"
+    assert TOKENS["light"]["danger_text"] == "#b91c1c"
+    assert TOKENS["dark"]["success_text"] == "#22c55e"
+    assert TOKENS["light"]["success_text"] == "#15803d"
+    assert TOKENS["light"]["warning_text"] == "#b45309"
 
 
 def test_muted_is_the_documented_adjustment():
