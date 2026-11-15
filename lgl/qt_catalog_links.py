@@ -480,6 +480,9 @@ class CatalogGamePane(QWidget):
         self._on_message = on_message
         self._on_queued = on_queued
         self.record: CatalogGame | None = None
+        #: The pane is drawn as a card on the dialog's surface.
+        self.setObjectName("catalogPane")
+        self.setAttribute(Qt.WA_StyledBackground, True)
 
         column = QVBoxLayout(self)
         column.setContentsMargins(0, 0, 0, 0)
