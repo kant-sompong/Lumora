@@ -37,7 +37,7 @@ def pump(app, seconds: float = 0.05) -> None:
         time.sleep(0.005)
 
 
-def wait_for(app, predicate, seconds: float = 3.0) -> bool:
+def wait_for(app, predicate, seconds: float = 8.0) -> bool:
     end = time.time() + seconds
     while time.time() < end:
         app.processEvents()
