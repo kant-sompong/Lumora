@@ -241,3 +241,154 @@ def test_choose_layout_refuses_an_ordinary_show():
 
 def test_choose_layout_needs_standard_seasons():
     assert tmdb.choose_layout((), [info()]) is None
+
+
+# -- API-shaped payloads ----------------------------------------------------
+#
+# TMDB's documented example numbers both groups and episodes from 0, while the
+# recorded Re:Zero pages number them from 1.  These payloads follow the API
+# shape (with every field the parser reads) and cover both conventions; the
+# episode's ``order`` is kept as given and only the position in the sorted list
+# numbers it on the page.
+
+
+def api_episode(order, season_number, episode_number, name, *, runtime=24):
+    return {
+        "air_date": f"2016-04-{episode_number:02d}",
+        "episode_number": episode_number,
+        "season_number": season_number,
+        "name": name,
+        "overview": f"{name} overview",
+        "production_code": "",
+        "still_path": f"/{name.replace(' ', '_')}.jpg",
+        "vote_average": 8.1,
+        "vote_count": 120,
+        "order": order,
+        "runtime": runtime,
+    }
+
+
+def api_group(name, order, episodes):
+    return {"name": name, "order": order, "episodes": episodes}
+
+
+def api_detail(*groups):
+    return {"id": GROUP_ID, "name": "Seasons", "description": "", "type": 6,
+            "groups": list(groups)}
+
+
+def detail_client(payload):
+    def fetch(path, params):
+        if path == f"/tv/episode_group/{GROUP_ID}":
+            return payload
+        raise AssertionError(f"unexpected path {path}")
+
+    return tmdb.TmdbClient(KEY, fetch=fetch)
+
+
+def test_zero_based_orders_keep_the_first_episode_and_the_first_season():
+    payload = api_detail(
+        api_group("Season 1", 0, [
+            api_episode(0, 1, 1, "One"),
+            api_episode(1, 1, 2, "Two"),
+        ]),
+        api_group("Season 2", 1, [
+            api_episode(0, 1, 3, "Three"),
+            api_episode(1, 1, 4, "Four"),
+        ]),
+    )
+    group = detail_client(payload).episode_group(GROUP_ID)
+    assert [season.order for season in group.groups] == [0, 1]
+    assert [episode.order for episode in group.groups[0].episodes] == [0, 1]
+    seasons = tmdb.group_as_seasons(group)
+    assert [season.number for season in seasons] == [0, 1]  # order 0 is a season
+    assert [len(season.episodes) for season in seasons] == [2, 2]
+    assert [episode.number for episode in seasons[0].episodes] == [1, 2]
+    assert tmdb.group_episode_to_target(group, 0, 1) == (1, 1)
+    assert tmdb.group_episode_to_target(group, 1, 1) == (1, 3)
+    assert tmdb.group_episode_to_target(group, 1, 2) == (1, 4)
+
+
+def test_one_based_groups_with_zero_based_episodes_and_a_named_specials_group():
+    payload = api_detail(
+        api_group("Specials", 0, [
+            api_episode(0, 0, 1, "Special one"),
+            api_episode(1, 0, 2, "Special two"),
+        ]),
+        api_group("Season 1", 1, [
+            api_episode(0, 1, 1, "Pilot"),
+            api_episode(1, 1, 2, "Second"),
+        ]),
+    )
+    group = detail_client(payload).episode_group(GROUP_ID)
+    seasons = tmdb.group_as_seasons(group)
+    assert [season.number for season in seasons] == [1]
+    assert [episode.number for episode in seasons[0].episodes] == [1, 2]
+    assert tmdb.group_episode_to_target(group, 1, 1) == (1, 1)
+    assert tmdb.group_episode_to_target(group, 1, 2) == (1, 2)
+
+
+def test_a_group_of_original_season_zero_episodes_is_specials_without_the_name():
+    payload = api_detail(
+        api_group("Extras", 0, [
+            api_episode(0, 0, 1, "Extra one"),
+            api_episode(1, 0, 2, "Extra two"),
+        ]),
+        api_group("Season 1", 1, [
+            api_episode(0, 1, 1, "Pilot"),
+        ]),
+    )
+    group = detail_client(payload).episode_group(GROUP_ID)
+    seasons = tmdb.group_as_seasons(group)
+    assert [season.number for season in seasons] == [1]
+    assert [season.name for season in seasons] == ["Season 1"]
+
+
+def test_a_group_named_specials_is_specials_even_with_regular_episodes():
+    payload = api_detail(
+        api_group("Specials", 0, [api_episode(0, 1, 9, "Misplaced")]),
+        api_group("Season 1", 1, [api_episode(0, 1, 1, "Pilot")]),
+    )
+    group = detail_client(payload).episode_group(GROUP_ID)
+    assert [season.name for season in tmdb.group_as_seasons(group)] == ["Season 1"]
+
+
+def test_episodes_are_sorted_by_order_not_by_payload_position():
+    payload = api_detail(
+        api_group("Season 1", 0, [
+            api_episode(2, 1, 3, "Third"),
+            api_episode(0, 1, 1, "First"),
+            api_episode(1, 1, 2, "Second"),
+        ]),
+    )
+    group = detail_client(payload).episode_group(GROUP_ID)
+    assert [episode.name for episode in group.groups[0].episodes] == [
+        "First", "Second", "Third",
+    ]
+    seasons = tmdb.group_as_seasons(group)
+    assert [episode.title for episode in seasons[0].episodes] == [
+        "First", "Second", "Third",
+    ]
+    assert tmdb.group_episode_to_target(group, 0, 1) == (1, 1)
+    assert tmdb.group_episode_to_target(group, 0, 3) == (1, 3)
+
+
+def test_regular_episode_count_ignores_specials_detected_by_their_episodes():
+    detail = api_detail(
+        api_group("Extras", 0, [
+            api_episode(0, 0, 1, "Extra one"),
+            api_episode(1, 0, 2, "Extra two"),
+        ]),
+        api_group("Season 1", 1, [api_episode(0, 1, 1, "Pilot")]),
+        api_group("Season 2", 2, [api_episode(0, 1, 2, "Second")]),
+    )
+
+    def fetch(path, params):
+        if path == f"/tv/{SHOW_ID}/episode_groups":
+            return LISTING
+        if path == f"/tv/episode_group/{GROUP_ID}":
+            return detail
+        raise AssertionError(f"unexpected path {path}")
+
+    info_row = tmdb.TmdbClient(KEY, fetch=fetch).episode_groups(SHOW_ID)[0]
+    assert info_row.regular_episode_count == 2  # the two specials do not count
