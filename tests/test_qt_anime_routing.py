@@ -399,3 +399,72 @@ def test_escape_closes_the_which_part_sheet(app):
     pump(app)
     assert dialog.result() == QDialog.Rejected
     assert dialog.choice() is None
+
+# -- real mapping records, real conversion ---------------------------------
+
+#: The Fribb list's shape, with the Attack on Titan records as the list has
+#: them: one entry per TMDB season, and season 3 split at episode 13.
+AOT_TMDB = 1429
+AOT_RECORDS = (
+    {"anilist_id": 16498, "type": "TV", "themoviedb_id": {"tv": AOT_TMDB},
+     "season": {"tmdb": 1}, "episode_offset": {"tmdb": 0}},
+    {"anilist_id": 99147, "type": "TV", "themoviedb_id": {"tv": AOT_TMDB},
+     "season": {"tmdb": 3}, "episode_offset": {"tmdb": 0}},
+    {"anilist_id": 104578, "type": "TV", "themoviedb_id": {"tv": AOT_TMDB},
+     "season": {"tmdb": 3}, "episode_offset": {"tmdb": 12}},
+    {"anilist_id": 131681, "type": "TV", "themoviedb_id": {"tv": AOT_TMDB},
+     "season": {"tmdb": 4}, "episode_offset": {"tmdb": 0}},
+)
+
+AOT = qt_media.Card(
+    key=f"tv:{AOT_TMDB}", title="Attack on Titan", kind="tv", tmdb_id=AOT_TMDB
+)
+
+
+@pytest.fixture()
+def real_mapping(monkeypatch):
+    """The real module with the mapping records injected, and no sheet allowed."""
+    monkeypatch.setattr(
+        anime_map, "load_mapping",
+        lambda **kwargs: anime_map.MappingList(records=AOT_RECORDS),
+        raising=False,
+    )
+
+    class Never:
+        def __init__(self, *args, **kwargs) -> None:
+            raise AssertionError("the Which-part sheet must not open here")
+
+    monkeypatch.setattr(qt_media, "WhichPartDialog", Never, raising=False)
+    return None
+
+
+@pytest.mark.parametrize(
+    "season, number, anilist_id, anilist_episode",
+    [
+        (3, 1, 99147, 1),    # season 3's first entry
+        (3, 13, 104578, 1),  # season 3 splits here; offset 12 restarts at 1
+        (3, 22, 104578, 10),
+        (1, 5, 16498, 5),
+    ],
+)
+def test_a_real_mapping_plays_without_asking(app, real_mapping, season, number,
+                                             anilist_id, anilist_episode):
+    page = Page(app)
+    page.widget._play_tmdb(AOT, season, episode(number))
+    assert wait_for(app, lambda: page.urls)
+
+    assert page.urls == [
+        streaming.ani_url(anilist_id, anilist_episode, language="sub")
+    ], f"S{season}E{number} should play AniList {anilist_id} episode {anilist_episode}"
+    assert page.plain == []
+    page.close()
+
+
+def test_watch_now_without_a_season_uses_season_one_episode_one(app, real_mapping):
+    """The hero's Play has no season chosen: S1E1, still no sheet."""
+    page = Page(app)
+    page.widget._play_card(AOT)
+    assert wait_for(app, lambda: page.urls)
+
+    assert page.urls == [streaming.ani_url(16498, 1, language="sub")]
+    page.close()

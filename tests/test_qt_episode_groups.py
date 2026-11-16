@@ -11,9 +11,11 @@ no groups at all still opens exactly as before.
 
 from __future__ import annotations
 
+import json
 import os
 import time
 import types
+from pathlib import Path
 
 import pytest
 
@@ -23,7 +25,25 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtCore import QObject, QUrl, Signal  # noqa: E402
 from PySide6.QtWidgets import QApplication, QWidget  # noqa: E402
 
-from lgl import qt_media, qt_player, tmdb  # noqa: E402
+from lgl import anime_map, qt_media, qt_player, streaming, tmdb  # noqa: E402
+
+#: TMDB's own Re:Zero episode group, as the API sent it.
+REZERO_FIXTURE = (
+    Path(__file__).resolve().parent
+    / "fixtures"
+    / "tmdb_episode_group_641eb9d6b234b9007ac67063.json"
+)
+#: TMDB's id for the show, and a real-shaped mapping for its AniList entries:
+#: one entry per broadcast block, all inside TMDB season 1.
+REZERO_TMDB = 65942
+REZERO_RECORDS = (
+    {"anilist_id": 21355, "type": "TV", "themoviedb_id": {"tv": REZERO_TMDB},
+     "season": {"tmdb": 1}, "episode_offset": {"tmdb": 0}},
+    {"anilist_id": 108632, "type": "TV", "themoviedb_id": {"tv": REZERO_TMDB},
+     "season": {"tmdb": 1}, "episode_offset": {"tmdb": 25}},
+    {"anilist_id": 178201, "type": "TV", "themoviedb_id": {"tv": REZERO_TMDB},
+     "season": {"tmdb": 1}, "episode_offset": {"tmdb": 50}},
+)
 
 
 @pytest.fixture(scope="module")
@@ -340,4 +360,61 @@ def test_a_movie_card_still_opens_without_any_groups_call(app, group_api):
 
     assert client.group_requests == []
     assert page.layout_toggle.isHidden() is True
+    page.deleteLater()
+
+
+# -- the group's own numbers reach ani.pm -----------------------------------
+
+def test_a_rezero_group_click_lands_on_anipm_with_the_original_episode(app, monkeypatch):
+    """S3E1 of the "Seasons" group is TMDB S1E51, which the list maps to
+    178201 episode 1; the click must reach ani.pm with exactly that."""
+    data = json.loads(REZERO_FIXTURE.read_text())
+    group = tmdb.TmdbClient._episode_group_detail(data, data["id"])
+    show = qt_media.Card(
+        key=f"tv:{REZERO_TMDB}", title="Re:ZERO", kind="tv", tmdb_id=REZERO_TMDB
+    )
+    monkeypatch.setattr(
+        anime_map, "load_mapping",
+        lambda **kwargs: anime_map.MappingList(records=REZERO_RECORDS),
+        raising=False,
+    )
+    monkeypatch.setattr(tmdb, "choose_layout", lambda standard, groups: INFO,
+                        raising=False)
+
+    class Never:
+        def __init__(self, *args, **kwargs) -> None:
+            raise AssertionError("the Which-part sheet must not open here")
+
+    monkeypatch.setattr(qt_media, "WhichPartDialog", Never, raising=False)
+
+    class GroupClient(Show):
+        def episode_groups(self, _tmdb_id: int) -> list:
+            return [INFO]
+
+        def episode_group(self, group_id: str) -> object:
+            self.group_calls.append(group_id)
+            return group
+
+    client = GroupClient()
+    page = make_page(app, client)
+    page._provider = lambda: streaming.ANI_PROVIDER
+    page._language = lambda: "sub"
+    urls: list[str] = []
+    page.play_embedded = lambda url, title="": urls.append(url)
+    page.open_card(show)
+    wait_for(app, lambda: not page.layout_toggle.isHidden())
+    wait_for(app, lambda: bool(page.findChildren(qt_media.EpisodeRow)))
+    page.season_combo.panel._choose(3)
+    pump(app, 0.2)
+
+    rows = page.findChildren(qt_media.EpisodeRow)
+    assert len(rows) == 16
+    assert rows[0].title_label.text() == "Theatrical Malice"
+    rows[0].clicked.emit()
+    assert wait_for(app, lambda: bool(urls))
+
+    assert tmdb.group_episode_to_target(group, 3, 1) == (1, 51), (
+        "the fixture's season 3 starts at TMDB S1E51"
+    )
+    assert urls == [streaming.ani_url(178201, 1, language="sub")]
     page.deleteLater()
