@@ -314,9 +314,11 @@ class EpisodeGroupInfo:
 class GroupEpisode:
     """One episode inside an episode group, with its ORIGINAL TMDB numbers.
 
-    ``order`` is the 1-based position inside its group season;
-    ``season_number``/``episode_number`` are where the episode really lives in
-    TMDB's standard seasons, which is what playback needs.
+    ``order`` is TMDB's own episode order, kept as given (it may start at 0);
+    the 1-based position in the sorted list is what the page numbers and what
+    :func:`group_episode_to_target` counts.  ``season_number``/``episode_number``
+    are where the episode really lives in TMDB's standard seasons, which is
+    what playback needs.
     """
 
     order: int
@@ -332,7 +334,7 @@ class GroupEpisode:
 
 @dataclass(frozen=True)
 class GroupSeason:
-    """One season of an episode group (``order`` is TMDB's group order)."""
+    """One season of an episode group (``order`` is TMDB's group order as given)."""
 
     name: str
     order: int
@@ -812,7 +814,7 @@ class TmdbClient:
         return sum(
             len(season.episodes)
             for season in group.groups
-            if not _is_special_group(season.name, season.order)
+            if not _is_special_group(season.name, season.episodes)
         )
 
     # -- normalisation ------------------------------------------------------
@@ -945,47 +947,59 @@ class TmdbClient:
         groups: list[GroupSeason] = []
         raw_groups = data.get("groups")
         if isinstance(raw_groups, Sequence):
-            for entry in raw_groups:
+            for group_position, entry in enumerate(raw_groups, start=1):
                 if not isinstance(entry, Mapping):
                     continue
-                episodes: list[GroupEpisode] = []
+                # TMDB's example payloads number episodes from 0, while others
+                # number from 1: the order is kept exactly as given and only
+                # the position after sorting is used for numbering, so neither
+                # convention loses its first episode.
+                parsed: list[tuple[int, int, GroupEpisode]] = []
                 raw_episodes = entry.get("episodes")
                 if isinstance(raw_episodes, Sequence):
-                    for item in raw_episodes:
+                    for position, item in enumerate(raw_episodes, start=1):
                         if not isinstance(item, Mapping):
                             continue
-                        order = _int(item.get("order"))
+                        order = _position(item.get("order"), position)
                         episode_number = _int(item.get("episode_number"))
                         season_number = _int(item.get("season_number"))
-                        if order < 1 or episode_number < 1:
+                        if episode_number < 1:
                             continue
                         length = item.get("runtime")
-                        episodes.append(
-                            GroupEpisode(
-                                order=order,
-                                season_number=season_number,
-                                episode_number=episode_number,
-                                name=" ".join(str(item.get("name") or "").split())[:200]
-                                or f"Episode {episode_number}",
-                                overview=" ".join(
-                                    str(item.get("overview") or "").split()
-                                )[:1200],
-                                air_date=str(item.get("air_date") or ""),
-                                runtime=int(length)
-                                if isinstance(length, int)
-                                and not isinstance(length, bool)
-                                and length > 0
-                                else None,
-                                still_url=poster_url(item.get("still_path"), size="w780"),
-                                rating=_rating(item),
+                        parsed.append(
+                            (
+                                order,
+                                position,
+                                GroupEpisode(
+                                    order=order,
+                                    season_number=season_number,
+                                    episode_number=episode_number,
+                                    name=" ".join(
+                                        str(item.get("name") or "").split()
+                                    )[:200]
+                                    or f"Episode {episode_number}",
+                                    overview=" ".join(
+                                        str(item.get("overview") or "").split()
+                                    )[:1200],
+                                    air_date=str(item.get("air_date") or ""),
+                                    runtime=int(length)
+                                    if isinstance(length, int)
+                                    and not isinstance(length, bool)
+                                    and length > 0
+                                    else None,
+                                    still_url=poster_url(
+                                        item.get("still_path"), size="w780"
+                                    ),
+                                    rating=_rating(item),
+                                ),
                             )
                         )
-                episodes.sort(key=lambda episode: episode.order)
+                parsed.sort(key=lambda entry: (entry[0], entry[1]))
                 groups.append(
                     GroupSeason(
                         name=" ".join(str(entry.get("name") or "").split())[:200],
-                        order=_int(entry.get("order")),
-                        episodes=tuple(episodes),
+                        order=_position(entry.get("order"), group_position),
+                        episodes=tuple(episode for _, _, episode in parsed),
                     )
                 )
         groups.sort(key=lambda group: group.order)
@@ -1004,14 +1018,37 @@ def _int(value: Any) -> int:
     return value
 
 
-def _is_special_group(name: str, order: int) -> bool:
-    """True for a group that collects specials rather than a season."""
-    return order == 0 or "special" in str(name or "").casefold()
+def _position(value: Any, fallback: int) -> int:
+    """TMDB's order as given (0 is a real order), else the 1-based position."""
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        return fallback
+    return value
+
+
+def _is_special_group(name: str, episodes: Sequence[GroupEpisode] = ()) -> bool:
+    """True for a group that collects specials rather than a season.
+
+    The name is the reliable signal (TMDB calls the group "Specials"), and so
+    is the data: a group whose every episode lives in original season 0 is a
+    specials group whatever it is called.  The group's ``order`` is *not* a
+    signal - a real first season may be order 0.
+    """
+    if "special" in str(name or "").casefold():
+        return True
+    return bool(episodes) and all(
+        int(getattr(episode, "season_number", 0) or 0) == 0 for episode in episodes
+    )
 
 
 def _is_special_season(season: Season) -> bool:
-    """True for TMDB season 0, or a season named "Specials"."""
-    return _is_special_group(getattr(season, "name", ""), int(getattr(season, "number", 0) or 0))
+    """True for TMDB season 0, or a season named "Specials".
+
+    Standard seasons come from a different endpoint without per-episode
+    seasons to check, so the season number is the signal there.
+    """
+    if int(getattr(season, "number", 0) or 0) == 0:
+        return True
+    return "special" in str(getattr(season, "name", "") or "").casefold()
 
 
 def choose_layout(
@@ -1059,14 +1096,16 @@ def group_as_seasons(group: EpisodeGroup) -> list[Season]:
     """Render an episode group as ordinary seasons the detail page can show.
 
     ``Season.number`` is the group's order and ``Episode.number`` is the
-    episode's 1-based position inside that group, because that is how the page
-    numbers them.  The original TMDB numbers stay on the group episodes;
+    episode's 1-based position in the sorted group, because that is how the
+    page numbers them; TMDB's own episode ``order`` may start at 0 and is not
+    used for numbering.  The original TMDB numbers stay on the group episodes;
     :func:`group_episode_to_target` maps a rendered episode back for playback.
-    A group that collects specials is not a season and is left out.
+    A group that collects specials (by name, or because all of its episodes
+    are original season 0) is not a season and is left out.
     """
     seasons: list[Season] = []
     for group_season in sorted(group.groups or (), key=lambda item: item.order):
-        if _is_special_group(group_season.name, group_season.order):
+        if _is_special_group(group_season.name, group_season.episodes):
             continue
         episodes = tuple(
             Episode(
@@ -1080,7 +1119,14 @@ def group_as_seasons(group: EpisodeGroup) -> list[Season]:
                 runtime=int(episode.runtime) if episode.runtime else 0,
             )
             for position, episode in enumerate(
-                sorted(group_season.episodes, key=lambda item: item.order), start=1
+                [
+                    episode
+                    for _, episode in sorted(
+                        enumerate(group_season.episodes),
+                        key=lambda entry: (entry[1].order, entry[0]),
+                    )
+                ],
+                start=1,
             )
         )
         seasons.append(
@@ -1115,7 +1161,13 @@ def group_episode_to_target(
     for group_season in group.groups or ():
         if int(group_season.order) != wanted_season:
             continue
-        ordered = sorted(group_season.episodes, key=lambda item: item.order)
+        ordered = [
+            episode
+            for _, episode in sorted(
+                enumerate(group_season.episodes),
+                key=lambda entry: (entry[1].order, entry[0]),
+            )
+        ]
         if wanted_episode > len(ordered):
             return None
         episode = ordered[wanted_episode - 1]
