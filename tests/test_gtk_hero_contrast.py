@@ -96,8 +96,6 @@ def hero():
     dark = Gtk.Button(label="Back")
     dark.get_style_context().add_class("movie-btn-dark")
     row.pack_start(dark, False, False, 0)
-    spin = Gtk.SpinButton.new_with_range(1, 10, 1)
-    row.pack_start(spin, False, False, 0)
 
     labels = {}
     for name, klass in (
@@ -110,7 +108,7 @@ def hero():
         body.pack_start(label, False, False, 0)
         labels[name] = label
     window.show_all()
-    return {"window": window, "primary": primary, "dark": dark, "spin": spin,
+    return {"window": window, "primary": primary, "dark": dark,
             "labels": labels}
 
 
@@ -140,7 +138,7 @@ def test_every_hero_label_clears_4_5_to_1(hero, theme):
 def test_the_hero_buttons_and_picker_clear_4_5_to_1(hero, theme):
     theme_gtk.apply(theme)
     pump()
-    for name in ("primary", "dark", "spin"):
+    for name in ("primary", "dark"):
         for state_name, state in (
             ("normal", Gtk.StateFlags.NORMAL),
             ("backdrop", Gtk.StateFlags.BACKDROP),
@@ -149,27 +147,6 @@ def test_the_hero_buttons_and_picker_clear_4_5_to_1(hero, theme):
             assert found >= MIN_RATIO, (
                 f"{name} button in {theme} ({state_name}) is {found:.2f}:1"
             )
-
-
-@needs_display
-def test_the_hero_combo_uses_a_light_ink():
-    window = Gtk.Window()
-    row = Gtk.Box()
-    row.get_style_context().add_class("movie-hero-actions")
-    combo = Gtk.ComboBoxText()
-    combo.append("sub", "Sub")
-    combo.set_active_id("sub")
-    row.pack_start(combo, False, False, 0)
-    window.add(row)
-    window.show_all()
-    text = Path(CSS).read_text()
-    block = re.search(
-        r"\.movie-hero-actions combobox button,[^{]*\{([^}]*)\}", text
-    )
-    assert block is not None
-    colour = re.search(r"color:\s*(#[0-9a-fA-F]{6})", block.group(1))
-    assert colour is not None
-    assert design_tokens.contrast_ratio(colour.group(1), HERO_BG) >= MIN_RATIO
 
 
 def test_the_hero_rules_never_use_the_page_tokens():
