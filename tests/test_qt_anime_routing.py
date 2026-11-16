@@ -106,7 +106,8 @@ class Target:
 class Page:
     """A MediaPage wired for routing only: no history, no network, no player."""
 
-    def __init__(self, app, *, settings=None, provider="ani", tmdb=None) -> None:
+    def __init__(self, app, *, settings=None, provider=streaming.DEFAULT_PROVIDER,
+                 tmdb=None) -> None:
         self.app = app
         self.settings = settings
         self.widget = qt_media.MediaPage(
@@ -318,46 +319,73 @@ def test_a_non_anime_title_plays_exactly_as_before(app, stubbed):
     assert wait_for(app, lambda: page.plain)
 
     assert calls["mapped"] == [], "a non-anime title never touches the mapping"
+    assert page.plain[0][1] == streaming.DEFAULT_PROVIDER, "same provider as today"
     assert page.urls == []
     page.close()
 
 
-def test_another_provider_is_not_routed_at_all(app, stubbed):
-    calls, _state = stubbed
+def test_the_verdict_runs_for_any_provider_but_a_guess_never_reroutes(app, stubbed):
+    """A ja + Animation guess keeps the selected provider and asks nothing."""
+    calls, state = stubbed
+    state["verdict"] = Verdict(is_anime=True, verified=False)
     page = Page(app, provider="vidy")
     page.widget._play_tmdb(TV, 2, episode(3))
-    pump(app, 0.3)
+    assert wait_for(app, lambda: page.plain)
 
-    assert calls["is_anime"] == []
-    assert page.widget._tmdb.paths == [], "no details request for other providers"
-    assert page.plain and page.urls == []
+    assert calls["is_anime"] == [("tv", 1396, "ja", (16, 18))], (
+        "the identity is checked whatever provider is selected"
+    )
+    assert page.widget._tmdb.paths == ["/tv/1396"], "the cached details document"
+    assert calls["mapped"] == [], "a guess must not reach the mapping"
+    assert page.plain[0][1] == "vidy", "the user's provider keeps the play"
+    assert page.urls == []
     page.close()
 
 
-# -- verified default -------------------------------------------------------
+# -- a verified anime plays on ani.pm ---------------------------------------
 
-def test_a_verified_anime_makes_anipm_the_anime_default(app, stubbed, tmp_path):
+def test_a_verified_anime_plays_on_anipm_without_saving_a_setting(app, stubbed, tmp_path):
     _calls, state = stubbed
     state["verdict"] = Verdict(is_anime=True, verified=True)
     settings = Settings(tmp_path / "settings.json", keyring=False)
-    page = Page(app, settings=settings)
+    page = Page(app, settings=settings, provider="cinesrc")
     page.widget._play_tmdb(TV, 2, episode(3))
     assert wait_for(app, lambda: page.urls)
 
-    assert settings.get("anime_streaming_provider") == streaming.ANI_PROVIDER
+    assert page.urls == [streaming.ani_url(42, 5, language="sub")]
+    assert page.plain == [], "the general provider must not play this"
+    assert settings.get("anime_streaming_provider", "") == "", (
+        "a play must not write a preference"
+    )
     page.close()
 
 
-def test_a_saved_pick_is_not_overridden(app, stubbed, tmp_path):
-    _calls, state = stubbed
+@pytest.mark.parametrize(
+    "general, saved, expected",
+    [
+        ("vidy", "cinesrc", "cinesrc"),   # the owner's anime pick wins
+        ("cinesrc", "toflix", "toflix"),
+        ("cinesrc", "", "ani"),           # no pick: the mapping route
+    ],
+)
+def test_a_saved_anime_provider_wins_for_a_verified_anime(app, stubbed, tmp_path,
+                                                          general, saved, expected):
+    calls, state = stubbed
     state["verdict"] = Verdict(is_anime=True, verified=True)
     settings = Settings(tmp_path / "settings.json", keyring=False)
-    settings.set("anime_streaming_provider", "toflix")
-    page = Page(app, settings=settings)
+    if saved:
+        settings.set("anime_streaming_provider", saved)
+    page = Page(app, settings=settings, provider=general)
     page.widget._play_tmdb(TV, 2, episode(3))
-    assert wait_for(app, lambda: page.urls)
-
-    assert settings.get("anime_streaming_provider") == "toflix"
+    if expected == "ani":
+        assert wait_for(app, lambda: page.urls)
+        assert page.urls == [streaming.ani_url(42, 5, language="sub")]
+    else:
+        assert wait_for(app, lambda: page.plain)
+        assert page.plain[0][1] == expected
+        assert page.urls == []
+        assert calls["mapped"] == [], "a saved provider needs no mapping lookup"
+    assert settings.get("anime_streaming_provider", "") == saved
     page.close()
 
 
@@ -467,4 +495,76 @@ def test_watch_now_without_a_season_uses_season_one_episode_one(app, real_mappin
     assert wait_for(app, lambda: page.urls)
 
     assert page.urls == [streaming.ani_url(16498, 1, language="sub")]
+    page.close()
+
+
+def test_a_verified_anime_ignores_the_general_provider(app, real_mapping):
+    """No anime provider saved: the general provider never gets this play."""
+    page = Page(app, provider=streaming.DEFAULT_PROVIDER)
+    page.widget._play_tmdb(AOT, 3, episode(1))
+    assert wait_for(app, lambda: page.urls)
+
+    assert page.urls == [streaming.ani_url(99147, 1, language="sub")]
+    assert page.plain == [], (
+        f"{streaming.DEFAULT_PROVIDER} must not play a verified anime"
+    )
+    page.close()
+
+
+def test_a_heuristic_only_anime_keeps_the_selected_provider(app, monkeypatch):
+    """Japanese + Animation with no list entry is a guess: no reroute at all."""
+    monkeypatch.setattr(
+        anime_map, "load_mapping",
+        lambda **kwargs: anime_map.MappingList(),
+        raising=False,
+    )
+    asked: list[tuple] = []
+    monkeypatch.setattr(
+        anime_map, "tmdb_to_anilist",
+        lambda *a, **k: asked.append(a) or None,
+        raising=False,
+    )
+    page = Page(app, provider="vidy")
+    page.widget._play_tmdb(AOT, 3, episode(1))
+    assert wait_for(app, lambda: page.plain)
+
+    assert asked == [], "a guess must not reach the mapping lookup"
+    assert page.plain[0][1] == "vidy"
+    assert page.urls == []
+    page.close()
+
+
+def test_an_english_animation_is_not_anime_and_plays_as_today(app, monkeypatch):
+    monkeypatch.setattr(
+        anime_map, "load_mapping",
+        lambda **kwargs: anime_map.MappingList(records=AOT_RECORDS),
+        raising=False,
+    )
+    tmdb_client = Tmdb({"original_language": "en", "genres": [{"id": 16}]})
+    unlisted = qt_media.Card(key="tv:999", title="An English Cartoon",
+                             kind="tv", tmdb_id=999)
+    page = Page(app, provider=streaming.DEFAULT_PROVIDER, tmdb=tmdb_client)
+    page.widget._play_tmdb(unlisted, 3, episode(1))
+    assert wait_for(app, lambda: page.plain)
+
+    assert page.plain[0][1] == streaming.DEFAULT_PROVIDER
+    assert page.urls == []
+    assert tmdb_client.paths == ["/tv/999"], "still one verdict, no mapping route"
+    page.close()
+
+
+def test_repeated_plays_read_the_details_document_once(app, real_mapping):
+    page = Page(app, provider=streaming.DEFAULT_PROVIDER)
+    page.widget._play_tmdb(AOT, 3, episode(1))
+    assert wait_for(app, lambda: bool(page.urls))
+    page.widget._play_tmdb(AOT, 3, episode(13))
+    assert wait_for(app, lambda: len(page.urls) == 2)
+
+    assert page.urls == [
+        streaming.ani_url(99147, 1, language="sub"),
+        streaming.ani_url(104578, 1, language="sub"),
+    ]
+    assert page.widget._tmdb.paths == [f"/tv/{AOT_TMDB}"], (
+        "one details request per card, however many plays"
+    )
     page.close()

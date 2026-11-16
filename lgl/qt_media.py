@@ -1074,8 +1074,6 @@ class MediaPage(QWidget):
         #: TMDB's details document per card key, fetched once on a worker: the
         #: anime routing needs ``original_language`` and the genre ids.
         self._detail_documents: dict[str, dict] = {}
-        #: Cards the mapping list confirmed (``AnimeVerdict.verified``).
-        self._verified_anime: set[str] = set()
         #: Alternate episode layouts: card key -> ``EpisodeGroupInfo``,
         #: the loaded group and its seasons, all as the contract returns them.
         self._episode_layouts: dict[str, tuple[object, object, tuple]] = {}
@@ -2953,11 +2951,12 @@ class MediaPage(QWidget):
         if card.tmdb_id <= 0:
             self._note_error("This title has no TMDB id, so it cannot be played.")
             return
-        provider = self._provider()
-        if self._anime_routing_applies(card, provider):
-            self._play_tmdb_routed(card, provider, season, episode)
+        # The identity of the title decides where it plays, not the provider
+        # that happens to be selected for movies and TV.
+        if self._anime_verdict_applies(card):
+            self._play_tmdb_routed(card, season, episode)
             return
-        self._play_tmdb_plain(card, provider, season, episode)
+        self._play_tmdb_plain(card, self._provider(), season, episode)
 
     def _play_tmdb_plain(self, card: Card, provider: str,
                          season: int | None = None,
@@ -2989,15 +2988,14 @@ class MediaPage(QWidget):
         self._refresh_next_episode()
 
     # anime routing ----------------------------------------------------------
-    def _anime_routing_applies(self, card: Card, provider: str) -> bool:
-        """Ani.pm on a TMDB title is where the TMDB -> AniList link matters.
+    def _anime_verdict_applies(self, card: Card) -> bool:
+        """A TMDB title's identity is checked whatever provider is selected.
 
-        Every other provider keeps its own route untouched, and a client stub
-        without ``get`` (or a build without the shared module yet) simply falls
-        through to today's path instead of failing a play.
+        The verdict is a cached local index read plus one cached details
+        document, so this costs nothing on a repeat play; a client stub without
+        ``get`` (or a build without the shared module) simply falls through to
+        today's path instead of failing a play.
         """
-        if provider != streaming.ANI_PROVIDER:
-            return False
         if card.kind not in ("tv", "movie") or card.tmdb_id <= 0:
             return False
         client = getattr(self, "_tmdb", None)
@@ -3019,14 +3017,20 @@ class MediaPage(QWidget):
         self._detail_documents[key] = clean
         return clean
 
-    def _play_tmdb_routed(self, card: Card, provider: str,
+    def _play_tmdb_routed(self, card: Card,
                           season: int | None = None,
                           episode: object | None = None) -> None:
         """Ask the mapping list where this TMDB title plays, then play there.
 
         The details document, the verdict and the mapping lookup all happen on
-        one worker; the UI thread only applies the answer.
+        one worker; the UI thread only applies the answer.  A verified anime
+        plays on ani.pm unless the owner saved an anime provider, which wins;
+        a heuristic-only guess and a non-anime title keep the selected
+        provider, and neither is asked anything.
         """
+        provider = self._provider()
+        chosen = self._saved_anime_provider()
+        mapping_route = not chosen or chosen == streaming.ANI_PROVIDER
         season_number = int(season or 1) if card.kind == "tv" else 1
         episode_number = int(getattr(episode, "number", 0) or 1) if (
             card.kind == "tv"
@@ -3040,7 +3044,10 @@ class MediaPage(QWidget):
                 original_language=language, genre_ids=genres,
             )
             target = None
-            if getattr(verdict, "is_anime", False):
+            # Only a verified identity that will play on ani.pm is looked up:
+            # a guess, or a saved provider that will play instead, needs no
+            # mapping search (and a guess must never trigger a title search).
+            if getattr(verdict, "verified", False) and mapping_route:
                 target = anime_map.tmdb_to_anilist(
                     card.kind, card.tmdb_id, season_number, episode_number,
                     title=card.title,
@@ -3052,7 +3059,16 @@ class MediaPage(QWidget):
             if not getattr(verdict, "is_anime", False):
                 self._play_tmdb_plain(card, provider, season, episode)
                 return
-            self._note_verified_anime(card, verdict)
+            if not getattr(verdict, "verified", False):
+                # A ja + Animation guess is not an identity: the selected
+                # provider keeps the play and nothing is rerouted.
+                self._play_tmdb_plain(card, provider, season, episode)
+                return
+            if not mapping_route:
+                self._play_tmdb_plain(
+                    card, streaming.clean_anime_provider(chosen), season, episode,
+                )
+                return
             if target is None:
                 self._play_anime_by_title(card, season, episode)
                 return
@@ -3065,23 +3081,17 @@ class MediaPage(QWidget):
 
         run_async(work, done, lambda exc: self._note_error(str(exc)))
 
-    def _note_verified_anime(self, card: Card, verdict: object) -> None:
-        """A verified anime makes ani.pm the anime default, unless the user chose.
+    def _saved_anime_provider(self) -> str:
+        """The anime provider the owner saved, or ``""`` when they saved none.
 
-        A provider the user picked in the menu (``health.mark_manual``) or a
-        saved ``anime_streaming_provider`` wins over any guess.
+        Read-only on purpose: routing a play is a per-play decision from the
+        mapping list's answer, so a play never writes a preference back.
         """
-        if not getattr(verdict, "verified", False):
-            return
-        self._verified_anime.add(card.key or f"{card.kind}:{card.tmdb_id}")
         if self.settings is None:
-            return
-        health = getattr(self, "health", None)
-        if health is not None and health.manual:
-            return
-        if str(self.settings.get("anime_streaming_provider", "") or "").strip():
-            return
-        self.settings.set("anime_streaming_provider", streaming.ANI_PROVIDER)
+            return ""
+        return str(
+            self.settings.get("anime_streaming_provider", "") or ""
+        ).strip().lower()
 
     def _play_anime_by_title(self, card: Card, season: int | None,
                              episode: object | None) -> None:

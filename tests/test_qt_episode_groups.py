@@ -397,7 +397,8 @@ def test_a_rezero_group_click_lands_on_anipm_with_the_original_episode(app, monk
 
     client = GroupClient()
     page = make_page(app, client)
-    page._provider = lambda: streaming.ANI_PROVIDER
+    # The general provider is selected: a verified anime is still routed.
+    page._provider = lambda: streaming.DEFAULT_PROVIDER
     page._language = lambda: "sub"
     urls: list[str] = []
     page.play_embedded = lambda url, title="": urls.append(url)
