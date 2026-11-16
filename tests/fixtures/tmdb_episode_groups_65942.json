@@ -1,0 +1,17 @@
+{
+ "id": "641eb9d6b234b9007ac67063",
+ "results": [
+  {
+   "description": "There are 4 seasons of the show. First season comprises of 25 episodes. Second one is also 25 episodes. Third season has 16 episodes. Fourth season has 19 episodes",
+   "episode_count": 170,
+   "group_count": 5,
+   "id": "641eb9d6b234b9007ac67063",
+   "name": "Seasons",
+   "network": {
+    "name": "TV Tokyo",
+    "origin_country": "JP"
+   },
+   "type": 6
+  }
+ ]
+}
