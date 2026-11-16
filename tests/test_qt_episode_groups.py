@@ -368,7 +368,7 @@ def test_a_movie_card_still_opens_without_any_groups_call(app, group_api):
 def test_a_rezero_group_click_lands_on_anipm_with_the_original_episode(app, monkeypatch):
     """S3E1 of the "Seasons" group is TMDB S1E51, which the list maps to
     178201 episode 1; the click must reach ani.pm with exactly that."""
-    data = json.loads(REZERO_FIXTURE.read_text())
+    data = json.loads(REZERO_FIXTURE.read_text(encoding="utf-8"))
     group = tmdb.TmdbClient._episode_group_detail(data, data["id"])
     show = qt_media.Card(
         key=f"tv:{REZERO_TMDB}", title="Re:ZERO", kind="tv", tmdb_id=REZERO_TMDB
