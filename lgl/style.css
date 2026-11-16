@@ -2215,43 +2215,6 @@ button.movie-arrow:disabled {
   border: none;
 }
 
-.movie-hero-actions spinbutton,
-.movie-hero-actions spinbutton:backdrop {
-  color: #f2f4f6;
-  background-color: rgba(255, 255, 255, 0.10);
-  background-image: none;
-  border: 1px solid rgba(255, 255, 255, 0.26);
-  border-radius: 9px;
-}
-
-.movie-hero-actions spinbutton entry,
-.movie-hero-actions spinbutton entry:backdrop {
-  color: #f2f4f6;
-  background-color: transparent;
-  background-image: none;
-}
-
-.movie-hero-actions spinbutton button,
-.movie-hero-actions spinbutton button:backdrop {
-  color: #f2f4f6;
-  background-color: transparent;
-  background-image: none;
-  border: none;
-}
-
-.movie-hero-actions combobox button,
-.movie-hero-actions combobox button:backdrop,
-.movie-hero-actions menubutton button,
-.movie-hero-actions menubutton button:backdrop {
-  color: #f2f4f6;
-  background-color: rgba(255, 255, 255, 0.10);
-  background-image: none;
-  border: 1px solid rgba(255, 255, 255, 0.26);
-}
-
-.movie-hero-actions combobox arrow,
-.movie-hero-actions combobox arrow:backdrop { color: #f2f4f6; }
-
 /* -- player: kept black in both themes (video area) ---------------------- */
 .movie-player-frame {
   background-color: @bg;

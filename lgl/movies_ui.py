@@ -3472,47 +3472,14 @@ class MoviesWindow(Gtk.Box):
 
         provider = self._anime_provider()
         languages = streaming.languages_for(provider)
-        language = streaming.clean_language(
-            provider, self._settings.get("anime_language", "")
-            or ("dub" if self._settings.get("anime_dub", False) else "sub")
-        )
-
-        episode_label = Gtk.Label(label="Episode")
-        episode_label.get_style_context().add_class("movie-hero-meta")
-        actions.pack_start(episode_label, False, False, 0)
-        episode_count = self._anime_episode_count(item)
-        episode_spin = Gtk.SpinButton.new_with_range(
-            1, max(1, episode_count or 1000), 1
-        )
-        episode_spin.set_value(1)
-        episode_spin.set_tooltip_text(
-            f"Episode to play (1–{max(1, episode_count or 1000)})"
-        )
-        actions.pack_start(episode_spin, False, False, 0)
-
-        language_combo = Gtk.ComboBoxText()
-        for key in languages:
-            language_combo.append(key, streaming.LANGUAGE_LABELS.get(key, key))
-        language_combo.set_active_id(language)
-        language_combo.set_tooltip_text(
-            f"Audio/subtitle track for {streaming.LABELS.get(provider, provider)}"
-        )
-
-        def on_language_changed(combo) -> None:
-            choice = combo.get_active_id() or streaming.DEFAULT_LANGUAGE
-            self._settings.set("anime_language", choice)
-            self._settings.set("anime_dub", choice == "dub")
-
-        language_combo.connect("changed", on_language_changed)
-        actions.pack_start(language_combo, False, False, 0)
 
         back = self._dark_button("Back", self._navigate_back)
         actions.pack_start(back, False, False, 0)
         content.pack_start(actions, False, False, 0)
-        self._anime_detail_state = {
-            "episode": episode_spin,
-            "language": language_combo,
-        }
+        # The episode and the audio track are not page controls: Watch picks
+        # the episode (the next one after a play, else the first) and the
+        # track comes from Settings, so the hero holds only these two buttons.
+        self._anime_detail_state = {}
         overlay.add_overlay(content)
         page.pack_start(overlay, False, False, 0)
 
@@ -3781,6 +3748,10 @@ class MoviesWindow(Gtk.Box):
         except (TypeError, ValueError):
             return
         language = anipm.language_key(language) or anipm.LANGUAGES[0]
+        # Watch state, not storage: the episode this title is on, so Watch
+        # resumes at the next one instead of restarting the series.
+        self._playing_episode = (1, number)
+        self._anime_playing_key = str(getattr(item, "key", "") or "")
         api_embed = ""
         for ep in list(getattr(self, "_current_ani_episodes", []) or []):
             if ep.number == number:
@@ -3875,22 +3846,46 @@ class MoviesWindow(Gtk.Box):
             return 0
         return max(0, count)
 
-    def _anime_playback_choice(self) -> tuple[int, str]:
-        """Episode and track chosen on the anime details page."""
-        state = getattr(self, "_anime_detail_state", {})
-        spin = state.get("episode")
-        combo = state.get("language")
-        try:
-            episode = max(1, int(spin.get_value())) if spin is not None else 1
-        except (TypeError, ValueError):
-            episode = 1
+    def _anime_playback_choice(self, item) -> tuple[int, str]:
+        """The episode and track Watch opens; neither is a page control."""
+        return self._anime_start_episode(item), self._anime_track()
+
+    def _anime_track(self) -> str:
+        """The track picked in Settings, in the provider's own spelling."""
         provider = self._anime_provider()
-        chosen = combo.get_active_id() if combo is not None else None
-        if not chosen:
-            chosen = self._settings.get("anime_language", "")
-        if not chosen:
-            chosen = "dub" if self._settings.get("anime_dub", False) else "sub"
-        return episode, streaming.clean_language(provider, chosen)
+        chosen = self._settings.get("anime_language", "") or (
+            "dub" if self._settings.get("anime_dub", False) else "sub"
+        )
+        return streaming.clean_language(provider, chosen)
+
+    def _anime_start_episode(self, item) -> int:
+        """Episode Watch opens: the one after the last play, else the first.
+
+        The app keeps the episode being watched in ``_playing_episode``, the
+        same watch state the player's own Next button reads, and the anime
+        page records which title that number belongs to.  So a title whose
+        episode was played from its page resumes one episode later, as far as
+        the title's episode count (or ani.pm's list) allows; a fresh title, a
+        different title, or one past its last episode starts at episode 1.
+        History cannot answer this: it stores a title and a timestamp, never
+        an episode number, and anime keys are not history keys at all.
+        """
+        playing = getattr(self, "_playing_episode", None)
+        key = str(getattr(item, "key", "") or "")
+        if playing is None or not key:
+            return 1
+        if key != str(getattr(self, "_anime_playing_key", "") or ""):
+            return 1
+        try:
+            number = max(1, int(playing[1])) + 1
+        except (TypeError, ValueError, IndexError):
+            return 1
+        known = self._anime_episode_count(item) or len(
+            getattr(self, "_current_ani_episodes", ()) or ()
+        )
+        if known and number > known:
+            return 1
+        return number
 
     def _watch_anime(self, item, episode=None, language=None) -> None:
         """Play an anime in the in-app player via the selected provider."""
@@ -3900,7 +3895,7 @@ class MoviesWindow(Gtk.Box):
         if isinstance(item, anipm.AniTitle):
             # An ani.pm catalogue title plays by its own AniList id through
             # the ani.pm route; its MAL id (if any) is never substituted here.
-            chosen_episode, chosen_language = self._anime_playback_choice()
+            chosen_episode, chosen_language = self._anime_playback_choice(item)
             number = chosen_episode if episode is None else max(1, int(episode))
             self._play_anime_pm(
                 item, number, anipm.language_key(language or chosen_language)
@@ -3908,7 +3903,7 @@ class MoviesWindow(Gtk.Box):
             )
             return
         provider = self._anime_provider()
-        chosen_episode, chosen_language = self._anime_playback_choice()
+        chosen_episode, chosen_language = self._anime_playback_choice(item)
         episode = chosen_episode if episode is None else max(1, int(episode))
         language = chosen_language if language is None else language
         try:
