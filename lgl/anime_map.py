@@ -31,10 +31,12 @@ __all__ = [
     "CACHE_FILENAME",
     "LIST_URL",
     "WEEK",
+    "AnimeVerdict",
     "MappingList",
     "PlayTarget",
     "anilist_to_tmdb",
     "default_cache_path",
+    "is_anime",
     "load_mapping",
     "tmdb_to_anilist",
 ]
@@ -64,6 +66,25 @@ class PlayTarget:
     confident: bool = False
     reason: str = ""
     candidates: tuple["PlayTarget", ...] = ()
+
+
+@dataclass(frozen=True)
+class AnimeVerdict:
+    """Whether a TMDB title is anime, and how sure the mapping list makes us.
+
+    ``verified`` is true only when the Fribb list links this exact TMDB id (of
+    this kind) to an AniList entry: ``mal_id``/``anilist_ids`` then come from
+    the matching records.  A Japanese original language plus TMDB's Animation
+    genre is a guess, so it is ``verified=False`` with ``reason="heuristic"``.
+    The guess never removes a title from the catalogue: it only decides whether
+    playback is routed to ani.pm.
+    """
+
+    is_anime: bool = False
+    verified: bool = False
+    mal_id: int | None = None
+    anilist_ids: tuple[int, ...] = ()
+    reason: str = ""
 
 
 @dataclass(frozen=True)
@@ -330,6 +351,98 @@ def _from_movie(
             [(0, anilist_id) for anilist_id in found],
         )
     return PlayTarget(found[0], 1, True, "mapped film")
+
+
+#: TMDB's Animation genre id.  A Japanese original language plus this genre is
+#: the documented heuristic for anime that the mapping list has not caught up
+#: with yet; it never verifies anything.
+ANIMATION_GENRE = 16
+
+#: ``(kind, tmdb id) -> records`` for one loaded list.  The list is a tuple and
+#: building the index for all 39k records is cheap, so it is built once per
+#: loaded list and reused while that list is alive.  Keyed by ``id()`` with a
+#: reference to the list kept alongside, so a collected list cannot hand its
+#: stale index to a new one.
+_REVERSE_INDEX: dict[int, tuple[tuple[Mapping[str, Any], ...], dict[tuple[str, int], tuple[Mapping[str, Any], ...]]]] = {}
+
+
+def _reverse_index(
+    records: tuple[Mapping[str, Any], ...],
+) -> dict[tuple[str, int], tuple[Mapping[str, Any], ...]]:
+    """The records of every ``(kind, tmdb id)``, built lazily and kept."""
+    key = id(records)
+    cached = _REVERSE_INDEX.get(key)
+    if cached is not None and cached[0] is records:
+        return cached[1]
+    found: dict[tuple[str, int], list[Mapping[str, Any]]] = {}
+    for record in records:
+        for kind in ("tv", "movie"):
+            for tmdb_id in _tmdb_ids(record, kind):
+                found.setdefault((kind, tmdb_id), []).append(record)
+    index = {name: tuple(entries) for name, entries in found.items()}
+    _REVERSE_INDEX.clear()  # one loaded list at a time is all a session needs
+    _REVERSE_INDEX[key] = (records, index)
+    return index
+
+
+def is_anime(
+    tmdb_kind: str,
+    tmdb_id: int,
+    *,
+    original_language: str = "",
+    genre_ids: Sequence[int] = (),
+    mapping: MappingList | None = None,
+    cache_path: Path | str | None = None,
+) -> AnimeVerdict:
+    """Is this TMDB title anime, and does the mapping list say so?
+
+    Kind-aware: the same number can be a show and a film, and only the id of
+    the kind asked about counts.  When *mapping* is given its records are used
+    as-is (tests and callers that already loaded the list); otherwise the list
+    comes from :func:`load_mapping`, which uses its disk cache, so a repeat
+    call is free and a missing network keeps the last good copy.
+
+    The answer only decides whether playback goes to ani.pm: a title with no
+    MAL match is never excluded from anything.
+    """
+    kind = "tv" if str(tmdb_kind).lower() == "tv" else "movie"
+    number = _number(tmdb_id)
+    loaded = mapping if mapping is not None else load_mapping(cache_path=cache_path)
+    if number is not None:
+        records = _reverse_index(loaded.records).get((kind, number), ())
+        if records:
+            mal_ids: list[int] = []
+            anilist_ids: list[int] = []
+            for record in sorted(
+                records,
+                key=lambda item: (
+                    _season(item) if _season(item) is not None else 0,
+                    _offset(item),
+                    _anilist_id(item) or 0,
+                ),
+            ):
+                mal_id = _number(record.get("mal_id"))
+                if mal_id is not None and mal_id not in mal_ids:
+                    mal_ids.append(mal_id)
+                anilist_id = _anilist_id(record)
+                if anilist_id is not None and anilist_id not in anilist_ids:
+                    anilist_ids.append(anilist_id)
+            return AnimeVerdict(
+                True,
+                True,
+                mal_ids[0] if mal_ids else None,
+                tuple(anilist_ids),
+                "mapped by the anime list",
+            )
+    language = str(original_language or "").strip().lower()
+    genres = {
+        value
+        for value in genre_ids
+        if isinstance(value, int) and not isinstance(value, bool)
+    }
+    if language == "ja" and ANIMATION_GENRE in genres:
+        return AnimeVerdict(True, False, None, (), "heuristic")
+    return AnimeVerdict(False, False, None, (), "not anime")
 
 
 # -- public lookups ---------------------------------------------------------

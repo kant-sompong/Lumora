@@ -1,0 +1,1738 @@
+{
+ "id": "641eb9d6b234b9007ac67063",
+ "name": "Seasons",
+ "description": "There are 4 seasons of the show. First season comprises of 25 episodes. Second one is also 25 episodes. Third season has 16 episodes. Fourth season has 19 episodes",
+ "type": 6,
+ "groups": [
+  {
+   "name": "Specials",
+   "order": 0,
+   "episodes": [
+    {
+     "air_date": "",
+     "episode_number": 1,
+     "season_number": 0,
+     "name": "Re:ZERO ~Starting Break Time From Zero~ World 1-1",
+     "overview": "Subaru learns that objects in this new world are named very similarly to the ones in his own. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 1
+    },
+    {
+     "air_date": "",
+     "episode_number": 2,
+     "season_number": 0,
+     "name": "Re:ZERO ~Starting Break Time From Zero~ World 1-4, Side A",
+     "overview": "Felt teaches Subaru how time works in her world. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 2
+    },
+    {
+     "air_date": "",
+     "episode_number": 3,
+     "season_number": 0,
+     "name": "Re:ZERO ~Starting Break Time From Zero~ World 1-4, Epilogue",
+     "overview": "Emilia and Puck discuss Reinhard, the Master Swordsman, and his many divine protections. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 3
+    },
+    {
+     "air_date": "",
+     "episode_number": 4,
+     "season_number": 0,
+     "name": "Re:ZERO ~Starting Break Time From Zero~ World 2-1",
+     "overview": "After being hired at Roswaal’s mansion, Subaru has a chat with the maid sisters Ram and Rem. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 4
+    },
+    {
+     "air_date": "",
+     "episode_number": 5,
+     "season_number": 0,
+     "name": "Re:ZERO ~Starting Break Time From Zero~ World 2-2",
+     "overview": "Roswaal and Subaru have a chat while sharing the mansion’s luxurious bath. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 5
+    },
+    {
+     "air_date": "",
+     "episode_number": 6,
+     "season_number": 0,
+     "name": "Re:ZERO ~Starting Break Time From Zero~ World 2-3",
+     "overview": "Emilia continues to insist on doing something to thank Subaru for saving her. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 6
+    },
+    {
+     "air_date": "",
+     "episode_number": 7,
+     "season_number": 0,
+     "name": "Re:ZERO ~Starting Break Time From Zero~ World 2-4",
+     "overview": "Subaru asks Beatrice about the library she maintains for Roswaal. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 7
+    },
+    {
+     "air_date": "",
+     "episode_number": 8,
+     "season_number": 0,
+     "name": "Re:ZERO ~Starting Break Time From Zero~ World 2-5, Side A",
+     "overview": "Subaru is still embarrassed about resting his head in Emilia’s lap, and the maid sisters aren’t about to let him forget it. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 8
+    },
+    {
+     "air_date": "",
+     "episode_number": 9,
+     "season_number": 0,
+     "name": "Re:ZERO ~Starting Break Time From Zero~ World 2-5, Side B",
+     "overview": "Subaru learns just how kind and considerate Ram can be. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 9
+    },
+    {
+     "air_date": "",
+     "episode_number": 10,
+     "season_number": 0,
+     "name": "Re:ZERO ~Starting Break Time From Zero~ World 2-5-3, Side C",
+     "overview": "Subaru tells Ram about the promises he made to Rem while they track the mabeasts through the forest. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 10
+    },
+    {
+     "air_date": "",
+     "episode_number": 11,
+     "season_number": 0,
+     "name": "Re:ZERO ~Starting Break Time From Zero~ World 2-5, Epilogue",
+     "overview": "Subaru and Emilia reunite after the mabeasts are defeated and his curses erased. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 11
+    },
+    {
+     "air_date": "",
+     "episode_number": 12,
+     "season_number": 0,
+     "name": "Re:PETIT ~Starting Life in Another World From PETIT~ 1: Return to School",
+     "overview": "Subaru wakes up to find himself in a classroom where Emilia is a teacher. Attempting to ask her about Puck, she tells him that the familiar is the school’s principal. After his questions disrupt class and he is sent to stand in the hall, Subaru vows to return to his own world, before wondering what world that really is. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 12
+    },
+    {
+     "air_date": "",
+     "episode_number": 13,
+     "season_number": 0,
+     "name": "Re:PETIT ~Starting Life in Another World From PETIT~ 2: Beatrice, Self-Proclaimed Teacher",
+     "overview": "Subaru meets another teacher at the mysterious school he's awakened in... Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 13
+    },
+    {
+     "air_date": "",
+     "episode_number": 14,
+     "season_number": 0,
+     "name": "Re:PETIT ~Starting Life in Another World From PETIT~ 3: The Master and His Maids",
+     "overview": "Subaru finds himself in a maid café with two very familiar maids serving him. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 14
+    },
+    {
+     "air_date": "",
+     "episode_number": 15,
+     "season_number": 0,
+     "name": "Re:PETIT ~Starting Life in Another World From PETIT~ 4: That Menu Item Is…",
+     "overview": "Visiting a café where Beatrice and Anastasia work, Subaru orders their most popular item, a Meow Meow Omelet. The omelet is delivered by Puck, who then eats it. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 15
+    },
+    {
+     "air_date": "",
+     "episode_number": 16,
+     "season_number": 0,
+     "name": "Re:PETIT ~Starting Life in Another World From PETIT~ 5: Ditz",
+     "overview": "At an arcade Subaru meets with Felt who finding her arcade coin while explaining she’s having a game contest with Reinhard. Failing to retrieve her only coin Emilia suggests a game machine to Felt that give coins. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 16
+    },
+    {
+     "air_date": "",
+     "episode_number": 17,
+     "season_number": 0,
+     "name": "Re:PETIT ~Starting Life in Another World From PETIT~ 6: Greed That Isn’t a Pig’s",
+     "overview": "Felt's arcade competition with Reinhard continues, with a little help from an unexpected visitor... Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 17
+    },
+    {
+     "air_date": "",
+     "episode_number": 18,
+     "season_number": 0,
+     "name": "Re:PETIT ~Starting Life in Another World From PETIT~ 7: From Zero",
+     "overview": "Subaru visits a certain doujinshi expo and finds Rem sitting at a booth, selling a book she wrote. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 18
+    },
+    {
+     "air_date": "",
+     "episode_number": 19,
+     "season_number": 0,
+     "name": "Re:PETIT ~Starting Life in Another World From PETIT~ 8: The Day of the Battle",
+     "overview": "Subaru continues to explore the doujinshi expo and bumps into two other unexpected attendees, Crusch and Priscilla. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 19
+    },
+    {
+     "air_date": "",
+     "episode_number": 20,
+     "season_number": 0,
+     "name": "Re:PETIT ~Starting Life in Another World From PETIT~ 9: Conquering the Watermelon",
+     "overview": "Subaru finds himself on the beach, greeted by the sight of Crusch and Rem in swimsuits. Is this some kind of reward?! Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 20
+    },
+    {
+     "air_date": "",
+     "episode_number": 21,
+     "season_number": 0,
+     "name": "Re:PETIT ~Starting Life in Another World From PETIT~ 10: Just Resisting Desires of the Flesh",
+     "overview": "Subaru awakens on the beach again... but this time he's buried in the sand. Who could have done this?! Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 21
+    },
+    {
+     "air_date": "",
+     "episode_number": 22,
+     "season_number": 0,
+     "name": "Re:PETIT ~Starting Life in Another World From PETIT~ 11: That and That and (Omitted) at Checkout",
+     "overview": "Subaru visits a convenience store to buy a drink, but its owner is a very shrewd business woman… Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 22
+    },
+    {
+     "air_date": "",
+     "episode_number": 23,
+     "season_number": 0,
+     "name": "Re:PETIT ~Starting Life in Another World From PETIT~ 12: Buy It",
+     "overview": "Subaru returns to the convenience store…and this time Emilia stands behind the counter! It’s the situation he’s been waiting for! Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 23
+    },
+    {
+     "air_date": "",
+     "episode_number": 24,
+     "season_number": 0,
+     "name": "Re:PETIT ~Starting Life in Another World From PETIT~ 13: The Book the Lion King Saw",
+     "overview": "Subaru visits a bookstore to buy a copy of a favorite book, but the employee at the register doesn’t trust his motives… Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 24
+    },
+    {
+     "air_date": "",
+     "episode_number": 25,
+     "season_number": 0,
+     "name": "Re:PETIT ~Starting Life in Another World From PETIT~ 14: That’s All This Promotion Is About",
+     "overview": "Subaru and Emilia wait at the bookstore for the rest of the gang’s arrival to take advantage of an exciting new release! Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 25
+    },
+    {
+     "air_date": "",
+     "episode_number": 26,
+     "season_number": 0,
+     "name": "Re:ZERO - Starting Break Time From Zero 2: Otto's Diary 1",
+     "overview": "After being saved from the Witch Cult, he is now working for Subaru. He recalls moments during those events and sees him as an old friend that he had met before. He thought to himself that he may be from Kararagi, but he wasn't sure. Subaru enters the carriage and gave him encouraging banters, which made Otto a little bit embarrassed. He then tells Otto to hurry and meet with Roswaal. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 26
+    },
+    {
+     "air_date": "",
+     "episode_number": 27,
+     "season_number": 0,
+     "name": "Re:ZERO - Starting Break Time From Zero 2: Otto's Diary 2",
+     "overview": "Petra and Otto meet for the first time. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 27
+    },
+    {
+     "air_date": "",
+     "episode_number": 28,
+     "season_number": 0,
+     "name": "Re:ZERO - Starting Break Time From Zero 2: Otto's Diary 3",
+     "overview": "After encountering Garfiel and escorted to the Sanctuary, he finds himself stranded in the middle of nowhere. He suddenly noticed that Garfiel was right next to him. He tells Otto to go to Roswaal, but he was told by Ram to not visit him. He then asks him how did he know Frederica and Garf are related. Otto didn't understand what he meant and he thought that Subaru told him that and he insists tha",
+     "still_path": "",
+     "vote_average": null,
+     "order": 28
+    },
+    {
+     "air_date": "",
+     "episode_number": 29,
+     "season_number": 0,
+     "name": "Re:ZERO - Starting Break Time From Zero 2: The Diary of Petra's Struggles",
+     "overview": "Petra reflects on her decision to work as a maid in the Mathers' Domain. Despite Frederica's warnings about the challenges and hardships of the job, Petra remains determined and optimistic. Her cheerful attitude and dedication to her duties provide a refreshing contrast to the more serious events unfolding in the main series. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 29
+    },
+    {
+     "air_date": "",
+     "episode_number": 30,
+     "season_number": 0,
+     "name": "Re:ZERO - Starting Break Time From Zero 2: Otto's Diary 4",
+     "overview": "Otto recalls at the time when he before he joined Emilia's camp, he would compare Emilia to the Witch of Envy because she has the same looks as her. But seeing her that she works hard to help others, he reconsiders her as a friend rather than an enemy. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 30
+    },
+    {
+     "air_date": "",
+     "episode_number": 31,
+     "season_number": 0,
+     "name": "Re:ZERO - Starting Break Time From Zero 2: Otto's Diary 5",
+     "overview": "Otto recalls how he was \"looked down upon\" and \"teased\" by Subaru and Ram Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 31
+    },
+    {
+     "air_date": "",
+     "episode_number": 32,
+     "season_number": 0,
+     "name": "Re:ZERO - Starting Break Time From Zero 2: Otto's Diary 6",
+     "overview": "Otto returns to Garfiel to talk about the deal they had made. He had decided to turn down the offer that Garfiel had made and had sided with Subaru. And with that, he returned the ore to Garfiel and quickly escaped to search for Subaru. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 32
+    },
+    {
+     "air_date": "",
+     "episode_number": 33,
+     "season_number": 0,
+     "name": "Re:ZERO - Starting Break Time From Zero 2: Maid's Days 1",
+     "overview": "Six days had passed since Petra worked as a maid in the Mathers' Domain. Frederica recalled the time that Petra wanted to apply to work as a maid. She warns her that working as the mansion's maid takes a lot of hardships and dedication and it isn't easy to do. Despite her warnings, Petra is still obligated to work as a maid. And so, Frederica accepts her. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 33
+    },
+    {
+     "air_date": "",
+     "episode_number": 34,
+     "season_number": 0,
+     "name": "Re:ZERO - Starting Break Time From Zero 2: Fang of Iron Report 1",
+     "overview": "Ricardo writes a report of the mission after the subjugation of the White Whale and the battle of the Witch Cult. Ricardo asks her about her report, but Tivey enters and told him that she didn't and he had to do it for her. Mimi exclaims that she did her report and takes out her book. They read through the report and recalled the time they had rescued Otto. Anastasia entered the room and sees them",
+     "still_path": "",
+     "vote_average": null,
+     "order": 34
+    },
+    {
+     "air_date": "",
+     "episode_number": 35,
+     "season_number": 0,
+     "name": "Re:ZERO - Starting Break Time From Zero 2: Maid's Days 2",
+     "overview": "Petra recalls the time she first met Frederica. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 35
+    },
+    {
+     "air_date": "",
+     "episode_number": 36,
+     "season_number": 0,
+     "name": "Re:ZERO - Starting Break Time From Zero 2: Diary of the Dark Work Sisters 1",
+     "overview": "Erza and Merry discussed how different people react to death, and Erza explained why she didn't like Subaru. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 36
+    },
+    {
+     "air_date": "",
+     "episode_number": 37,
+     "season_number": 0,
+     "name": "Re:ZERO - Starting Break Time From Zero 2: Maid's Days 3",
+     "overview": "Frandelica records herself teaching Petra to be a maid, and then Petra comes to her house and expresses her desire to sleep with Frandelica. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 37
+    },
+    {
+     "air_date": "",
+     "episode_number": 38,
+     "season_number": 0,
+     "name": "Re:ZERO - Starting Break Time From Zero 2: Otto's Diary 7",
+     "overview": "Otto wants to comfort Natsuki Subaru, and then he falls into the fantasy of his \"tsundere\" self comforting the \"conceited\" Subaru. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 38
+    },
+    {
+     "air_date": "",
+     "episode_number": 39,
+     "season_number": 0,
+     "name": "Re:ZERO - Starting Break Time From Zero 2: Otto and Subaru's Resolve",
+     "overview": "It's a daily routine in the Sanctuary. Subaru and Ram's bickering, Emilia's helplessness, and Otto's worry and determination. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 39
+    },
+    {
+     "air_date": "",
+     "episode_number": 40,
+     "season_number": 0,
+     "name": "Re:ZERO - Starting Break Time From Zero 2: Fang of Iron Report 2",
+     "overview": "Ricardo expresses his dissatisfaction with Mimi's inaction, but Mimi and Anastasia remain calm. Yurius asks Anastasia some questions about the merchant. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 40
+    },
+    {
+     "air_date": "",
+     "episode_number": 41,
+     "season_number": 0,
+     "name": "Re:ZERO - Starting Break Time From Zero 2: Otto's Diary 8",
+     "overview": "Otto's diary was obtained by Garfiel, and Garfiel discovered the \"suicide note\" written by Otto. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 41
+    },
+    {
+     "air_date": "",
+     "episode_number": 42,
+     "season_number": 0,
+     "name": "Re:ZERO - Starting Break Time From Zero 2: Witch's Tea Confectionery",
+     "overview": "Emilia and Echidna were walking in the forest. Echidna pretended to be strong and said that she could keep up with Emilia's pace, but in the end she collapsed on the ground due to exhaustion. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 42
+    },
+    {
+     "air_date": "",
+     "episode_number": 43,
+     "season_number": 0,
+     "name": "Re:ZERO - Starting Break Time From Zero 2: Days Waiting for the Gospel",
+     "overview": "Betty recalls her happy times in the Forbidden Library, especially her conversation with José. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 43
+    },
+    {
+     "air_date": "",
+     "episode_number": 44,
+     "season_number": 0,
+     "name": "Re:ZERO - Starting Break Time From Zero 2: Otto's Diary 9",
+     "overview": "Subaru, Otto, and Garfiel have a post-war discussion. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 44
+    },
+    {
+     "air_date": "",
+     "episode_number": 45,
+     "season_number": 0,
+     "name": "Re:ZERO - Starting Break Time From Zero 2: Diary of the Dark Work Sisters 2",
+     "overview": "Roswaal and Elsa make a deal, and then Elsa and Merry talk about Roswaal. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 45
+    },
+    {
+     "air_date": "",
+     "episode_number": 46,
+     "season_number": 0,
+     "name": "Re:ZERO - Starting Break Time From Zero 2: Otto's Diary 10",
+     "overview": "Ram expressed that she didn't care about Otto's existence. In order to change his image in Ram's mind, Otto gave a \"speech\". Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 46
+    },
+    {
+     "air_date": "",
+     "episode_number": 47,
+     "season_number": 0,
+     "name": "Re:ZERO - Starting Break Time From Zero 2: The Stone of the Miracle, the Path to the Miracle.",
+     "overview": "Ram summoned the great elf Puck, and the two discussed Ram's belief - Lord Roswaal. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 47
+    },
+    {
+     "air_date": "",
+     "episode_number": 48,
+     "season_number": 0,
+     "name": "Re:ZERO - Starting Break Time From Zero 2: Tea Party of Witches",
+     "overview": "The witches all praised Emilia's performance in the trial, and then at the tea party, they teased about the relationship between Echidna and Natsuki Subaru. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 48
+    },
+    {
+     "air_date": "",
+     "episode_number": 49,
+     "season_number": 0,
+     "name": "Re:ZERO - Starting Break Time From Zero 2: Meili's Diary",
+     "overview": "Merry questions Elsa's remarkable healing ability, and Elsa explains why she possesses it. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 49
+    },
+    {
+     "air_date": "",
+     "episode_number": 50,
+     "season_number": 0,
+     "name": "Re:ZERO - Starting Break Time From Zero 2: Otto's Diary 11",
+     "overview": "Frandelica watched Garfiel and Otto conversing outside the door, and told Petra that she was a little jealous of Otto, who had such a good relationship with Garfiel. Then, in a very cute way, Petra helped the siblings. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 50
+    },
+    {
+     "air_date": "",
+     "episode_number": 51,
+     "season_number": 0,
+     "name": "Re:Zero - Starting Break Time from Zero: Night Tales of the Sleeping Oni",
+     "overview": "Subaru talks about today's events in front of a sleeping Rem. Remembering Emilia and Beatrice's words, Subaru whispers that he wishes Rem was here, and he hears Rem's voice... Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 51
+    },
+    {
+     "air_date": "",
+     "episode_number": 52,
+     "season_number": 0,
+     "name": "Re:Zero - Starting Break Time from Zero: Emilia Party Struggles - 1",
+     "overview": "Frederica tries to calm Petra down as she explodes with frustration, but then Ram appears before them. Petra, after hearing Frederica and Ram's words, seems to reflect on her behavior, but... ? Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 52
+    },
+    {
+     "air_date": "",
+     "episode_number": 53,
+     "season_number": 0,
+     "name": "Re:Zero - Starting Break Time from Zero: CHOMP of LOVE and PASSION",
+     "overview": "Mimi, who has arrived at Roswaal's mansion, is \"shocked\" to see Garfiel. This... could it be... Garfiel is flustered by the joyful Mimi. This is the story of their precious first encounter. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 53
+    },
+    {
+     "air_date": "",
+     "episode_number": 54,
+     "season_number": 0,
+     "name": "Re:Zero - Starting Break Time from Zero: Doki-Doki Royal Selection Social Gathering - 1",
+     "overview": "Subaru and Emilia meet Crusch, a fellow candidate for the throne. Crusch's knight, Ferris, notices that Subaru's gate is broken and becomes enraged. ...However, something seems strange. When he looks to his side, he sees a young girl standing next to Subaru. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 54
+    },
+    {
+     "air_date": "",
+     "episode_number": 55,
+     "season_number": 0,
+     "name": "Re:Zero - Starting Break Time from Zero: Great Waterfalls Followers - 1",
+     "overview": "Subaru and Beatrice encounter Al outside the Water Hagoromo Pavilion. Subaru is puzzled by Al's behavior of treating him as a \"brother\" despite being from a different camp. Subaru's perception is different from what he expected, and Al mutters softly, \"Do you need a hint...?\" Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 55
+    },
+    {
+     "air_date": "",
+     "episode_number": 56,
+     "season_number": 0,
+     "name": "Re:Zero - Starting Break Time from Zero: Great Waterfalls Followers - 2",
+     "overview": "Subaru finds himself in a humorous situation as he attempts to adapt to his new role in the mansion. The episode showcases his interactions with the mansion's staff and his efforts to fit in, all presented in the series' signature chibi art style. While the episode doesn't advance the main plot, it provides fans with a delightful and comedic interlude. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 56
+    },
+    {
+     "air_date": "",
+     "episode_number": 57,
+     "season_number": 0,
+     "name": "Re:Zero - Starting Break Time from Zero: Doki-Doki Royal Selection Social Gathering - 2",
+     "overview": "The characters participating in the Royal Selection event gather for a social meet-up filled with lively and humorous interactions. The episode highlights the personalities and quirks of the candidates and their supporters as they engage in playful banter and lighthearted competitions. The tone is comedic and charming, focusing on the bonds and rivalries that develop among the group during this im",
+     "still_path": "",
+     "vote_average": null,
+     "order": 57
+    },
+    {
+     "air_date": "",
+     "episode_number": 58,
+     "season_number": 0,
+     "name": "Re:Zero - Starting Break Time from Zero: Doki-Doki Royal Selection Social Gathering - 3",
+     "overview": "The candidates for the royal selection and their followers engage in more playful competitions and conversations, each trying to showcase their unique charms and strengths. The episode focuses on character interactions filled with humorous misunderstandings, friendly rivalry, and heartwarming moments that deepen the bonds between the characters. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 58
+    },
+    {
+     "air_date": "",
+     "episode_number": 59,
+     "season_number": 0,
+     "name": "Re:Zero - Starting Break Time from Zero: Emilia Party Struggles - 2",
+     "overview": "The spotlight is on Emilia and her party as they face the everyday challenges and comedic mishaps of adventuring together. From misunderstandings to the quirks of each party member, the episode humorously showcases the group’s dynamics and the small struggles they encounter while trying to work as a team. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 59
+    },
+    {
+     "air_date": "",
+     "episode_number": 60,
+     "season_number": 0,
+     "name": "Re:Zero - Starting Break Time from Zero: Pre-Theater Malice",
+     "overview": "The characters prepare for a theatrical performance filled with humorous anticipation and behind-the-scenes antics. The episode follows the cast as they rehearse and navigate the comedic challenges that come with putting on a show—miscommunications, forgotten lines, and over-the-top acting all contribute to the fun. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 60
+    },
+    {
+     "air_date": "",
+     "episode_number": 61,
+     "season_number": 0,
+     "name": "Re:Zero - Starting Break Time from Zero: Scarlet Romantic Tales",
+     "overview": "the episode dives into the romantic and sometimes awkward interactions between the characters, presenting a series of short, sweet, and comedic vignettes. Using the chibi art style, the episode highlights moments of affection, misunderstandings, and playful teasing among the main cast. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 61
+    },
+    {
+     "air_date": "",
+     "episode_number": 62,
+     "season_number": 0,
+     "name": "Re:Zero - Starting Break Time from Zero: Emilia Party Struggles - 3",
+     "overview": "Petra is asked by Roswaal to search for the chef who has run away. While walking through the garden, she finds a person buried in the shrubbery, and it turns out to be Diaz, the chef she is looking for! It seems that Diaz ran away because he wasn't interested. In response, Petra remembers her conversation with Ram and tries to persuade him that \"you can't keep running away.\" Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 62
+    },
+    {
+     "air_date": "",
+     "episode_number": 63,
+     "season_number": 0,
+     "name": "Re:Zero - Starting Break Time from Zero: Emilia Party Struggles - 4",
+     "overview": "As Otto heads to Pristella, Petra, Frederica, and Ram, acting as his advisors, emphasize various requests to him. As Otto feels down because he is left to his own devices and no one is concerned about him, Emilia appears before him.. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 63
+    },
+    {
+     "air_date": "",
+     "episode_number": 64,
+     "season_number": 0,
+     "name": "Re:Zero - Starting Break Time from Zero: Emilia Party Struggles - 5",
+     "overview": "Ram appears before Otto in a sulky mood. It seems that Roswaal is avoiding her... Otto asks if anything has changed recently, and Ram tells Roswaal, \"I love you.\" Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 64
+    },
+    {
+     "air_date": "",
+     "episode_number": 65,
+     "season_number": 0,
+     "name": "Re:Zero - Starting Break Time from Zero: Emilia Party Struggles - 6",
+     "overview": "Ram appears before Otto in a sulky mood. It seems that Roswaal is avoiding her... Otto asks if anything has changed recently, and Ram tells Roswaal, \"I love you.\" Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 65
+    },
+    {
+     "air_date": "",
+     "episode_number": 66,
+     "season_number": 0,
+     "name": "Re:Zero - Starting Break Time from Zero: Emilia Party Struggles - 7",
+     "overview": "Petra is shocked when Roswaal reveals his \"weakness\" to her at a dinner party. Diaz then tries to give her something... Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 66
+    },
+    {
+     "air_date": "",
+     "episode_number": 67,
+     "season_number": 0,
+     "name": "Re:Zero - Starting Break Time from Zero: Emilia Party Struggles - 8",
+     "overview": "Roswaal returns to the castle with Frederica and Petra after the meeting. Ram, who had been left in charge, rushes to Roswaal's side, seizing the opportunity. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 67
+    },
+    {
+     "air_date": "",
+     "episode_number": 68,
+     "season_number": 0,
+     "name": "Re:Zero - Starting Break Time from Zero: Emilia Party Struggles - 9",
+     "overview": "Petra keeps Meili company while she's locked up in the dungeon. Petra makes a request to Meili, who is always saying mean things. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 68
+    },
+    {
+     "air_date": "",
+     "episode_number": 69,
+     "season_number": 0,
+     "name": "Re:Zero - Starting Break Time from Zero: Everyone Is Quite a Handful, I Suppose 1",
+     "overview": "Anastasia has been taken over by an artificial spirit. Beatrice receives a shocking confession from Subaru. Emilia comes to Beatrice, who is observing Anastasia with Subaru... Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 69
+    },
+    {
+     "air_date": "",
+     "episode_number": 70,
+     "season_number": 0,
+     "name": "Re:Zero - Starting Break Time from Zero: Everyone Is Quite a Handful, I Suppose 2",
+     "overview": "Emilia and the others are worried about Subaru and Ram, who won't wake up. Then Ram wakes up... Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 70
+    },
+    {
+     "air_date": "",
+     "episode_number": 71,
+     "season_number": 0,
+     "name": "Re:Zero - Starting Break Time from Zero: Walk-the-Talk Log 1",
+     "overview": "Julius gazes at Joshua, who sleeps in the field hospital in Pristella. Ricardo's \"nose\" points out a relationship with his brother that he has no memory of, but Julius's mind remains troubled...? Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 71
+    },
+    {
+     "air_date": "",
+     "episode_number": 72,
+     "season_number": 0,
+     "name": "Re:Zero - Starting Break Time from Zero: Walk-the-Talk Log 2",
+     "overview": "Donna is bewildered by Julius's aggressive advances. To prevent her secret from being revealed, she asks Subaru, with whom she shares the secret, for help. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 72
+    },
+    {
+     "air_date": "",
+     "episode_number": 73,
+     "season_number": 0,
+     "name": "Re:Zero - Starting Break Time from Zero: Walk-the-Talk Log 3",
+     "overview": "Julius is giving his all to Anastasia. When Subaru, unable to bear watching any longer, asks him what's wrong, Julius says he doesn't want to let go of what he's gained so far. When Julius asks if he's being greedy, what will Subaru say...? Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 73
+    },
+    {
+     "air_date": "",
+     "episode_number": 74,
+     "season_number": 0,
+     "name": "Re:Zero - Starting Break Time from Zero: The Wiry-Armed Success in Kararagi",
+     "overview": "In a heavy atmosphere, Eri Dona and Julius walk down the corridor of the watchtower. Eri Dona recalls the day she first met Anastasia. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 74
+    },
+    {
+     "air_date": "",
+     "episode_number": 75,
+     "season_number": 0,
+     "name": "Re:Zero - Starting Break Time from Zero: Emilia Party Struggles 10",
+     "overview": "Garfiel comes to Otto, who was injured in the battle for the water gate city. The two, who couldn't accompany Subaru and Emilia, talk about their future. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 75
+    },
+    {
+     "air_date": "",
+     "episode_number": 76,
+     "season_number": 0,
+     "name": "Re:Zero - Starting Break Time from Zero: Emilia Party Struggles 11",
+     "overview": "Felt and Reinhard visit Otto, who is recuperating. A visit from a royal candidate and a sword saint. Otto says he's come a long way from being a merchant, and Felt responds... Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 76
+    },
+    {
+     "air_date": "",
+     "episode_number": 77,
+     "season_number": 0,
+     "name": "Re:Zero - Starting Break Time from Zero: Golden Lion & the Sword Saint",
+     "overview": "Sirius is to be entrusted to the royal capital. Reinhard, who has taken on the role of escorting him, exchanges words with Ricardo and others, as well as Garfiel who has come to see them off, and departs Pristella with Felt. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 77
+    },
+    {
+     "air_date": "",
+     "episode_number": 78,
+     "season_number": 0,
+     "name": "Re:Zero - Starting Break Time from Zero: Diary of the Dark Work Sisters",
+     "overview": "Meili faints after failing her first job. When she wakes up, Elsa has completed the job in her place. Meili notices something strange about Elsa's actions and sees what happens next. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 78
+    },
+    {
+     "air_date": "",
+     "episode_number": 79,
+     "season_number": 0,
+     "name": "Re:Zero - Starting Break Time from Zero: Golden Lion & the Sword Saint",
+     "overview": "Felt confronts Sirius, who is being escorted, inside a dragon carriage heading to the royal capital. Felt shows her frustration as Sirius laments his own constitution that brings misfortune and calamity. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 79
+    },
+    {
+     "air_date": "",
+     "episode_number": 80,
+     "season_number": 0,
+     "name": "Re:Zero - Starting Break Time from Zero: Golden Lion & the Sword Saint",
+     "overview": "Upon arriving at the prison tower, Reinhard takes Sirius away. Felt watches them go, but is suddenly called out to from the side. The person is Russell Fellow of the Royal Capital's Merchants Guild. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 80
+    },
+    {
+     "air_date": "",
+     "episode_number": 81,
+     "season_number": 0,
+     "name": "Re:Zero - Starting Break Time from Zero: Cheers for Me",
+     "overview": "Priscilla and her group return to their territory in the southern part of the kingdom. Heinkel, seeking a chance to redeem himself, kneels before Priscilla and bows his head. Priscilla speaks to him as if she can see through him, but... Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 81
+    },
+    {
+     "air_date": "",
+     "episode_number": 82,
+     "season_number": 0,
+     "name": "Re:Zero - Starting Break Time from Zero: Cheers for Me",
+     "overview": "Priscilla and her group return to their territory in the southern part of the kingdom. Heinkel, seeking a chance to redeem himself, kneels before Priscilla and bows his head. Priscilla speaks to him as if she can see through him, but... Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 82
+    },
+    {
+     "air_date": "",
+     "episode_number": 83,
+     "season_number": 0,
+     "name": "Re:Zero - Starting Break Time from Zero: The Pleiades Travelogue 1",
+     "overview": "Reid, Shaula, and Alex are out shopping. When they find a bar, Reid starts drinking, completely forgetting about their shopping, which enrages Shaula. Meanwhile, Alex seems to have something on his mind...? Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 83
+    },
+    {
+     "air_date": "",
+     "episode_number": 84,
+     "season_number": 0,
+     "name": "Re:Zero - Starting Break Time from Zero: The Pleiades Travelogue 2",
+     "overview": "Reid, Shaula, and Alex get separated from their companions in the forest. Leaving Alex, who is disabled, behind, Reid goes ahead. While calming down the angry Shaula, Alex begins to talk about his journey and about Reid. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 84
+    },
+    {
+     "air_date": "",
+     "episode_number": 85,
+     "season_number": 0,
+     "name": "Re:Zero - Starting Break Time from Zero: The Scorpion's Fairy Tale",
+     "overview": "Shaula continues to wait for her master in the watchtower. For years, decades, centuries, she has gazed out at the desert beyond. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 85
+    }
+   ]
+  },
+  {
+   "name": "Season 1",
+   "order": 1,
+   "episodes": [
+    {
+     "air_date": "",
+     "episode_number": 1,
+     "season_number": 1,
+     "name": "The End of the Beginning and the Beginning of the End",
+     "overview": "Natsuki Subaru is summoned to a parallel world on his way home from the convenience store. He's entranced at first by the fantasy world suddenly stretching before his eyes, but the cute girl he believes summoned him is nowhere to be found, and soon enough he's utterly lost. Then a gang of punks surrounds him, but he quickly learns that he doesn't have any of the powers that he thought all people t",
+     "still_path": "",
+     "vote_average": null,
+     "order": 1
+    },
+    {
+     "air_date": "",
+     "episode_number": 2,
+     "season_number": 1,
+     "name": "Reunion with the Witch",
+     "overview": "After being attacked by someone the first time, sliced open by Elsa the second time, and stabbed in the back by punks the third time, Subaru should have been dead, but found himself back where he started in the same parallel world every time. He finally realizes he’s acquired the power to go back to the time and place he started from, which he calls “Return by Death.” In hopes of changing the fate",
+     "still_path": "",
+     "vote_average": null,
+     "order": 2
+    },
+    {
+     "air_date": "",
+     "episode_number": 3,
+     "season_number": 1,
+     "name": "Starting Life from Zero in Another World",
+     "overview": "Subaru attempts to buy the insignia from Felt and return it to Satella before Elsa arrives at the loot house…but Satella arrives before the negotiations are complete, and Elsa still attacks them. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 3
+    },
+    {
+     "air_date": "",
+     "episode_number": 4,
+     "season_number": 1,
+     "name": "The Happy Roswaal Mansion Family",
+     "overview": "After being badly wounded by Elsa, Subaru somehow survived and awoke in the mansion of Margrave Mathers, in the Kingdom of Lugunica. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 4
+    },
+    {
+     "air_date": "",
+     "episode_number": 5,
+     "season_number": 1,
+     "name": "The Morning of Our Promise Is Still Distant",
+     "overview": "Subaru now lives and works in Roswaal’s mansion, working with Ram and Rem, and finally getting Emilia to agree to a date with him. But the day of their promised date never comes as Subaru keeps going back to the day he first awoke in the mansion. He’s confused at the thought that he Returned by Death despite having no memory of experiencing anything deadly, but he’s determined to repeat his previo",
+     "still_path": "",
+     "vote_average": null,
+     "order": 5
+    },
+    {
+     "air_date": "",
+     "episode_number": 6,
+     "season_number": 1,
+     "name": "The Sound of Chains",
+     "overview": "Subaru’s first day at the Roswaal mansion begins for the third time. The first time, he grew weak and died of unknown reasons in his sleep, and the second time, he was killed by an attacker. The sound of chains that he heard as he died the second time replays in his mind, waking him in a terrified, cold sweat. He has no idea what the killer is after, let alone who it is, so he makes a plan to leav",
+     "still_path": "",
+     "vote_average": null,
+     "order": 6
+    },
+    {
+     "air_date": "",
+     "episode_number": 7,
+     "season_number": 1,
+     "name": "Natsuki Subaru's Restart",
+     "overview": "Standing before Subaru is someone he never expected. The truth of the attacker’s identity leaves him bewildered, and he feels everything crumbling around him as he dies yet again. Then, for the fourth time, he awakes on his first day at the Roswaal mansion. This time, the night of the fourth day passes without incident, and Subaru is stunned as he greets the morning of the fifth day…but then the s",
+     "still_path": "",
+     "vote_average": null,
+     "order": 7
+    },
+    {
+     "air_date": "",
+     "episode_number": 8,
+     "season_number": 1,
+     "name": "I Cried, Cried My Lungs Out, and Stopped Crying",
+     "overview": "Subaru’s first day in Roswaal’s mansion begins for the fifth time. Determined to save everyone this time, he makes it a point to keep his best smile on his face in order to earn the trust of the mansion’s staff. But although he works his hardest to make them like him, his body begins to have trouble keeping up with his heart’s intentions. Soon Emilia is unable to bear the sight of him struggling a",
+     "still_path": "",
+     "vote_average": null,
+     "order": 8
+    },
+    {
+     "air_date": "",
+     "episode_number": 9,
+     "season_number": 1,
+     "name": "The Meaning of Courage",
+     "overview": "The scattered pieces of the puzzle finally come together, and Subaru realizes for certain that the shaman who cursed him is in the village at the foot of the mountains. He heads there with Ram and Rem and makes sure all the villagers touch him so that he can find out, with Beatrice’s help, who cast the curse. But the truth he finds is not what he expected, and he finds himself rushing toward the v",
+     "still_path": "",
+     "vote_average": null,
+     "order": 9
+    },
+    {
+     "air_date": "",
+     "episode_number": 10,
+     "season_number": 1,
+     "name": "Demonically Inspired Methods",
+     "overview": "Subaru risked his life to save the children from a pack of Ulgarm, but he was so powerfully cursed that there could be no saving him. Even Beatrice is unable to undo the complex web of curses on him, and says he’ll grow weak and die within half a day. The only way he can survive is if the entire Ulgarm pack is defeated, but time is not on his side. Subaru is ready to give up when he learns that Re",
+     "still_path": "",
+     "vote_average": null,
+     "order": 10
+    },
+    {
+     "air_date": "",
+     "episode_number": 11,
+     "season_number": 1,
+     "name": "Rem",
+     "overview": "Knocked unconscious by Subaru’s attack, Rem dreams of an event in her past that she and Ram would rather forget…a sin for which Rem feels she can never be forgiven. After waking up, she tells Subaru that she’s just committed the same sin again. When the three of them are moments from being cornered by the Ulgarm pack, Subaru takes off to draw their attention so Ram and Rem can escape. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 11
+    },
+    {
+     "air_date": "",
+     "episode_number": 12,
+     "season_number": 1,
+     "name": "Return to the Capital",
+     "overview": "At the order of the council of elders that manages Lugunica in the king’s absence, Wilhelm and Felix visit Roswaal’s mansion as emissaries. Emilia is required in the imperial capital right away, so Subaru asks her to take him along. Emilia tells him this won’t be a pleasure trip, but a push from Rem and Roswaal ends in her agreement, so Emilia and Subaru head to the capital. Now all of the candida",
+     "still_path": "",
+     "vote_average": null,
+     "order": 12
+    },
+    {
+     "air_date": "",
+     "episode_number": 13,
+     "season_number": 1,
+     "name": "Self-Proclaimed Knight Natsuki Subaru",
+     "overview": "As Emilia joins Priscilla, Crusch, and Anastasia in a meeting of the royal selection participants, Reinhard enters the hall with Felt. According to a new prophecy seen on the Dragon Stone, there are five priestesses with the potential to be the kingdom’s next ruler. Reinhard announces that Felt is the fifth priestess, meaning it’s time to formally begin the royal selection, but Felt refuses to hav",
+     "still_path": "",
+     "vote_average": null,
+     "order": 13
+    },
+    {
+     "air_date": "",
+     "episode_number": 14,
+     "season_number": 1,
+     "name": "The Sickness Called Despair",
+     "overview": "“I just wanted to protect her. That feeling wasn’t a lie. Where did I go wrong?” Rejected by the one who meant more to him than anything, Subaru is still unable to recognize that he may have done something irreversible. He then finds out that some disturbing movement has been detected within Roswaal’s domain, where Emilia and the others are. He’s certain that he can save them somehow, so in spite ",
+     "still_path": "",
+     "vote_average": null,
+     "order": 14
+    },
+    {
+     "air_date": "",
+     "episode_number": 15,
+     "season_number": 1,
+     "name": "The Outside of Madness",
+     "overview": "Upon returning to Roswaal’s mansion, Subaru is greeted by an unbelievable sight and wails that this was not what he wanted to happen. Stricken with despair, everything before Subaru starts to go white as, finally, he hears a voice: “You were too late.” Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 15
+    },
+    {
+     "air_date": "",
+     "episode_number": 16,
+     "season_number": 1,
+     "name": "A Pig's Greed",
+     "overview": "Subaru wakes up in front of the appa shop once again. Feeling boxed in on all sides due to his own lack of power to change the situation, he seeks the help of others. First, he seeks the help of Crush, who flatly declines any further involvement passed her contractual obligation of healing Subaru. His requests to Anastasia and Priscilla similarly go unanswered despite his pleas. Having wasted too ",
+     "still_path": "",
+     "vote_average": null,
+     "order": 16
+    },
+    {
+     "air_date": "",
+     "episode_number": 17,
+     "season_number": 1,
+     "name": "Disgrace in the Extreme",
+     "overview": "A mysterious figure appears before Subaru and his traveling companions. As the looming beast attacks with a deafening bellow amidst the darkness and fog, Rem determines that it will be too difficult to escape… Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 17
+    },
+    {
+     "air_date": "",
+     "episode_number": 18,
+     "season_number": 1,
+     "name": "From Zero",
+     "overview": "Subaru laments that he could not do anything or save anyone, and has no options left. Exhausted, he suddenly takes off running at full speed as if he’s made a decision… Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 18
+    },
+    {
+     "air_date": "",
+     "episode_number": 19,
+     "season_number": 1,
+     "name": "Battle Against the White Whale",
+     "overview": "To save Emilia, Subaru approaches Crusch to negotiate the formation of an alliance. His terms are a bit difficult for Crusch to believe, but she can see that Subaru isn’t lying. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 19
+    },
+    {
+     "air_date": "",
+     "episode_number": 20,
+     "season_number": 1,
+     "name": "Wilhelm van Astrea",
+     "overview": "Subaru has devoted everything he had, and done all he could do. His passion has captured Crusch’s heart, as well as Anastasia’s cooperation, and they all enter into the battle against the White Whale together. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 20
+    },
+    {
+     "air_date": "",
+     "episode_number": 21,
+     "season_number": 1,
+     "name": "A Wager That Defies Despair",
+     "overview": "Subaru and Rem are at a loss for words. The battle against the White Whale, which seemed to be going in their favor through attrition, suddenly took on completely different proportions. With their tactical superiority and advantage quickly dwindling, the combined forces all but get tangled up in the threads of despair. That’s when Subaru decides to yell out his next move… Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 21
+    },
+    {
+     "air_date": "",
+     "episode_number": 22,
+     "season_number": 1,
+     "name": "A Flash of Sloth",
+     "overview": "With the battle against the White Whale now over, the mercenary force setting up the blockade of the road comes back, Julius at the lead. His arrival gives rise to mixed feelings for Subaru, but after Julius sincerely thanks him for ridding the world of the monster, Subaru finds it in himself to apologize for his past behavior. The group now looks forward, ready to enter the Mathers domain… Read M",
+     "still_path": "",
+     "vote_average": null,
+     "order": 22
+    },
+    {
+     "air_date": "",
+     "episode_number": 23,
+     "season_number": 1,
+     "name": "Nefarious Sloth",
+     "overview": "The group is making its way in the Mathers domain when suddenly everyone but Subaru disappears and a strange, suffocating atmosphere seeps through the forest. He quickly figures out it is nothing but an illusion, and with help from Julius on the other side, dispels the barrier for everyone caught in it. However, arriving at the village doesn’t make convincing the residents to evacuate easy. Time i",
+     "still_path": "",
+     "vote_average": null,
+     "order": 23
+    },
+    {
+     "air_date": "",
+     "episode_number": 24,
+     "season_number": 1,
+     "name": "The Self-Proclaimed Knight and the Greatest of Knights",
+     "overview": "Subaru devises a new plan to correct the mistake of the blank letter sent to the manor, encourage the evacuation of the villagers and move Emilia away from her current location. With these preparations complete, he enacts the second part of his plan designed to cut off the Fingers before severing the Unseen Hand once and for all. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 24
+    },
+    {
+     "air_date": "",
+     "episode_number": 25,
+     "season_number": 1,
+     "name": "That’s All This Story Is About",
+     "overview": "Emilia is hurriedly ushered to the capital along with the villagers under the orders of a mysterious benefactor while escorted by a rag-tag group of individuals from various and opposing factions. She has but one question on her mind: who could this man be and why would he go so far? Meanwhile, Subaru and Julius face off against the Archbishop of Sin Betelgeuse for the ultimate time. Unfortunately",
+     "still_path": "",
+     "vote_average": null,
+     "order": 25
+    }
+   ]
+  },
+  {
+   "name": "Season 2",
+   "order": 2,
+   "episodes": [
+    {
+     "air_date": "",
+     "episode_number": 26,
+     "season_number": 1,
+     "name": "Each One's Promise",
+     "overview": "Amid dying countless times, Subaru finally led the troops to victory against the White Whale and struck down the schemes of the Sin Archbishop of Sloth. After overcoming a painful ending to his these ordeals, he was reunited at last with his beloved Emilia…only to learn that Rem’s existence had been erased from the world, wiped out by the White Whale somewhere in the middle of his death loop. And ",
+     "still_path": "",
+     "vote_average": null,
+     "order": 1
+    },
+    {
+     "air_date": "",
+     "episode_number": 27,
+     "season_number": 1,
+     "name": "The Next Location",
+     "overview": "After concluding their talks with Crusch, Subaru and Emilia return to the village of Arlam, intending to report to Roswaal and discuss what to do next. But they find Arlam deserted and learn that the villagers who had taken refuge in the Sanctuary with Ram have not yet returned. When Subaru and Emilia arrive back at Roswaal’s mansion to find out where the Sanctuary is, they are greeted by Frederic",
+     "still_path": "",
+     "vote_average": null,
+     "order": 2
+    },
+    {
+     "air_date": "",
+     "episode_number": 28,
+     "season_number": 1,
+     "name": "The Long-Awaited Reunion",
+     "overview": "On the way to the Sanctuary, Subaru unwittingly finds himself invited to a witch’s tea party, where the hostess introduces herself as Echidna, the Witch of Greed. Subaru is alarmed, but Echidna encourages him to sit and drink his tea before it gets cold. When he somehow makes it back outside after a conversation with Echidna, he finds Otto lying on the ground, battered and beaten. Then, before he ",
+     "still_path": "",
+     "vote_average": null,
+     "order": 3
+    },
+    {
+     "air_date": "",
+     "episode_number": 29,
+     "season_number": 1,
+     "name": "Parent and Child",
+     "overview": "It’s supposed to be his own room, a place he’s supposed to be used to seeing, but Subaru can’t shake the feeling that something is off. He’s overcome by an indescribable sense of uneasiness, but being caught in his father Kenichi’s armlock shakes it away. Subaru is stunned, but retaliates with a wrestling move of his own. As the two of them carry on, Subaru’s mother, Nahoko, informs them that she’",
+     "still_path": "",
+     "vote_average": null,
+     "order": 4
+    },
+    {
+     "air_date": "",
+     "episode_number": 30,
+     "season_number": 1,
+     "name": "A Step Forward",
+     "overview": "Having reached a place he can’t return from, Subaru realizes just how much he has been given and how little he can do to repay any of it. After remembering what he must do, he says goodbye to Kenichi and Nahoko and heads to the school. Steeling his resolve, Subaru opens the door to the classroom, where he’s greeted by Echidna in a school uniform. When Echidna says he arrived much sooner than she e",
+     "still_path": "",
+     "vote_average": null,
+     "order": 5
+    },
+    {
+     "air_date": "",
+     "episode_number": 31,
+     "season_number": 1,
+     "name": "The Maiden's Gospel",
+     "overview": "After dying to Elsa’s blade in Roswaal’s mansion, Subaru awakens back in the graveyard, in the moment immediately after he passed the trial that required him to face his past. Just like the first time he returned there, he wakes Emilia and holds her to comfort her, then returns to Ryuzu and the others. He tells them that he passed the trial himself and suggests that he could complete the remaining",
+     "still_path": "",
+     "vote_average": null,
+     "order": 6
+    },
+    {
+     "air_date": "",
+     "episode_number": 32,
+     "season_number": 1,
+     "name": "Friend",
+     "overview": "Subaru had reached for the door, determined to save Rem from harm even if his current world would soon end. But instead of Rem, he found himself staring at Beatrice’s library. Beatrice had remained silent throughout Elsa’s attack and saved Subaru’s life just moments before Elsa could claim it. Subaru shouts at Beatrice, demanding to know why she didn’t help before everyone else was killed, and an ",
+     "still_path": "",
+     "vote_average": null,
+     "order": 7
+    },
+    {
+     "air_date": "",
+     "episode_number": 33,
+     "season_number": 1,
+     "name": "The Value of Life",
+     "overview": "Subaru was caught and confined by Garfiel, but Otto shows up to rescue him. Garfiel can’t leave the graveyard while Emilia is undergoing the trial, so Otto says this is their chance to get outside the barrier, but Subaru doesn’t agree. However, after he learns that Ram will be helping them—that she has been ordered by Roswaal to help him, in fact—Subaru puts his escape on hold to have a talk with ",
+     "still_path": "",
+     "vote_average": null,
+     "order": 8
+    },
+    {
+     "air_date": "",
+     "episode_number": 34,
+     "season_number": 1,
+     "name": "Love Love Love Love Love Love You",
+     "overview": "After being eaten alive by a herd of unknown creatures resembling rabbits, Subaru awakens in a half-maddened state next to Emilia in the graveyard. As he pounds his head against the rocky ground over and over in anguish, he finds himself invited once again to a witch’s tea party. There, he tells Echidna about his Return by Death ability, something he has never been able to tell anyone before. Echi",
+     "still_path": "",
+     "vote_average": null,
+     "order": 9
+    },
+    {
+     "air_date": "",
+     "episode_number": 35,
+     "season_number": 1,
+     "name": "I Know Hell",
+     "overview": "Subaru exits the graveyard to find the surroundings engulfed in deep black shadows. With the sudden appearance of the Witch of Envy, everything is swallowed up by darkness. After Garfiel rushes in to save him, Subaru tries to find a way to get them out of danger, but the Witch of Envy is relentless in her pursuit. Subaru finally offers himself as bait to stall her so Garfiel can intercept and atta",
+     "still_path": "",
+     "vote_average": null,
+     "order": 10
+    },
+    {
+     "air_date": "",
+     "episode_number": 36,
+     "season_number": 1,
+     "name": "The Taste of Death",
+     "overview": "Subaru heads to Roswaal’s mansion in hopes of finding out what’s going on there and how he can fix it. He has Frederica and Petra evacuate to Arlam Village to protect them from Elsa’s attack, then heads to Beatrice’s forbidden library. He tries to get Beatrice out of the library, but her wishes don’t align with his plans, and their discussion goes nowhere. Then, against all logic, Elsa finds her w",
+     "still_path": "",
+     "vote_average": null,
+     "order": 11
+    },
+    {
+     "air_date": "",
+     "episode_number": 37,
+     "season_number": 1,
+     "name": "The Witches’ Tea Party",
+     "overview": "Subaru awakens in the graveyard with Emilia lying nearby. This time, he makes up his mind to save not only Emilia, but everyone in the Sanctuary and Roswaal’s mansion from the threats that hang over them. Roswaal makes it clear that he will use Subaru’s power to keep starting over by force if he has to, if it will allow him to achieve his own goal. What is driving Roswaal to go to such lengths? In",
+     "still_path": "",
+     "vote_average": null,
+     "order": 12
+    },
+    {
+     "air_date": "",
+     "episode_number": 38,
+     "season_number": 1,
+     "name": "The Sounds That Make You Want to Cry",
+     "overview": "Subaru is shown several visions of events previously unknown to him during the second phase of the trial. When he feels as if he’s worn away to nearly nothing, the one to stir him is the one who loves him more than anyone else…and is tougher on him than anyone else. When he awakens to see Echidna extending a hand to help him, he tells her he’ll never accept it. Then the Witch of Envy appears, clad",
+     "still_path": "",
+     "vote_average": null,
+     "order": 13
+    },
+    {
+     "air_date": "",
+     "episode_number": 39,
+     "season_number": 1,
+     "name": "Straight Bet",
+     "overview": "Tragedy strikes the Sanctuary, and Elsa takes aim at both Roswaal’s mansion and the village of Arlam. After being told that all these threats are cruel traps, Subaru can’t help but give in to despair. While he’s stuck questioning himself and unable to come up with a way out of the dilemma closing in on him, Otto shows up and punches him. Thanks to the many feelings packed in Otto’s fist, Subaru fi",
+     "still_path": "",
+     "vote_average": null,
+     "order": 14
+    },
+    {
+     "air_date": "",
+     "episode_number": 40,
+     "season_number": 1,
+     "name": "Otto Suwen / A Reason to Believe",
+     "overview": "Having been born with the “soul of language” divine protection that allows him to converse with non-human creatures, Otto Suwen’s life has truly had its ups and downs. After being run out of his hometown because of his ability, he found his independence as a merchant, was attacked by the Witch’s Cult, met Subaru…and now, his life is literally on the line in a deadly game of tag. To fulfill his par",
+     "still_path": "",
+     "vote_average": null,
+     "order": 15
+    },
+    {
+     "air_date": "",
+     "episode_number": 41,
+     "season_number": 1,
+     "name": "Nobody Can Lift a Quain Stone Alone",
+     "overview": "The missing Emilia was in the graveyard all along, her lost memories beginning to return due to Puck’s disappearance. Confused and losing heart over the realization that she’s forgotten such important memories, she tries her hardest to convey her feelings to Subaru. When the two of them leave the graveyard, they’re awaited by Garfiel, who’s been battered and beaten by Otto and Ram. He tries to pre",
+     "still_path": "",
+     "vote_average": null,
+     "order": 16
+    },
+    {
+     "air_date": "",
+     "episode_number": 42,
+     "season_number": 1,
+     "name": "A Journey Through Memories",
+     "overview": "As she attempts the first trial, Emilia finds herself in Elior Forest, where she lived when she was younger. Echidna snidely remarks on her audacity to set foot here after so thoroughly disgracing herself before, but Emilia responds with a bold smile and tells her she won’t cave to the malice of a fellow witch. As they proceed deeper into the forest, they come upon a massive tree towering over its",
+     "still_path": "",
+     "vote_average": null,
+     "order": 17
+    },
+    {
+     "air_date": "",
+     "episode_number": 43,
+     "season_number": 1,
+     "name": "The Day Betelgeuse Laughed",
+     "overview": "Despite a few inconveniences, like being unable to go outside when she wanted, young Emilia lived a happy life in a settlement of elves with Fortuna, whom she lovingly called “Mother.” However, their peace was threatened by the arrival of the Sin Archbishop of the Witch’s Cult representing Greed, Regulus Corneas. In the present, Shima appears before Subaru and the others as they wait outside the g",
+     "still_path": "",
+     "vote_average": null,
+     "order": 18
+    },
+    {
+     "air_date": "",
+     "episode_number": 44,
+     "season_number": 1,
+     "name": "The Permafrost of Elior Forest",
+     "overview": "Pandora, the Witch of Vanity, stands before Geuse and Fortuna. They both face her with all the strength they have. Meanwhile, young Emilia runs toward the place where the seal is, believing that everyone will be saved if she gives Pandora what she wants. But when she arrives, Pandora is already there, insisting that she hand over the key to opening the seal. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 19
+    },
+    {
+     "air_date": "",
+     "episode_number": 45,
+     "season_number": 1,
+     "name": "The Beginning of the Sanctuary and the Beginning of the End",
+     "overview": "When Roswaal happily tells the story of how his romance with Echidna began 400 years ago, Beatrice rebukes him for casually calling it a “romance.” Ryuzu interrupts to comment that Echidna saved her, as well. The one thing these three very different people share is their gratitude toward Echidna. But their days spent in both amicable and argumentative conversation about Echidna are brought to an e",
+     "still_path": "",
+     "vote_average": null,
+     "order": 20
+    },
+    {
+     "air_date": "",
+     "episode_number": 46,
+     "season_number": 1,
+     "name": "Reunion of Roars",
+     "overview": "Subaru tries to prevent the attack on the mansion by talking to Roswaal, but Roswaal refuses to let go of the wish he has clung to for 400 long years. Subaru takes Garfiel and Otto along as he hitches up the carriage to Patrasche and heads for the mansion as quickly as he can. Meanwhile, now that Emilia has completed the first trial, Ram asks her for a favor. Touched by the strength of Ram’s feeli",
+     "still_path": "",
+     "vote_average": null,
+     "order": 21
+    },
+    {
+     "air_date": "",
+     "episode_number": 47,
+     "season_number": 1,
+     "name": "Happiness Reflected on the Water's Surface",
+     "overview": "Frederica is gradually backed into a corner by Elsa’s attacks. Then Garfiel rushes to the scene with a silver shield on each arm. The siblings’ reunion after so many years is cut short when Elsa’s knife violently clashes against Garfiel’s shield. Meanwhile, Subaru heads to the forbidden library where Beatrice is. She’s surprised when he enters the library and tells her that, after she spent 400 ye",
+     "still_path": "",
+     "vote_average": null,
+     "order": 22
+    },
+    {
+     "air_date": "",
+     "episode_number": 48,
+     "season_number": 1,
+     "name": "Love Me Down to My Blood and Guts",
+     "overview": "After witnessing an unrealized present, Emilia completes the second trial and begins the third and final one. Ram and Puck are fighting their hardest to stop Roswaal. Each of them is doing it all for the sake of realizing their own goals. The battle between Garfiel and Elsa at Roswaal’s mansion is also growing more and more intense. As Subaru is being chased by a guiltylowe, he declares that it’s ",
+     "still_path": "",
+     "vote_average": null,
+     "order": 23
+    },
+    {
+     "air_date": "",
+     "episode_number": 49,
+     "season_number": 1,
+     "name": "Choose Me",
+     "overview": "After completing the final trial, Emilia emerges from the graveyard into a blizzard heavy enough to block her vision. The people of the Sanctuary and the villagers of Arlam huddle together behind a giant wall of ice, created to shield them from the bitter cold by none other than the great spirit who was once contracted to Emilia. When Emilia touches the ice wall, something flows into her from with",
+     "still_path": "",
+     "vote_average": null,
+     "order": 24
+    },
+    {
+     "air_date": "",
+     "episode_number": 50,
+     "season_number": 1,
+     "name": "Offbeat Steps Under the Moonlight",
+     "overview": "The magic Roswaal is using to control the weather generates enough mana to attract the Great Rabbit, which draws closer to the Sanctuary in a massive horde. Emilia takes Roswaal and Ram to shelter in the graveyard with everyone else, but the Great Rabbit horde has already grown enough to engulf their surroundings. Just when all hope seems lost, Subaru and Beatrice appear before Emilia. So begins S",
+     "still_path": "",
+     "vote_average": null,
+     "order": 25
+    }
+   ]
+  },
+  {
+   "name": "Season 3",
+   "order": 3,
+   "episodes": [
+    {
+     "air_date": "",
+     "episode_number": 51,
+     "season_number": 1,
+     "name": "Theatrical Malice",
+     "overview": "A year has passed since the battle at the Sanctuary, and Subaru has been spending fulfilling days united with Emilia's camp. However, his peaceful everyday life ends with the arrival of a single letter. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 1
+    },
+    {
+     "air_date": "",
+     "episode_number": 52,
+     "season_number": 1,
+     "name": "A Showdown of Fire and Ice",
+     "overview": "Subaru desperately tries to fend off the attack from Sin Archbishop Sirius. But then, other Archbishops appear... Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 2
+    },
+    {
+     "air_date": "",
+     "episode_number": 53,
+     "season_number": 1,
+     "name": "Gorgeous Tiger",
+     "overview": "After the incident in the main square, Priestella has fallen into chaos and Emilia has been kidnapped. Now it's up to Subaru and the others to rescue Emilia and the city. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 3
+    },
+    {
+     "air_date": "",
+     "episode_number": 54,
+     "season_number": 1,
+     "name": "Operation: Take Back the Government Office",
+     "overview": "Subaru and his comrades find themselves in a dire situation after the city was taken over by the Sin Archbishops. Now, they are devising a plan to first reclaim the city hall... Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 4
+    },
+    {
+     "air_date": "",
+     "episode_number": 55,
+     "season_number": 1,
+     "name": "A Dark Torrent",
+     "overview": "The attack on the city hall enters its second phase. Subaru and Crusch breach the interior, but there they are awaited by Capella, who has some sneaky tricks up her sleeve... Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 5
+    },
+    {
+     "air_date": "",
+     "episode_number": 56,
+     "season_number": 1,
+     "name": "Conditions of the Knight",
+     "overview": "Bishop Regulus of the Seven Deadly Sins wants to force Emilia to marry him, even though he already has hundreds of wives. While he is having the wedding hall prepared, Subaru and the others are planning to rescue Emilia and reclaim the city... Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 6
+    },
+    {
+     "air_date": "",
+     "episode_number": 57,
+     "season_number": 1,
+     "name": "The Newest of Heroes and the Most Ancient of Heroes",
+     "overview": "Through a Witch's Cultist's conference mirror, Emilia tells Al where the Sin Archbishops are and asks him to protect Beatrice. Al relays Emilia's message to Subaru, and the gang begins to devise a strategy to win back the control towers. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 7
+    },
+    {
+     "air_date": "",
+     "episode_number": 58,
+     "season_number": 1,
+     "name": "The One I'll Love Someday",
+     "overview": "Subaru and the others hold a meeting in the city hall to develop a strategy against the four Sin Archbishops. However, Emilia is slowly running out of time... Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 8
+    },
+    {
+     "air_date": "",
+     "episode_number": 59,
+     "season_number": 1,
+     "name": "City Scramble",
+     "overview": "While the others deal with the other Archbishops, Subaru puts his plan to stop Regulus into action. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 9
+    },
+    {
+     "air_date": "",
+     "episode_number": 60,
+     "season_number": 1,
+     "name": "The Plan to Conquer Greed",
+     "overview": "Subaru thinks long and hard about how Regulus's Authority should work... Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 10
+    },
+    {
+     "air_date": "",
+     "episode_number": 61,
+     "season_number": 1,
+     "name": "Liliana Masquerade",
+     "overview": "Liliana gives the performance of her lifetime to help Priscilla defeat the Sin Archbishop of Wrath. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 11
+    },
+    {
+     "air_date": "",
+     "episode_number": 62,
+     "season_number": 1,
+     "name": "Regulus Corneas",
+     "overview": "Emilia seeks the aid of Regulus's wives in dethroning the little king once and for all. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 12
+    },
+    {
+     "air_date": "",
+     "episode_number": 63,
+     "season_number": 1,
+     "name": "The Warrior's Commendation",
+     "overview": "Capella uses Al's admiration for Priscilla against him, and Garfiel fights the legendary \"Eight-Arms\" Kurgan. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 13
+    },
+    {
+     "air_date": "",
+     "episode_number": 64,
+     "season_number": 1,
+     "name": "Theresia van Astrea",
+     "overview": "Wilhelm finds himself face to face with his beloved wife who died years ago. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 14
+    },
+    {
+     "air_date": "",
+     "episode_number": 65,
+     "season_number": 1,
+     "name": "A Hideous Dinner Party",
+     "overview": "While battling Lye Batenkaitos, Otto discovers the secret to the Sin Archbishop's power. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 15
+    },
+    {
+     "air_date": "",
+     "episode_number": 66,
+     "season_number": 1,
+     "name": "The Result of the Battle for Priestella",
+     "overview": "Otto and Beatrice battle Gluttony, the last of the Sin Archbishops terrorizing Priestella. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 16
+    }
+   ]
+  },
+  {
+   "name": "Season 4",
+   "order": 4,
+   "episodes": [
+    {
+     "air_date": "",
+     "episode_number": 67,
+     "season_number": 1,
+     "name": "The Reason I'm Taking You with Me / Gorgeous Tiger Reloaded",
+     "overview": "Subaru sets out for the Pleiades Watchtower in hopes of saving his friends and the people of Priestella. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 1
+    },
+    {
+     "air_date": "",
+     "episode_number": 68,
+     "season_number": 1,
+     "name": "Overcome Sand Time",
+     "overview": "Subaru and company struggle to cross the Auguria Dunes on the way to the Pleiades Watchtower. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 2
+    },
+    {
+     "air_date": "",
+     "episode_number": 69,
+     "season_number": 1,
+     "name": "The Keeper of the Watchtower",
+     "overview": "The party is separated just before reaching the Pleiades Watchtower. Subaru awakens to find he's underground. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 3
+    },
+    {
+     "air_date": "",
+     "episode_number": 70,
+     "season_number": 1,
+     "name": "A White Sky Asterism",
+     "overview": "Subaru and company meet Shaula, keeper of the Pleiades Watchtower, who leads them to the first of its trials. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 4
+    },
+    {
+     "air_date": "",
+     "episode_number": 71,
+     "season_number": 1,
+     "name": "Stick Swinger",
+     "overview": "The Great Pleiades Library doesn't seem to have the answers Subaru seeks, so he decides they must go further. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 5
+    },
+    {
+     "air_date": "",
+     "episode_number": 72,
+     "season_number": 1,
+     "name": "Julius Juukulius",
+     "overview": "Subaru and crew attempt to get past the second floor of the tower, but its examiner poses a tough challenge. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 6
+    },
+    {
+     "air_date": "",
+     "episode_number": 73,
+     "season_number": 1,
+     "name": "Walking Out of the Convenience Store and into a Wondrous World",
+     "overview": "Julius overhears Anastasia and Subaru talking about Anastasia's current condition. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 7
+    },
+    {
+     "air_date": "",
+     "episode_number": 74,
+     "season_number": 1,
+     "name": "Who Are You?",
+     "overview": "Subaru wakes up in the green room, remembering absolutely nothing about the world he is in. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 8
+    },
+    {
+     "air_date": "",
+     "episode_number": 75,
+     "season_number": 1,
+     "name": "Empty Shell",
+     "overview": "Maddened by fear and distrust, Subaru attempts to escape the watchtower... only to end up lost underground. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 9
+    },
+    {
+     "air_date": "",
+     "episode_number": 76,
+     "season_number": 1,
+     "name": "Murder Is a Habit",
+     "overview": "Shortly after Subaru discovers Meili's corpse, Beatrice finds a book with Meili's name on it in the archive. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 10
+    },
+    {
+     "air_date": "",
+     "episode_number": 77,
+     "season_number": 1,
+     "name": "Re: Life Starting in Another World From Zero",
+     "overview": "Subaru tries desperately to convince the others that he's lost his memories, but they aren't convinced. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 11
+    },
+    {
+     "air_date": "",
+     "episode_number": 78,
+     "season_number": 1,
+     "name": "From Now On",
+     "overview": "After waking up without his memories yet again, Subaru makes up his mind to save Meili this time. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 12
+    },
+    {
+     "air_date": "",
+     "episode_number": 79,
+     "season_number": 1,
+     "name": "Stand Up",
+     "overview": "Subaru decides to read Reid's book of the dead in hopes of finding a way to defeat him. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 13
+    },
+    {
+     "air_date": "",
+     "episode_number": 80,
+     "season_number": 1,
+     "name": "Five Obstacles",
+     "overview": "Subaru returns from the corridor of memories to find the tower under attack by mabeasts. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 14
+    },
+    {
+     "air_date": "",
+     "episode_number": 81,
+     "season_number": 1,
+     "name": "A Single-Minded Star",
+     "overview": "Subaru searches for a way to deal with Reid, Gluttony, mabeasts, and a giant scorpion attacking the tower. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 15
+    },
+    {
+     "air_date": "",
+     "episode_number": 82,
+     "season_number": 1,
+     "name": "Natsuki Subaru",
+     "overview": "With his mental state already in tatters, Subaru finds a book in the archive with his name on it. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 16
+    },
+    {
+     "air_date": "",
+     "episode_number": 83,
+     "season_number": 1,
+     "name": "Good Loser",
+     "overview": "Subaru's two sets of memories have merged, and he leads the others in an all-out war to conquer the tower. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 17
+    },
+    {
+     "air_date": "",
+     "episode_number": 84,
+     "season_number": 1,
+     "name": "Ram",
+     "overview": "While Emilia faces the final trial in the tower, Ram faces off against Rye. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 18
+    },
+    {
+     "air_date": "",
+     "episode_number": 85,
+     "season_number": 1,
+     "name": "Shaula / Hero",
+     "overview": "As the battle to conquer the tower nears its climax, Subaru faces the giant scorpion that was once Shaula. Read More",
+     "still_path": "",
+     "vote_average": null,
+     "order": 19
+    }
+   ]
+  }
+ ]
+}

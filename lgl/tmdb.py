@@ -19,7 +19,7 @@ import re
 import urllib.error
 import urllib.parse
 import urllib.request
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
@@ -284,6 +284,81 @@ class Season:
     poster: str = ""
 
 
+#: ``/tv/{id}/episode_groups`` returns one summary per alternative grouping.
+@dataclass(frozen=True)
+class EpisodeGroupInfo:
+    """One alternative season grouping TMDB knows for a show.
+
+    ``episode_count`` is TMDB's total for the group, which includes the
+    group's own specials when it has a "Specials" group.  ``group_count`` is
+    how many groups (seasons, specials) it splits into.  ``type`` is TMDB's
+    episode-group type; see :data:`LAYOUT_GROUP_TYPES`.
+
+    ``regular_episode_count`` is the episode total of the group's non-special
+    groups, filled in by :meth:`TmdbClient.episode_groups`, and is what
+    :func:`choose_layout` compares against the show's regular episodes.  It is
+    ``0`` when the detail could not be read.
+    """
+
+    id: str
+    name: str = ""
+    description: str = ""
+    type: int = 0
+    group_count: int = 0
+    episode_count: int = 0
+    network: str = ""
+    regular_episode_count: int = 0
+
+
+@dataclass(frozen=True)
+class GroupEpisode:
+    """One episode inside an episode group, with its ORIGINAL TMDB numbers.
+
+    ``order`` is the 1-based position inside its group season;
+    ``season_number``/``episode_number`` are where the episode really lives in
+    TMDB's standard seasons, which is what playback needs.
+    """
+
+    order: int
+    season_number: int
+    episode_number: int
+    name: str = ""
+    overview: str = ""
+    air_date: str = ""
+    runtime: int | None = None
+    still_url: str = ""
+    rating: float | None = None
+
+
+@dataclass(frozen=True)
+class GroupSeason:
+    """One season of an episode group (``order`` is TMDB's group order)."""
+
+    name: str
+    order: int
+    episodes: tuple[GroupEpisode, ...] = ()
+
+
+@dataclass(frozen=True)
+class EpisodeGroup:
+    """A whole alternative grouping: its seasons, each with its episodes."""
+
+    id: str
+    name: str = ""
+    type: int = 0
+    groups: tuple[GroupSeason, ...] = ()
+
+
+#: TMDB episode-group types: 1 original air date, 2 absolute, 3 DVD, 4 digital,
+#: 5 story arc, 6 production, 7 TV.  Only *Production* groups are used as an
+#: alternate season layout: a production group is TMDB's own statement of the
+#: seasons the show was made in (Re:Zero's "Seasons (Production)" group is 5
+#: groups / 170 episodes over a standard layout of one 85-episode season), while
+#: the other types renumber episodes within the same seasons or slice them by
+#: story arc, which would change what a season means on the detail page.
+LAYOUT_GROUP_TYPES = frozenset({6})
+
+
 def season_poster_url(
     season: Season, show_poster: str = "", *, size: str = "w185"
 ) -> str:
@@ -527,6 +602,9 @@ class TmdbClient:
         self._fetch = fetch
         #: ``/images`` answers per title for the life of the client.
         self._images: dict[tuple[str, int], MediaImages] = {}
+        #: Episode groups answer per show and per group for the life of the client.
+        self._episode_groups: dict[int, tuple[EpisodeGroupInfo, ...]] = {}
+        self._episode_group: dict[str, EpisodeGroup] = {}
 
     @property
     def configured(self) -> bool:
@@ -656,6 +734,87 @@ class TmdbClient:
         data = self._get(f"/tv/{int(tmdb_id)}/season/{number}")
         return self._season(data, number)
 
+    def episode_groups(self, tmdb_id: int) -> list[EpisodeGroupInfo]:
+        """The alternative season groupings TMDB lists for a show.
+
+        The summaries are cached per show.  Each production group's regular
+        episode total is read from its detail (one extra call per such group,
+        also cached), because TMDB's ``episode_count`` counts the group's own
+        specials too; a detail that cannot be read leaves the total at 0 and
+        does not stop the summaries from coming back.  A failed list call is
+        not cached and raises :class:`TmdbError` like the other reads.
+        """
+        number = int(tmdb_id)
+        cached = self._episode_groups.get(number)
+        if cached is not None:
+            return list(cached)
+        data = self._get(f"/tv/{number}/episode_groups")
+        raw = data.get("results")
+        found: list[EpisodeGroupInfo] = []
+        if isinstance(raw, Sequence):
+            for entry in raw:
+                if not isinstance(entry, Mapping):
+                    continue
+                group_id = str(entry.get("id") or "").strip()
+                if not group_id:
+                    continue
+                network = entry.get("network")
+                if isinstance(network, Mapping):
+                    network = network.get("name")
+                found.append(
+                    EpisodeGroupInfo(
+                        id=group_id,
+                        name=" ".join(str(entry.get("name") or "").split())[:200],
+                        description=" ".join(
+                            str(entry.get("description") or "").split()
+                        )[:1000],
+                        type=_int(entry.get("type")),
+                        group_count=_int(entry.get("group_count")),
+                        episode_count=_int(entry.get("episode_count")),
+                        network=" ".join(str(network or "").split())[:100],
+                    )
+                )
+        filled = tuple(
+            replace(info, regular_episode_count=self.regular_episode_count(info))
+            if info.type in LAYOUT_GROUP_TYPES
+            else info
+            for info in found
+        )
+        self._episode_groups[number] = filled
+        return list(filled)
+
+    def episode_group(self, group_id: str) -> EpisodeGroup:
+        """One episode group, with each episode's original TMDB numbers.
+
+        Cached per group id; a failure is not cached and raises
+        :class:`TmdbError`, exactly like the neighbouring reads.
+        """
+        wanted = str(group_id or "").strip()
+        if not wanted:
+            raise ValueError("An episode group id cannot be empty.")
+        cached = self._episode_group.get(wanted)
+        if cached is not None:
+            return cached
+        data = self._get(f"/tv/episode_group/{wanted}")
+        result = self._episode_group_detail(data, wanted)
+        self._episode_group[wanted] = result
+        return result
+
+    def regular_episode_count(self, info: EpisodeGroupInfo) -> int:
+        """The episodes of *info*'s non-special groups, or 0 when unknown."""
+        count = int(getattr(info, "regular_episode_count", 0) or 0)
+        if count:
+            return count
+        try:
+            group = self.episode_group(info.id)
+        except (TmdbError, OSError, ValueError, TypeError):
+            return 0
+        return sum(
+            len(season.episodes)
+            for season in group.groups
+            if not _is_special_group(season.name, season.order)
+        )
+
     # -- normalisation ------------------------------------------------------
 
     @staticmethod
@@ -744,42 +903,224 @@ class TmdbClient:
 
     @staticmethod
     def _season(data: Mapping[str, Any], number: int) -> Season:
-        episodes: list[Episode] = []
-        raw = data.get("episodes")
-        if isinstance(raw, Sequence):
-            for entry in raw:
+            episodes: list[Episode] = []
+            raw = data.get("episodes")
+            if isinstance(raw, Sequence):
+                for entry in raw:
+                    if not isinstance(entry, Mapping):
+                        continue
+                    episode_number = entry.get("episode_number")
+                    if not isinstance(episode_number, int) or isinstance(episode_number, bool):
+                        continue
+                    if episode_number < 1:
+                        continue
+                    length = entry.get("runtime")
+                    episodes.append(
+                        Episode(
+                            season=int(entry.get("season_number") or number),
+                            number=episode_number,
+                            title=" ".join(str(entry.get("name") or "").split())[:200]
+                            or f"Episode {episode_number}",
+                            air_date=str(entry.get("air_date") or ""),
+                            overview=" ".join(str(entry.get("overview") or "").split())[:1200],
+                            still_url=poster_url(entry.get("still_path"), size="w780"),
+                            rating=_rating(entry),
+                            runtime=int(length)
+                            if isinstance(length, int) and not isinstance(length, bool) and length > 0
+                            else 0,
+                        )
+                    )
+            episodes.sort(key=lambda episode: episode.number)
+            return Season(
+                number=number,
+                name=" ".join(str(data.get("name") or "").split()),
+                episode_count=len(episodes) or int(data.get("episode_count") or 0),
+                air_date=str(data.get("air_date") or ""),
+                episodes=tuple(episodes),
+                poster=str(data.get("poster_path") or ""),
+            )
+
+    @staticmethod
+    def _episode_group_detail(data: Mapping[str, Any], group_id: str) -> EpisodeGroup:
+        groups: list[GroupSeason] = []
+        raw_groups = data.get("groups")
+        if isinstance(raw_groups, Sequence):
+            for entry in raw_groups:
                 if not isinstance(entry, Mapping):
                     continue
-                episode_number = entry.get("episode_number")
-                if not isinstance(episode_number, int) or isinstance(episode_number, bool):
-                    continue
-                if episode_number < 1:
-                    continue
-                length = entry.get("runtime")
-                episodes.append(
-                    Episode(
-                        season=int(entry.get("season_number") or number),
-                        number=episode_number,
-                        title=" ".join(str(entry.get("name") or "").split())[:200]
-                        or f"Episode {episode_number}",
-                        air_date=str(entry.get("air_date") or ""),
-                        overview=" ".join(str(entry.get("overview") or "").split())[:1200],
-                        still_url=poster_url(entry.get("still_path"), size="w780"),
-                        rating=_rating(entry),
-                        runtime=int(length)
-                        if isinstance(length, int) and not isinstance(length, bool) and length > 0
-                        else 0,
+                episodes: list[GroupEpisode] = []
+                raw_episodes = entry.get("episodes")
+                if isinstance(raw_episodes, Sequence):
+                    for item in raw_episodes:
+                        if not isinstance(item, Mapping):
+                            continue
+                        order = _int(item.get("order"))
+                        episode_number = _int(item.get("episode_number"))
+                        season_number = _int(item.get("season_number"))
+                        if order < 1 or episode_number < 1:
+                            continue
+                        length = item.get("runtime")
+                        episodes.append(
+                            GroupEpisode(
+                                order=order,
+                                season_number=season_number,
+                                episode_number=episode_number,
+                                name=" ".join(str(item.get("name") or "").split())[:200]
+                                or f"Episode {episode_number}",
+                                overview=" ".join(
+                                    str(item.get("overview") or "").split()
+                                )[:1200],
+                                air_date=str(item.get("air_date") or ""),
+                                runtime=int(length)
+                                if isinstance(length, int)
+                                and not isinstance(length, bool)
+                                and length > 0
+                                else None,
+                                still_url=poster_url(item.get("still_path"), size="w780"),
+                                rating=_rating(item),
+                            )
+                        )
+                episodes.sort(key=lambda episode: episode.order)
+                groups.append(
+                    GroupSeason(
+                        name=" ".join(str(entry.get("name") or "").split())[:200],
+                        order=_int(entry.get("order")),
+                        episodes=tuple(episodes),
                     )
                 )
-        episodes.sort(key=lambda episode: episode.number)
-        return Season(
-            number=number,
-            name=" ".join(str(data.get("name") or "").split()),
-            episode_count=len(episodes) or int(data.get("episode_count") or 0),
-            air_date=str(data.get("air_date") or ""),
-            episodes=tuple(episodes),
-            poster=str(data.get("poster_path") or ""),
+        groups.sort(key=lambda group: group.order)
+        return EpisodeGroup(
+            id=str(data.get("id") or group_id),
+            name=" ".join(str(data.get("name") or "").split())[:200],
+            type=_int(data.get("type")),
+            groups=tuple(groups),
         )
+
+
+def _int(value: Any) -> int:
+    """A non-negative JSON integer, or ``0`` when it is not usable."""
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        return 0
+    return value
+
+
+def _is_special_group(name: str, order: int) -> bool:
+    """True for a group that collects specials rather than a season."""
+    return order == 0 or "special" in str(name or "").casefold()
+
+
+def _is_special_season(season: Season) -> bool:
+    """True for TMDB season 0, or a season named "Specials"."""
+    return _is_special_group(getattr(season, "name", ""), int(getattr(season, "number", 0) or 0))
+
+
+def choose_layout(
+    standard_seasons: Sequence[Season], groups: Sequence[EpisodeGroupInfo]
+) -> EpisodeGroupInfo | None:
+    """The one episode group that regroups this show's episodes, if there is one.
+
+    A group qualifies only when all of these hold:
+
+    * its type is in :data:`LAYOUT_GROUP_TYPES` (production groups only);
+    * its regular episode total (specials excluded, tolerance 0) equals the
+      show's regular episode total in the standard seasons, so the same
+      episodes are being re-split, not extended;
+    * its group count differs from the standard number of regular seasons, so
+      the layout really is different.
+
+    Two qualifying groups are ambiguous and give ``None``, as does anything
+    ordinary: a show with only standard seasons must behave exactly as before.
+    """
+    regular = [
+        season
+        for season in standard_seasons or ()
+        if not _is_special_season(season)
+    ]
+    regular_episodes = sum(max(0, int(getattr(s, "episode_count", 0) or 0)) for s in regular)
+    if not regular or regular_episodes < 1:
+        return None
+    wanted = len(regular)
+    matches: list[EpisodeGroupInfo] = []
+    for info in groups or ():
+        if int(getattr(info, "type", 0) or 0) not in LAYOUT_GROUP_TYPES:
+            continue
+        episodes = int(getattr(info, "regular_episode_count", 0) or 0) or int(
+            getattr(info, "episode_count", 0) or 0
+        )
+        if episodes != regular_episodes:
+            continue
+        if int(getattr(info, "group_count", 0) or 0) == wanted:
+            continue
+        matches.append(info)
+    return matches[0] if len(matches) == 1 else None
+
+
+def group_as_seasons(group: EpisodeGroup) -> list[Season]:
+    """Render an episode group as ordinary seasons the detail page can show.
+
+    ``Season.number`` is the group's order and ``Episode.number`` is the
+    episode's 1-based position inside that group, because that is how the page
+    numbers them.  The original TMDB numbers stay on the group episodes;
+    :func:`group_episode_to_target` maps a rendered episode back for playback.
+    A group that collects specials is not a season and is left out.
+    """
+    seasons: list[Season] = []
+    for group_season in sorted(group.groups or (), key=lambda item: item.order):
+        if _is_special_group(group_season.name, group_season.order):
+            continue
+        episodes = tuple(
+            Episode(
+                season=group_season.order,
+                number=position,
+                title=episode.name or f"Episode {episode.order}",
+                air_date=episode.air_date,
+                overview=episode.overview,
+                still_url=episode.still_url,
+                rating=episode.rating,
+                runtime=int(episode.runtime) if episode.runtime else 0,
+            )
+            for position, episode in enumerate(
+                sorted(group_season.episodes, key=lambda item: item.order), start=1
+            )
+        )
+        seasons.append(
+            Season(
+                number=group_season.order,
+                name=group_season.name,
+                episode_count=len(episodes),
+                air_date=episodes[0].air_date if episodes else "",
+                episodes=episodes,
+            )
+        )
+    return seasons
+
+
+def group_episode_to_target(
+    group: EpisodeGroup, season_order: int, episode_number: int
+) -> tuple[int, int] | None:
+    """The ORIGINAL TMDB ``(season, episode)`` of a rendered group episode.
+
+    ``episode_number`` is the 1-based position inside group season
+    ``season_order`` (the number :func:`group_as_seasons` gives it).  The
+    answer is where TMDB's standard seasons keep the episode, which is what
+    playback asks for; out-of-range numbers give ``None``.
+    """
+    try:
+        wanted_season = int(season_order)
+        wanted_episode = int(episode_number)
+    except (TypeError, ValueError):
+        return None
+    if wanted_episode < 1:
+        return None
+    for group_season in group.groups or ():
+        if int(group_season.order) != wanted_season:
+            continue
+        ordered = sorted(group_season.episodes, key=lambda item: item.order)
+        if wanted_episode > len(ordered):
+            return None
+        episode = ordered[wanted_episode - 1]
+        return (int(episode.season_number), int(episode.episode_number))
+    return None
 
 
 #: Title -> wide art, for the anime page: it has no TMDB id of its own.
@@ -866,6 +1207,12 @@ __all__ = [
     "API_BASE",
     "DEFAULT_TIMEOUT",
     "DOTENV_NAME",
+    "Episode",
+    "EpisodeGroup",
+    "EpisodeGroupInfo",
+    "GroupEpisode",
+    "GroupSeason",
+    "LAYOUT_GROUP_TYPES",
     "IMAGE_BASE",
     "IMAGE_HOSTS",
     "TMDB_HOSTS",
@@ -880,6 +1227,9 @@ __all__ = [
     "auth_query",
     "backdrop_url",
     "clean_api_key",
+    "choose_layout",
+    "group_as_seasons",
+    "group_episode_to_target",
     "is_bearer_token",
     "load_api_key",
     "missing_key_message",
