@@ -40,6 +40,8 @@ from PySide6.QtWidgets import (
 )
 
 from . import (
+    anime_map,
+    anipm,
     mal,
     media_history,
     platform_support,
@@ -58,6 +60,7 @@ from .qt_library import ArtworkBackdrop
 from .qt_player import EmbeddedPlayer, make_player
 from .qt_ratings import RatingsRow
 from .qt_season_picker import SeasonPicker
+from .qt_which_part import WhichPartDialog
 from . import design_components, qt_theme
 from .qt_widgets import (
     CardStateMixin,
@@ -224,6 +227,49 @@ def air_date_status(air_date: object, today: date | None = None) -> str:
 
 def rating_text(rating: float | None) -> str:
     return f"{rating:.1f}" if isinstance(rating, (int, float)) and rating else ""
+
+
+def anime_source_document(document: object) -> tuple[str, tuple[int, ...]]:
+    """``(original_language, genre_ids)`` from a TMDB details document.
+
+    ``is_anime`` takes these two as its cheap signal, and the details endpoint
+    carries them as ``original_language`` and ``genres`` (objects with ids).
+    ``genre_ids`` is accepted as a fallback because the search endpoints use
+    that name.  Anything malformed is skipped rather than guessed at.
+    """
+    if not isinstance(document, dict):
+        return "", ()
+    language = str(document.get("original_language", "") or "").strip().lower()
+    genres: list[int] = []
+    raw = document.get("genre_ids")
+    if not isinstance(raw, (list, tuple)):
+        raw = document.get("genres")
+    for entry in raw or ():
+        value = entry.get("id") if isinstance(entry, dict) else entry
+        try:
+            genres.append(int(value))
+        except (TypeError, ValueError):
+            continue
+    return language, tuple(dict.fromkeys(genres))
+
+
+def which_part_titles(client: object, candidates: Sequence[object]) -> list[str]:
+    """The ani.pm title of each candidate, blank when it cannot be named.
+
+    Runs off the UI thread (it is a network call per id); a failure for one
+    entry leaves that row as ``Part N`` instead of dropping the choice.
+    """
+    titles: list[str] = []
+    for candidate in candidates:
+        anilist_id = int(getattr(candidate, "anilist_id", 0) or 0)
+        title = ""
+        if anilist_id > 0:
+            try:
+                title = str(getattr(client.title(anilist_id), "title", "") or "")
+            except Exception:  # noqa: BLE001 - a name is a nicety, not a need
+                title = ""
+        titles.append(" ".join(title.split()))
+    return titles
 
 
 # --------------------------------------------------------------------------
@@ -1025,6 +1071,15 @@ class MediaPage(QWidget):
         #: The seasons fetched in full: details carries only their summaries.
         self._season_cache: dict[int, object] = {}
         self._detail_seasons: tuple[object, ...] = ()
+        #: TMDB's details document per card key, fetched once on a worker: the
+        #: anime routing needs ``original_language`` and the genre ids.
+        self._detail_documents: dict[str, dict] = {}
+        #: Alternate episode layouts: card key -> ``EpisodeGroupInfo``,
+        #: the loaded group and its seasons, all as the contract returns them.
+        self._episode_layouts: dict[str, tuple[object, object, tuple]] = {}
+        #: Which layout each show shows: True means the alternate one.  Kept
+        #: for the session only, as the brief asks.
+        self._layout_choice: dict[str, bool] = {}
         self.stack.addWidget(self.player)
         self._player_return: QWidget | None = None
         self.show_section("home")
@@ -1513,6 +1568,13 @@ class MediaPage(QWidget):
         )
         self.season_combo.currentIndexChanged.connect(self._season_changed)
         picker.addWidget(self.season_combo)
+        # Only a show TMDB offers an alternate layout for shows this button.
+        self.layout_toggle = QPushButton("")
+        self.layout_toggle.setObjectName("quiet")
+        self.layout_toggle.setCursor(Qt.PointingHandCursor)
+        self.layout_toggle.clicked.connect(self._toggle_layout)
+        self.layout_toggle.setVisible(False)
+        picker.addWidget(self.layout_toggle)
         picker.addStretch(1)
         column.addLayout(picker)
         self.episode_host = QWidget()
@@ -2181,6 +2243,7 @@ class MediaPage(QWidget):
         self.episode_head.setVisible(True)
         self.episode_host.setVisible(True)
         self.season_label.setVisible(True)
+        self.layout_toggle.setVisible(False)
         self.episode_head.title.setText("Episodes")
         self.episode_head.count.setText("loading…")
 
@@ -2200,7 +2263,13 @@ class MediaPage(QWidget):
             if not seasons:
                 self.episode_column.addWidget(label("No episodes listed.", "mediaNote"))
                 return
-            number = int(self.season_combo.currentData() or seasons[0].number)
+            # An alternate layout is offered only once, on top of the seasons
+            # TMDB already answered with; a failure there changes nothing.
+            self._load_episode_groups(card, tuple(seasons))
+            number = int(self.layout_number(seasons))
+            if self._showing_alternate(card):
+                self._apply_layout(card, True, number=number)
+                return
             self.season_combo.set_current_number(number)
             self._show_season(card, number)
 
@@ -2247,7 +2316,189 @@ class MediaPage(QWidget):
         number = self.season_combo.currentData()
         if card is None or number is None:
             return
+        if self._showing_alternate(card):
+            self._show_group_season(card, int(number))
+            return
         self._show_season(card, int(number))
+
+    # alternate layouts -----------------------------------------------------
+    def _layout_key(self, card: Card) -> str:
+        return card.key or f"{card.kind}:{card.tmdb_id}"
+
+    def _showing_alternate(self, card: Card) -> bool:
+        key = self._layout_key(card)
+        return bool(self._layout_choice.get(key)) and key in self._episode_layouts
+
+    def layout_number(self, seasons: Sequence[object]) -> int:
+        """The first season number to show, or 0 when there is none."""
+        for season in seasons:
+            number = int(getattr(season, "number", 0) or 0)
+            if number > 0:
+                return number
+        return 0
+
+    def _load_episode_groups(self, card: Card, standard: Sequence[object]) -> None:
+        """Ask TMDB for an alternate layout; a failure is silent by design.
+
+        Two calls: the list, then the chosen group.  ``choose_layout`` decides
+        whether the group is worth offering at all, so a show without one costs
+        the list request and nothing more.
+        """
+        client = getattr(self, "_tmdb", None)
+        if (
+            card.kind != "tv"
+            or client is None
+            or not callable(getattr(client, "episode_groups", None))
+            or not callable(getattr(tmdb, "choose_layout", None))
+            or not callable(getattr(tmdb, "group_as_seasons", None))
+        ):
+            return
+        key = self._layout_key(card)
+        if key in self._episode_layouts:
+            return
+
+        def work() -> object:
+            groups = client.episode_groups(card.tmdb_id)  # type: ignore[union-attr]
+            info = tmdb.choose_layout(tuple(standard), tuple(groups or ()))
+            if info is None:
+                return None
+            return info, client.episode_group(info.id)  # type: ignore[union-attr]
+
+        def done(result: object) -> None:
+            if result is None or card is not getattr(self, "_detail_card", None):
+                return
+            info, group = result  # type: ignore[misc]
+            try:
+                seasons = tuple(tmdb.group_as_seasons(group))
+            except Exception:  # noqa: BLE001 - a broken group is just no group
+                return
+            if not seasons:
+                return
+            self._episode_layouts[key] = (info, group, seasons)
+            self.layout_toggle.setText(self._layout_toggle_text(info, False))
+            self.layout_toggle.setToolTip(
+                "Switch between TMDB's own seasons and the alternate layout "
+                "its episode groups describe."
+            )
+            self.layout_toggle.setVisible(True)
+            # The alternate layout is what the group was loaded for, so it is
+            # shown unless the user asked for the default one this session.
+            self._apply_layout(card, bool(self._layout_choice.get(key, True)))
+
+        run_async(work, done, lambda _exc: None)
+
+    def _layout_toggle_text(self, info: object, alternate: bool) -> str:
+        name = " ".join(str(getattr(info, "name", "") or "").split())
+        if alternate:
+            return "Show TMDB's default seasons"
+        return f"Show {name} seasons" if name else "Show the alternate seasons"
+
+    def _toggle_layout(self) -> None:
+        card = getattr(self, "_detail_card", None)
+        if not isinstance(card, Card):
+            return
+        if self._layout_key(card) not in self._episode_layouts:
+            return
+        self._apply_layout(card, not self._showing_alternate(card))
+
+    def _apply_layout(self, card: Card, alternate: bool,
+                      number: int | None = None) -> None:
+        """Draw one of the show's two layouts in the dropdown and the rows."""
+        stored = self._episode_layouts.get(self._layout_key(card))
+        if stored is None:
+            return
+        info, _group, group_seasons = stored
+        self._layout_choice[self._layout_key(card)] = bool(alternate)
+        self.layout_toggle.setText(self._layout_toggle_text(info, alternate))
+        if alternate:
+            seasons = list(group_seasons)
+        else:
+            seasons = [
+                season for season in (getattr(self, "_detail_seasons", ()) or ())
+                if int(getattr(season, "number", 0) or 0) > 0
+            ]
+        if not seasons:
+            return
+        self.season_combo.set_seasons(seasons, card.poster_url)
+        self.season_combo.setVisible(True)
+        chosen = number if number in {
+            int(getattr(season, "number", 0) or 0) for season in seasons
+        } else self.layout_number(seasons)
+        self.season_combo.set_current_number(chosen)
+        if alternate:
+            self._show_group_season(card, chosen)
+        else:
+            self._show_season(card, chosen)
+
+    def _show_group_season(self, card: Card, order: int) -> None:
+        """Render a group season's episodes; rows play the original numbers."""
+        stored = self._episode_layouts.get(self._layout_key(card))
+        if stored is None:
+            return
+        seasons = stored[2]
+        season = next(
+            (item for item in seasons if int(getattr(item, "number", 0) or 0) == order),
+            None,
+        )
+        if season is None:
+            return
+        episodes = list(getattr(season, "episodes", ()) or ())
+        clear_layout(self.episode_column)
+        self.episode_head.count.setText(f"Season {order} · {len(episodes)} episodes")
+        if not episodes:
+            self.episode_column.addWidget(label("No episodes listed.", "mediaNote"))
+            return
+        for episode in episodes[:40]:
+            self._add_episode_row(
+                card, order, episode,
+                lambda e, o=order, c=card: self._play_group_episode(c, o, e),
+            )
+
+    def _play_group_episode(self, card: Card, order: int, episode: object) -> None:
+        """A group episode plays the season and episode TMDB actually lists."""
+        stored = self._episode_layouts.get(self._layout_key(card))
+        target = None
+        if stored is not None and callable(getattr(tmdb, "group_episode_to_target", None)):
+            target = tmdb.group_episode_to_target(
+                stored[1], order, int(getattr(episode, "number", 0) or 0),
+            )
+        if target is None:
+            self._note_error(
+                "This episode has no original season and episode to play."
+            )
+            return
+        season_number, episode_number = (int(target[0]), int(target[1]))
+        original = tmdb.Episode(
+            season=season_number,
+            number=episode_number,
+            title=str(getattr(episode, "title", "") or ""),
+        )
+        self._play_tmdb(card, season_number, original)
+
+    def _add_episode_row(self, card: Card, season_number: int, episode: object,
+                         play: Callable[[object], None]) -> None:
+        """One row, drawn the same way for both layouts."""
+        position = int(getattr(episode, "number", 0) or 0)
+        row = EpisodeRow(
+            position,
+            view_prefs.episode_title(
+                self.settings,
+                str(getattr(episode, "title", "Episode") or "Episode"),
+            ),
+            str(getattr(episode, "air_date", "") or ""),
+            still_url=str(getattr(episode, "still_url", "") or ""),
+            rating=getattr(episode, "rating", None),
+            runtime=int(getattr(episode, "runtime", 0) or 0),
+            overview=str(getattr(episode, "overview", "") or ""),
+        )
+        if row.still_url:
+            self._load_image(
+                row.still_url,
+                f"still-{card.tmdb_id}-{season_number}-{position}",
+                row.set_still,
+            )
+        row.clicked.connect(lambda _checked=False, e=episode: play(e))
+        self.episode_column.addWidget(row)
 
     def _show_season(self, card: Card, number: int) -> None:
         client = getattr(self, "_tmdb", None)
@@ -2260,6 +2511,10 @@ class MediaPage(QWidget):
             return client.season(card.tmdb_id, number)
 
         def done(result: object) -> None:
+            if self._showing_alternate(card):
+                # The alternate layout took over while this season loaded; its
+                # own render owns the rows now, so this answer is not drawn.
+                return
             self._season_cache[int(getattr(result, "number", number))] = result
             clear_layout(self.episode_column)
             episodes = list(getattr(result, "episodes", ()) or ())
@@ -2268,29 +2523,10 @@ class MediaPage(QWidget):
                 self.episode_column.addWidget(label("No episodes listed.", "mediaNote"))
                 return
             for episode in episodes[:40]:
-                position = int(getattr(episode, "number", 0) or 0)
-                row = EpisodeRow(
-                    position,
-                    view_prefs.episode_title(
-                        self.settings,
-                        str(getattr(episode, "title", "Episode") or "Episode"),
-                    ),
-                    str(getattr(episode, "air_date", "") or ""),
-                    still_url=str(getattr(episode, "still_url", "") or ""),
-                    rating=getattr(episode, "rating", None),
-                    runtime=int(getattr(episode, "runtime", 0) or 0),
-                    overview=str(getattr(episode, "overview", "") or ""),
+                self._add_episode_row(
+                    card, number, episode,
+                    lambda e, s=number, c=card: self._play_tmdb(c, s, e),
                 )
-                if row.still_url:
-                    self._load_image(
-                        row.still_url,
-                        f"still-{card.tmdb_id}-{number}-{position}",
-                        row.set_still,
-                    )
-                row.clicked.connect(
-                    lambda e=episode, s=number, c=card: self._play_tmdb(c, s, e)
-                )
-                self.episode_column.addWidget(row)
 
         run_async(work, done, lambda exc: self._note_error(exc))
 
@@ -2715,7 +2951,17 @@ class MediaPage(QWidget):
         if card.tmdb_id <= 0:
             self._note_error("This title has no TMDB id, so it cannot be played.")
             return
-        provider = self._provider()
+        # The identity of the title decides where it plays, not the provider
+        # that happens to be selected for movies and TV.
+        if self._anime_verdict_applies(card):
+            self._play_tmdb_routed(card, season, episode)
+            return
+        self._play_tmdb_plain(card, self._provider(), season, episode)
+
+    def _play_tmdb_plain(self, card: Card, provider: str,
+                         season: int | None = None,
+                         episode: object | None = None) -> None:
+        """Today's play path: the provider's own URL for these numbers."""
         try:
             if card.kind == "tv":
                 url = streaming.episode_url(
@@ -2740,6 +2986,183 @@ class MediaPage(QWidget):
             self._playing_card = None
         self.play_embedded(url, card.title)
         self._refresh_next_episode()
+
+    # anime routing ----------------------------------------------------------
+    def _anime_verdict_applies(self, card: Card) -> bool:
+        """A TMDB title's identity is checked whatever provider is selected.
+
+        The verdict is a cached local index read plus one cached details
+        document, so this costs nothing on a repeat play; a client stub without
+        ``get`` (or a build without the shared module) simply falls through to
+        today's path instead of failing a play.
+        """
+        if card.kind not in ("tv", "movie") or card.tmdb_id <= 0:
+            return False
+        client = getattr(self, "_tmdb", None)
+        if client is None or not callable(getattr(client, "get", None)):
+            return False
+        return callable(getattr(anime_map, "is_anime", None)) and callable(
+            getattr(anime_map, "tmdb_to_anilist", None)
+        )
+
+    def _details_document(self, card: Card) -> dict:
+        """TMDB's details document for this card, fetched once per session."""
+        key = card.key or f"{card.kind}:{card.tmdb_id}"
+        cached = self._detail_documents.get(key)
+        if cached is not None:
+            return cached
+        client = getattr(self, "_tmdb", None)
+        document = client.get(f"/{card.kind}/{card.tmdb_id}")  # type: ignore[union-attr]
+        clean = document if isinstance(document, dict) else {}
+        self._detail_documents[key] = clean
+        return clean
+
+    def _play_tmdb_routed(self, card: Card,
+                          season: int | None = None,
+                          episode: object | None = None) -> None:
+        """Ask the mapping list where this TMDB title plays, then play there.
+
+        The details document, the verdict and the mapping lookup all happen on
+        one worker; the UI thread only applies the answer.  A verified anime
+        plays on ani.pm unless the owner saved an anime provider, which wins;
+        a heuristic-only guess and a non-anime title keep the selected
+        provider, and neither is asked anything.
+        """
+        provider = self._provider()
+        chosen = self._saved_anime_provider()
+        mapping_route = not chosen or chosen == streaming.ANI_PROVIDER
+        season_number = int(season or 1) if card.kind == "tv" else 1
+        episode_number = int(getattr(episode, "number", 0) or 1) if (
+            card.kind == "tv"
+        ) else 1
+
+        def work() -> object:
+            document = self._details_document(card)
+            language, genres = anime_source_document(document)
+            verdict = anime_map.is_anime(
+                card.kind, card.tmdb_id,
+                original_language=language, genre_ids=genres,
+            )
+            target = None
+            # Only a verified identity that will play on ani.pm is looked up:
+            # a guess, or a saved provider that will play instead, needs no
+            # mapping search (and a guess must never trigger a title search).
+            if getattr(verdict, "verified", False) and mapping_route:
+                target = anime_map.tmdb_to_anilist(
+                    card.kind, card.tmdb_id, season_number, episode_number,
+                    title=card.title,
+                )
+            return verdict, target
+
+        def done(result: object) -> None:
+            verdict, target = result  # type: ignore[misc]
+            if not getattr(verdict, "is_anime", False):
+                self._play_tmdb_plain(card, provider, season, episode)
+                return
+            if not getattr(verdict, "verified", False):
+                # A ja + Animation guess is not an identity: the selected
+                # provider keeps the play and nothing is rerouted.
+                self._play_tmdb_plain(card, provider, season, episode)
+                return
+            if not mapping_route:
+                self._play_tmdb_plain(
+                    card, streaming.clean_anime_provider(chosen), season, episode,
+                )
+                return
+            if target is None:
+                self._play_anime_by_title(card, season, episode)
+                return
+            if getattr(target, "confident", False):
+                self._play_on_ani(
+                    card, target.anilist_id, target.episode, season, episode,
+                )
+                return
+            self._ask_which_part(card, target, season, episode)
+
+        run_async(work, done, lambda exc: self._note_error(str(exc)))
+
+    def _saved_anime_provider(self) -> str:
+        """The anime provider the owner saved, or ``""`` when they saved none.
+
+        Read-only on purpose: routing a play is a per-play decision from the
+        mapping list's answer, so a play never writes a preference back.
+        """
+        if self.settings is None:
+            return ""
+        return str(
+            self.settings.get("anime_streaming_provider", "") or ""
+        ).strip().lower()
+
+    def _play_anime_by_title(self, card: Card, season: int | None,
+                             episode: object | None) -> None:
+        """No mapping: the AniList title search, exactly as before."""
+        episode_number = int(getattr(episode, "number", 0) or 1) if (
+            card.kind == "tv"
+        ) else 1
+
+        def work() -> object:
+            return streaming.anilist_search(card.title)
+
+        def done(found: object) -> None:
+            try:
+                anilist_id = int(found or 0)
+            except (TypeError, ValueError):
+                anilist_id = 0
+            if anilist_id <= 0:
+                self._play_tmdb_plain(card, self._provider(), season, episode)
+                return
+            self._play_on_ani(card, anilist_id, episode_number, season, episode)
+
+        run_async(work, done, lambda exc: self._note_error(str(exc)))
+
+    def _play_on_ani(self, card: Card, anilist_id: object, episode_number: object,
+                     season: int | None, episode: object | None) -> None:
+        """Play an AniList id at an episode through the existing ani.pm embed."""
+        try:
+            url = streaming.ani_url(
+                anilist_id, episode_number, language=self._language(),
+            )
+        except (streaming.EmbedUrlError, ValueError) as exc:
+            self._note_error(str(exc))
+            return
+        self._record_history(card)
+        if card.kind == "tv" and season is not None:
+            # Bookkeeping stays in TMDB numbers: the next episode is looked up
+            # in the seasons the page loaded, not in the AniList entry.
+            tracked = int(getattr(episode, "number", 0) or 0) or int(episode_number)
+            self._playing_episode = (int(season), tracked)
+            self._playing_card = card
+        else:
+            self._playing_episode = None
+            self._playing_card = None
+        self.play_embedded(url, card.title)
+        self._refresh_next_episode()
+
+    def _ask_which_part(self, card: Card, target: object, season: int | None,
+                        episode: object | None) -> None:
+        """The mapping is unsure: offer its candidates and play the pick."""
+        candidates = list(getattr(target, "candidates", ()) or ())
+        if not candidates:
+            self._play_tmdb_plain(card, self._provider(), season, episode)
+            return
+        dialog = WhichPartDialog(card.title, candidates, parent=self)
+
+        def work() -> object:
+            return which_part_titles(anipm.AniPmClient(), candidates)
+
+        def named(titles: object) -> None:
+            if dialog.isVisible() and isinstance(titles, list):
+                dialog.set_titles(titles)
+
+        run_async(work, named, lambda _exc: None)
+        accepted = dialog.exec() == QDialog.Accepted
+        picked = dialog.choice() if accepted else None
+        if picked is None:
+            return
+        self._play_on_ani(
+            card, getattr(picked, "anilist_id", 0),
+            getattr(picked, "episode", 1), season, episode,
+        )
 
     def _play_anilist_match(self) -> None:
         """Play the AniList match the search already resolved.
