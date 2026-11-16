@@ -1,4 +1,4 @@
-"""Is this TMDB title anime?  Kind-aware mapping first, a ja guess second.
+"""Is this TMDB title anime?  Only a kind-aware mapping record verifies it.
 
 The records are the real values from Fribb/anime-lists for Attack on Titan
 (tv 1429) and *A Silent Voice* (movie 378064), so the kind-aware the movie id
@@ -70,15 +70,16 @@ def test_kind_is_checked_so_show_and_film_ids_do_not_mix(mapping):
     assert anime_map.is_anime("tv", 4242, mapping=mixed).is_anime is False
 
 
-def test_japanese_animation_with_no_mapping_is_a_heuristic(mapping):
+def test_japanese_animation_with_no_mapping_is_not_verified(mapping):
+    """A ja original language and the Animation genre prove nothing."""
     verdict = anime_map.is_anime(
         "tv", 987654, original_language="ja", genre_ids=[16, 35], mapping=mapping
     )
-    assert verdict.is_anime is True
+    assert verdict.is_anime is False
     assert verdict.verified is False
     assert verdict.mal_id is None
     assert verdict.anilist_ids == ()
-    assert verdict.reason == "heuristic"
+    assert verdict.reason == "no verified anime match"
 
 
 def test_western_animation_is_not_anime(mapping):
@@ -96,7 +97,7 @@ def test_live_action_is_not_anime(mapping):
     assert verdict.is_anime is False
 
 
-def test_no_list_and_no_network_still_gives_the_heuristic(tmp_path, monkeypatch):
+def test_no_list_and_no_network_verifies_nothing(tmp_path, monkeypatch):
     def offline():
         raise OSError("no network")
 
@@ -108,9 +109,9 @@ def test_no_list_and_no_network_still_gives_the_heuristic(tmp_path, monkeypatch)
         genre_ids=[16],
         cache_path=tmp_path / "missing.json",
     )
-    assert verdict.is_anime is True
+    assert verdict.is_anime is False
     assert verdict.verified is False
-    assert verdict.reason == "heuristic"
+    assert verdict.reason == "no verified anime match"
 
 
 def test_mapped_record_is_trusted_without_touching_the_network(cache_path, monkeypatch):

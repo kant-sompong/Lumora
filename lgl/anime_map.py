@@ -75,9 +75,9 @@ class AnimeVerdict:
     ``verified`` is true only when the Fribb list links this exact TMDB id (of
     this kind) to an AniList entry: ``mal_id``/``anilist_ids`` then come from
     the matching records.  A Japanese original language plus TMDB's Animation
-    genre is a guess, so it is ``verified=False`` with ``reason="heuristic"``.
-    The guess never removes a title from the catalogue: it only decides whether
-    playback is routed to ani.pm.
+    genre is **not** evidence of anime, so that guess no longer returns a
+    verdict; :mod:`lgl.anime_identity` is the MAL-authoritative answer, and a
+    title it cannot verify is unverified rather than excluded.
     """
 
     is_anime: bool = False
@@ -353,11 +353,6 @@ def _from_movie(
     return PlayTarget(found[0], 1, True, "mapped film")
 
 
-#: TMDB's Animation genre id.  A Japanese original language plus this genre is
-#: the documented heuristic for anime that the mapping list has not caught up
-#: with yet; it never verifies anything.
-ANIMATION_GENRE = 16
-
 #: ``(kind, tmdb id) -> records`` for one loaded list.  The list is a tuple and
 #: building the index for all 39k records is cheap, so it is built once per
 #: loaded list and reused while that list is alive.  Keyed by ``id()`` with a
@@ -404,6 +399,11 @@ def is_anime(
 
     The answer only decides whether playback goes to ani.pm: a title with no
     MAL match is never excluded from anything.
+
+    ``original_language`` and ``genre_ids`` are still accepted so existing
+    callers keep working, but they are ignored: language and genre are not
+    proof of anime, and verification belongs to
+    :func:`lgl.anime_identity.identify`, which asks MyAnimeList.
     """
     kind = "tv" if str(tmdb_kind).lower() == "tv" else "movie"
     number = _number(tmdb_id)
@@ -434,15 +434,9 @@ def is_anime(
                 tuple(anilist_ids),
                 "mapped by the anime list",
             )
-    language = str(original_language or "").strip().lower()
-    genres = {
-        value
-        for value in genre_ids
-        if isinstance(value, int) and not isinstance(value, bool)
-    }
-    if language == "ja" and ANIMATION_GENRE in genres:
-        return AnimeVerdict(True, False, None, (), "heuristic")
-    return AnimeVerdict(False, False, None, (), "not anime")
+    # No language/genre/title guess: without a mapped record the only honest
+    # answer is that the list does not know this title.
+    return AnimeVerdict(False, False, None, (), "no verified anime match")
 
 
 # -- public lookups ---------------------------------------------------------
