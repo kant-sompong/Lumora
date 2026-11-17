@@ -5260,7 +5260,15 @@ class MoviesWindow(Gtk.Box):
             picked = [pair for pair in others if pair[0] == chosen]
             rest = [pair for pair in others if pair[0] != chosen]
             attempts = picked + ani_attempt + rest
-        self._play_attempts(attempts, title)
+        if not attempts:
+            self._open_player_message(
+                title,
+                "No streaming provider could build a playback URL for this "
+                "title. Check Settings → Media.",
+            )
+            return
+        provider, first = attempts[0]
+        self._open_player(first, title, provider=provider, attempts=attempts)
 
     def _play_with_providers(self, item, season, episode) -> None:
         """Today's path: the selected provider chain, for non-anime titles."""
