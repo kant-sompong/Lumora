@@ -391,12 +391,14 @@ def test_a_verified_anime_plays_on_ani_pm(app, monkeypatch, tmp_path):
     assert harness.loaded == ["https://ani.pm/embed/ani/16498/1/sub"]
 
 
-def test_a_saved_anime_provider_cannot_move_verified_anime(app, monkeypatch, tmp_path):
+def test_a_saved_anime_provider_plays_instead_of_ani_pm(app, monkeypatch, tmp_path):
+    """ani.pm is the default anime provider; an explicit pick still wins."""
     use_identity(monkeypatch, VERIFIED)
     harness = Harness(app, {"anime_streaming_provider": "toflix", "streaming_provider": "cinesrc"}, tmp_path)
     harness.page._play_anime(ANIME)
     settle(app, lambda: harness.loaded or harness.toast_text)
-    assert all("ani.pm/embed/ani/16498" in url for url in harness.loaded)
+    assert harness.loaded
+    assert all("toflix" in url for url in harness.loaded)
 
 
 def test_the_selected_provider_does_not_affect_verified_anime(app, monkeypatch, tmp_path):
@@ -418,17 +420,18 @@ def test_a_verified_anime_never_gets_the_mal_route(app, monkeypatch, tmp_path):
     assert "/21/" not in url
 
 
-def test_provider_switching_is_off_while_verified_anime_plays(app, monkeypatch, tmp_path):
+def test_the_provider_can_be_changed_while_verified_anime_plays(app, monkeypatch, tmp_path):
+    """ani.pm is the default for verified anime, not a lock on the menu."""
     use_identity(monkeypatch, VERIFIED)
     harness = Harness(app, {"anime_streaming_provider": "toflix"}, tmp_path)
     harness.page._play_anime(ANIME)
     settle(app, lambda: harness.loaded or harness.toast_text)
-    assert harness.page.provider_button.isEnabled() is False
+    assert harness.page.provider_button.isEnabled() is True
 
     harness.page._choose_provider("cinesrc")
     pump(app)
-    assert harness.settings.get("anime_streaming_provider") == "toflix"
-    assert "ani.pm only" in harness.toast_text
+    assert harness.page.provider_button.isEnabled() is True
+    assert harness.toast_text == ""
 
 
 def test_leaving_the_player_gives_the_provider_menu_back(app, monkeypatch, tmp_path):
@@ -585,7 +588,7 @@ def test_switching_media_section_ends_the_provider_lock(app, monkeypatch, tmp_pa
     tip = harness.page.provider_button.toolTip()
     harness.page._play_anime(ANIME)
     settle(app, lambda: harness.loaded or harness.toast_text)
-    assert harness.page.provider_button.isEnabled() is False
+    assert harness.page.provider_button.isEnabled() is True
 
     harness.page._loaded = True
     harness.page.show_section("home")
@@ -622,16 +625,17 @@ def test_a_player_that_cannot_open_does_not_strand_the_lock(app, monkeypatch, tm
     assert "could not be opened" in harness.toast_text
 
 
-def test_the_anilist_match_button_cannot_bypass_verification(app, monkeypatch, tmp_path):
-    """A title search must not move a MAL-verified anime off ani.pm."""
+def test_the_anilist_match_plays_on_the_saved_anime_provider(app, monkeypatch, tmp_path):
+    """The anime provider the owner picked also keeps the resolved match."""
     use_identity(monkeypatch, VERIFIED)
     harness = Harness(app, {"anime_streaming_provider": "toflix"}, tmp_path)
     harness.page._detail_card = ANIME
     harness.page._anilist_match = ("One Piece", 999)
     harness.page._play_anilist_match()
     settle(app, lambda: harness.loaded or harness.toast_text)
-    assert harness.loaded == ["https://ani.pm/embed/ani/16498/1/sub"]
-    assert all("toflix" not in url for url in harness.loaded)
+    assert harness.loaded
+    assert "toflix" in harness.loaded[-1]
+    assert all("ani.pm/embed/ani/999" not in url for url in harness.loaded)
 
 
 def test_an_unverified_anilist_match_still_plays_the_match(app, monkeypatch, tmp_path):
@@ -816,7 +820,7 @@ def test_a_hard_sub_plays_its_exact_api_embed(app, tmp_path):
     )
     pump(app)
     assert harness.loaded == [HARD_SUB], "the requested hard-sub track played"
-    assert harness.page.provider_button.isEnabled() is False
+    assert harness.page.provider_button.isEnabled() is True
 
 
 def test_a_hard_dub_plays_its_exact_api_embed(app, tmp_path):
@@ -880,7 +884,7 @@ def test_ordinary_sub_and_dub_keep_the_constructed_route(
 
 
 @pytest.mark.parametrize("entry", ("_play_detail", "_play_current"))
-def test_the_watch_buttons_force_verified_anime_to_ani_pm(app, monkeypatch, tmp_path, entry):
+def test_the_watch_buttons_use_the_saved_anime_provider(app, monkeypatch, tmp_path, entry):
     """Detail page and home hero both go through _play_card -> _play_anime."""
     use_identity(monkeypatch, VERIFIED)
     harness = Harness(
@@ -891,8 +895,9 @@ def test_the_watch_buttons_force_verified_anime_to_ani_pm(app, monkeypatch, tmp_
     harness.page._hero_card = ANIME
     getattr(harness.page, entry)()
     settle(app, lambda: harness.loaded or harness.toast_text)
-    assert harness.loaded == ["https://ani.pm/embed/ani/16498/1/sub"]
-    assert harness.page.provider_button.isEnabled() is False
+    assert harness.loaded
+    assert all("toflix" in url for url in harness.loaded)
+    assert harness.page.provider_button.isEnabled() is True
 
 
 # -- identity without a TMDB client or API key ----------------------------

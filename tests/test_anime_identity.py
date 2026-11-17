@@ -546,3 +546,109 @@ def test_a_given_mal_id_wins_over_an_anilist_id(tmp_path):
     assert result.verified is True
     assert result.anilist_id == 99147
     assert anilist.asked_by_anilist == [], "the ignored id is never asked"
+
+
+# -- AniList naming a title MAL cannot find by name -------------------------
+
+DARK_SUMMONER = MalMatch(
+    mal_id=63509,
+    title="Dark Summoner to Dekiteiru",
+    media_type="tv",
+    start_date="2026-01-10",
+    episodes=12,
+    alternative_titles=("I'm Dating a Dark Summoner",),
+)
+DARK_SUMMONER_ANILIST = identity.AniListTitle(
+    anilist_id=208025,
+    mal_id=63509,
+    titles=("Dark Summoner to Dekiteiru", "I'm Dating a Dark Summoner"),
+    year=2026,
+    format="TV_SHORT",
+)
+
+
+class TitledAniList(FakeAniList):
+    """AniList's search results, on top of its own links."""
+
+    def __init__(self, titles=(), **kwargs) -> None:
+        super().__init__(**kwargs)
+        self.titles = list(titles)
+        self.searched: list[str] = []
+
+    def search_titles(self, title: str, *, kind: str = "tv"):
+        self.searched.append(title)
+        return list(self.titles)
+
+
+def test_a_title_mal_cannot_find_by_name_is_verified_through_anilist(tmp_path):
+    """The catalogue's English name may not be what MAL's search indexes."""
+    mal = FakeMal([DARK_SUMMONER])
+    mal.search = lambda title, limit=5: []
+    anilist = TitledAniList([DARK_SUMMONER_ANILIST])
+
+    result = identify(
+        title="I'm Dating a Dark Summoner", kind="tv", year="2026",
+        mal=mal, anilist=anilist, cache=make(tmp_path), now=NOW,
+    )
+
+    assert result.status is IdentityStatus.VERIFIED_ANIME
+    assert result.reason == Reason.ANILIST_TITLE
+    assert result.mal_id == 63509
+    assert result.anilist_id == 208025
+
+
+def test_an_anilist_name_mal_does_not_have_is_not_verified(tmp_path):
+    mal = FakeMal([])
+    mal.search = lambda title, limit=5: []
+    anilist = TitledAniList([DARK_SUMMONER_ANILIST])
+
+    result = identify(
+        title="I'm Dating a Dark Summoner", kind="tv", year="2026",
+        mal=mal, anilist=anilist, cache=make(tmp_path), now=NOW,
+    )
+
+    assert result.status is IdentityStatus.UNVERIFIED
+    assert result.anilist_id is None
+
+
+def test_anilist_naming_two_entries_verifies_nothing(tmp_path):
+    sibling = identity.AniListTitle(
+        anilist_id=218217, mal_id=65169,
+        titles=("I'm Dating a Dark Summoner",), year=2026, format="TV_SHORT",
+    )
+    mal = FakeMal([DARK_SUMMONER])
+    mal.search = lambda title, limit=5: []
+    anilist = TitledAniList([DARK_SUMMONER_ANILIST, sibling])
+
+    result = identify(
+        title="I'm Dating a Dark Summoner", kind="tv", year="2026",
+        mal=mal, anilist=anilist, cache=make(tmp_path), now=NOW,
+    )
+
+    assert result.status is IdentityStatus.UNVERIFIED
+    assert result.reason == Reason.NO_MAL_MATCH
+
+
+def test_a_missing_id_link_is_rescued_by_the_anilist_name(tmp_path):
+    """Media(idMal:) and the crosswalk both empty: the search still links it."""
+    mal = FakeMal([AOT_S1])
+    anilist = TitledAniList(
+        [
+            identity.AniListTitle(
+                anilist_id=16498, mal_id=16498,
+                titles=("Shingeki no Kyojin", "Attack on Titan"),
+                year=2013, format="TV",
+            )
+        ],
+        links={},
+    )
+
+    result = identify(
+        title="Attack on Titan", kind="tv", year="2013",
+        mal=mal, anilist=anilist, crosswalk=lambda _mal_id: (),
+        cache=make(tmp_path), now=NOW,
+    )
+
+    assert result.status is IdentityStatus.VERIFIED_ANIME
+    assert result.reason == Reason.ANILIST_TITLE
+    assert result.anilist_id == 16498

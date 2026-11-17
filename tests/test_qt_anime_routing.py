@@ -421,15 +421,14 @@ def test_a_verified_anime_plays_on_anipm_without_saving_a_setting(app, stubbed, 
 @pytest.mark.parametrize(
     "general, saved",
     [
-        ("vidy", "cinesrc"),   # a saved anime provider is not an identity
-        ("cinesrc", "toflix"),
+        ("vidy", ""),          # the movies provider is not an anime choice
         ("cinesrc", ""),
     ],
 )
-def test_a_verified_anime_always_plays_on_anipm_whatever_provider_is_saved(
+def test_a_verified_anime_plays_on_anipm_without_an_anime_choice(
     app, stubbed, tmp_path, general, saved
 ):
-    """Verified anime uses ani.pm; selected and saved providers cannot win."""
+    """Verified anime uses ani.pm until an anime provider is picked."""
     calls, state = stubbed
     state["verdict"] = Verdict(is_anime=True, verified=True)
     settings = Settings(tmp_path / "settings.json", keyring=False)
@@ -446,6 +445,7 @@ def test_a_verified_anime_always_plays_on_anipm_whatever_provider_is_saved(
         "a play must not write a preference"
     )
     page.close()
+
 
 
 # -- the dialog itself ------------------------------------------------------

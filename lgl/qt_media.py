@@ -2677,14 +2677,6 @@ class MediaPage(QWidget):
 
     def _choose_provider(self, key: str) -> None:
         """Persist a provider picked from the menu, exactly as the combo did."""
-        if self._forced_anime_playback:
-            # The menu is disabled during a forced session; this guards any
-            # other caller (a shortcut, a test) from routing around ani.pm.
-            self._note_error(
-                "Verified anime plays on ani.pm only, so the provider cannot "
-                "change during this playback."
-            )
-            return
         if self.settings is None or not key:
             return
         if self._section == "anime":
@@ -2916,6 +2908,19 @@ class MediaPage(QWidget):
             return default
         return streaming.clean_provider(self.settings.get("streaming_provider", default))
 
+    def _anime_provider_choice(self) -> str:
+        """The anime provider the owner picked, or ani.pm when they have not.
+
+        Deliberately not :meth:`_anime_provider`, which falls back to the
+        movies provider: that fallback must never move a verified anime.
+        """
+        if self.settings is None:
+            return streaming.ANI_PROVIDER
+        stored = str(self.settings.get("anime_streaming_provider", "") or "")
+        if not stored:
+            return streaming.ANI_PROVIDER
+        return streaming.clean_anime_provider(stored)
+
     def _anime_provider(self) -> str:
         if self.settings is None:
             return streaming.DEFAULT_ANIME_PROVIDER
@@ -3098,7 +3103,13 @@ class MediaPage(QWidget):
     def _play_on_ani(self, card: Card, anilist_id: object, episode_number: object,
                      season: int | None, episode: object | None,
                      api_embed: str = "") -> None:
-        """Play an AniList id at an episode through the existing ani.pm embed."""
+        """Play an AniList id at an episode through the existing ani.pm embed.
+
+        The chosen anime provider keeps the play when it is not ani.pm.
+        """
+        if self._anime_provider_choice() != streaming.ANI_PROVIDER:
+            self._play_anilist_provider(card.title, anilist_id)
+            return
         try:
             url = qt_anime_routing.embed_url(
                 anilist_id, episode_number, language=self._language(),
@@ -3332,20 +3343,22 @@ class MediaPage(QWidget):
         self._refresh_next_episode()
 
     def _play_forced_anime(self, card: Card, route, api_embed: str = "") -> None:
-        """Play a MAL-verified anime on ani.pm, and nowhere else.
+        """Play a MAL-verified anime on ani.pm, unless another provider is picked.
 
-        Forced: the saved anime provider and the section's selection are both
-        ignored, no title search and no fallback chain is built, and the
-        provider menu is off for the session, so a stream that fails cannot be
-        moved elsewhere.  A missing AniList id is an error, not a reason to
-        play the title somewhere else - and the MAL id is never handed to
-        ani.pm in its place.
+        ani.pm is the default for verified anime; the provider menu is never
+        switched off, and choosing another anime provider plays this title
+        there instead, on that provider's own route.  A missing AniList id is
+        still an error, not a reason to search for the title elsewhere - and
+        the MAL id is never handed to ani.pm in its place.
 
         ``api_embed`` is the embed URL ani.pm's API returned for this exact
         episode and track, when one is available.  A hard track has no other
         route: without its embed it raises and is reported, never swapped for
         Sub or Dub.
         """
+        if self._anime_provider_choice() != streaming.ANI_PROVIDER:
+            self._play_anime_provider(card, self._anime_provider_choice())
+            return
         if route.anilist_id <= 0:
             self._note_error(route.error)
             return
@@ -3371,7 +3384,14 @@ class MediaPage(QWidget):
 
     def _play_forced_anilist(self, title: str, anilist_id: int,
                              api_embed: str = "") -> None:
-        """A forced play with no card to record: the AniList-match button."""
+        """An ani.pm play with no card to record: the AniList match.
+
+        The chosen anime provider still wins, so a title resolved through
+        AniList plays wherever the owner is actually watching.
+        """
+        if self._anime_provider_choice() != streaming.ANI_PROVIDER:
+            self._play_anilist_provider(title, anilist_id)
+            return
         if anilist_id <= 0:
             self._note_error(qt_anime_routing.UNRESOLVED.format(title=title))
             return
@@ -3394,33 +3414,17 @@ class MediaPage(QWidget):
         self._refresh_next_episode()
 
     def _begin_forced_anime_session(self) -> None:
-        """Turn the provider menu off until this playback ends."""
-        if self._forced_anime_playback:
-            return
+        """Note that ani.pm is playing; the provider menu stays usable.
+
+        The menu used to be switched off here.  It is not any more: ani.pm is
+        the default for verified anime, not the only provider the owner may
+        use, so picking another one has to work during playback too.
+        """
         self._forced_anime_playback = True
-        button = getattr(self, "provider_button", None)
-        if button is None:
-            return
-        self._provider_tip_before_forced = button.toolTip()
-        button.setEnabled(False)
-        button.setToolTip(
-            "Verified anime plays on ani.pm only; provider switching is off "
-            "for this playback."
-        )
 
     def _end_forced_anime_session(self) -> None:
-        """Give the provider menu back once the forced playback is over."""
-        if not self._forced_anime_playback:
-            return
+        """Forget the ani.pm playback, for the next-request bookkeeping."""
         self._forced_anime_playback = False
-        button = getattr(self, "provider_button", None)
-        if button is None:
-            return
-        button.setEnabled(True)
-        button.setToolTip(
-            self._provider_tip_before_forced
-            or "Provider · click to change or test connections"
-        )
 
     def _record_history(self, card: Card) -> None:
         if self.settings is None or card.key.startswith("anime:"):

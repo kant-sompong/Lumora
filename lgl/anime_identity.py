@@ -109,6 +109,12 @@ _KIND_TYPES: dict[str, frozenset[str]] = {
     "movie": frozenset({"movie", "special"}),
 }
 
+#: The AniList formats that fit each catalogue kind, in AniList's spelling.
+_ANILIST_KINDS: dict[str, frozenset[str]] = {
+    "tv": frozenset({"TV", "TV_SHORT", "ONA", "OVA"}),
+    "movie": frozenset({"MOVIE", "SPECIAL"}),
+}
+
 
 class IdentityStatus(str, Enum):
     """The three answers callers must distinguish."""
@@ -135,6 +141,9 @@ class Reason:
     ANILIST_AMBIGUOUS = "anilist-ambiguous"
     ANILIST_UNVALIDATED = "anilist-unvalidated"
     ANILIST_LOOKUP_FAILED = "anilist-lookup-failed"
+    #: AniList's own search named the title and its ``idMal`` link; MAL then
+    #: confirmed the entry exists as anime.  MAL's title search had no answer.
+    ANILIST_TITLE = "anilist-title"
 
 
 class LookupUnavailable(Exception):
@@ -160,6 +169,17 @@ class MalMatch:
     #: 1.0 for an exact title match; kept numeric so scoring can be added
     #: without changing the shape.  Nothing currently produces a partial score.
     score: float = 1.0
+
+
+@dataclass(frozen=True)
+class AniListTitle:
+    """One AniList search hit: its id, its MAL link and the names it goes by."""
+
+    anilist_id: int
+    mal_id: int | None = None
+    titles: tuple[str, ...] = ()
+    year: int = 0
+    format: str = ""
 
 
 @dataclass(frozen=True)
@@ -233,6 +253,11 @@ class AniListLookup(Protocol):
     def mal_for_anilist(self, anilist_id: int) -> int | None:
         """The MAL id AniList records for *anilist_id* (for crosswalk checks)."""
 
+    def search_titles(
+        self, title: str, *, kind: str = "tv"
+    ) -> Sequence[AniListTitle]:
+        """AniList entries named *title*, most relevant first."""
+
 
 # -- matching ---------------------------------------------------------------
 
@@ -284,6 +309,121 @@ def matches_catalogue(
     if not media:
         return True
     return media in _KIND_TYPES.get(str(kind).lower(), _KIND_TYPES["tv"])
+
+
+def matches_anilist_title(
+    entry: AniListTitle, *, title: str, year: str = "", kind: str = "tv"
+) -> bool:
+    """Is *entry* the same title as the catalogue row, under exactly that name?
+
+    The same discipline as :func:`matches_catalogue`: the normalised catalogue
+    title must equal one of AniList's own names, the years must agree when both
+    are known, and the format must fit the catalogue kind.
+    """
+    wanted = _normalise(title)
+    if not wanted:
+        return False
+    if wanted not in {_normalise(name) for name in entry.titles}:
+        return False
+    wanted_year = _year(year)
+    if wanted_year and entry.year and wanted_year != str(entry.year):
+        return False
+    shape = " ".join(str(entry.format or "").split()).upper()
+    if not shape:
+        return True
+    return shape in _ANILIST_KINDS.get(str(kind).lower(), _ANILIST_KINDS["tv"])
+
+
+def search_anilist_title(
+    title: str, *, kind: str = "tv", year: str = "",
+    anilist: AniListLookup | None = None,
+) -> tuple[AniListTitle | None, tuple[AniListTitle, ...]]:
+    """AniList's own answer for *title*: one exact entry, several, or none.
+
+    Only entries AniList links to a MAL id are considered, because an id with
+    no MAL link is not something MAL can confirm.  Anything but a single exact
+    entry is reported as several (or none), never picked between.
+    """
+    lookup = anilist if anilist is not None else AniListGraphQLLookup()
+    search = getattr(lookup, "search_titles", None)
+    if not callable(search):
+        return None, ()
+    try:
+        rows = list(search(title, kind=kind))
+    except LookupUnavailable:
+        return None, ()
+    exact = {
+        entry.anilist_id: entry
+        for entry in rows
+        if isinstance(entry, AniListTitle)
+        and entry.mal_id is not None
+        and matches_anilist_title(entry, title=title, year=year, kind=kind)
+    }
+    if len(exact) != 1:
+        return None, tuple(exact.values())
+    return next(iter(exact.values())), ()
+
+
+def anilist_link_for_mal(
+    mal_id: int, *, title: str = "", kind: str = "tv",
+    anilist: AniListLookup | None = None,
+) -> int | None:
+    """The one AniList entry whose own ``idMal`` is *mal_id*, found by name.
+
+    The last resort when AniList's ``Media(idMal:)`` route and the crosswalk
+    both came up empty: the search result must still carry this exact MAL link
+    and there must be exactly one such entry.
+    """
+    number = _positive(mal_id)
+    text = " ".join(str(title or "").split())
+    if number is None or not text:
+        return None
+    lookup = anilist if anilist is not None else AniListGraphQLLookup()
+    search = getattr(lookup, "search_titles", None)
+    if not callable(search):
+        return None
+    try:
+        rows = list(search(text, kind=kind))
+    except LookupUnavailable:
+        return None
+    linked = {
+        entry.anilist_id
+        for entry in rows
+        if isinstance(entry, AniListTitle) and entry.mal_id == number
+    }
+    return next(iter(linked)) if len(linked) == 1 else None
+
+
+def _verified_through_anilist(
+    mal: MalLookup, entry: AniListTitle, *, title: str, kind: str,
+) -> AnimeIdentity | None:
+    """MAL confirms the entry AniList named; then it is verified anime.
+
+    AniList supplied the name match (it named this title exactly) and its own
+    ``idMal`` link; MAL still has to answer for that id and agree that it is an
+    anime of the catalogue's kind.  A missing entry or a type MAL does not call
+    anime is no verification at all.
+    """
+    if entry.mal_id is None:
+        return None
+    try:
+        details = mal.details(entry.mal_id)
+    except LookupUnavailable:
+        return None
+    media = " ".join(str(details.media_type or "").split()).lower()
+    if media and media not in _KIND_TYPES.get(str(kind).lower(), _KIND_TYPES["tv"]):
+        return None
+    return AnimeIdentity(
+        status=IdentityStatus.VERIFIED_ANIME,
+        mal_id=details.mal_id,
+        anilist_id=entry.anilist_id,
+        mal=details,
+        anilist=AniListResolution(
+            anilist_id=entry.anilist_id, source=Reason.ANILIST_TITLE,
+            validated=True, reason=Reason.ANILIST_TITLE,
+        ),
+        reason=Reason.ANILIST_TITLE,
+    )
 
 
 # -- MyAnimeList -----------------------------------------------------------
@@ -462,6 +602,49 @@ class AniListGraphQLLookup:
         if media is None or _positive(media.get("id")) != number:
             return None
         return _positive(media.get("idMal"))
+
+    SEARCH_QUERY = (
+        "query ($search: String) {"
+        " Page(perPage: 10) {"
+        " media(search: $search, type: ANIME, sort: SEARCH_MATCH) {"
+        " id idMal seasonYear format synonyms title { romaji english native }"
+        " } } }"
+    )
+
+    def search_titles(
+        self, title: str, *, kind: str = "tv"
+    ) -> list[AniListTitle]:
+        """AniList's catalogue search: the entries whose names match *title*."""
+        text = " ".join(str(title or "").split())
+        if not text:
+            return []
+        payload = self._query(self.SEARCH_QUERY, {"search": text})
+        data = payload.get("data")
+        page = data.get("Page") if isinstance(data, Mapping) else None
+        rows = page.get("media") if isinstance(page, Mapping) else None
+        found: list[AniListTitle] = []
+        for row in rows or ():
+            if not isinstance(row, Mapping):
+                continue
+            number = _positive(row.get("id"))
+            if number is None:
+                continue
+            names = row.get("title")
+            names = names if isinstance(names, Mapping) else {}
+            titles = [
+                str(names.get(key) or "") for key in ("romaji", "english", "native")
+            ]
+            titles += [str(name or "") for name in row.get("synonyms") or ()]
+            found.append(
+                AniListTitle(
+                    anilist_id=number,
+                    mal_id=_positive(row.get("idMal")),
+                    titles=tuple(name for name in titles if name),
+                    year=int(_year(row.get("seasonYear")) or 0),
+                    format=str(row.get("format") or ""),
+                )
+            )
+        return found
 
 
 # -- crosswalk --------------------------------------------------------------
@@ -695,6 +878,17 @@ def identify(
             return identity
 
     if matched is None:
+        # MAL's own title search gave no single answer.  AniList can still name
+        # the entry and its ``idMal`` link, which MAL then has to confirm - so
+        # a title MAL cannot find by name is not silently "not anime".
+        entry, _others = search_anilist_title(
+            title, kind=kind, year=year, anilist=anilist,
+        )
+        if entry is not None:
+            rescued = _verified_through_anilist(lookup, entry, title=title, kind=kind)
+            if rescued is not None:
+                _remember(store, key, rescued, moment)
+                return rescued
         identity = AnimeIdentity(
             status=IdentityStatus.UNVERIFIED, reason=reason, candidates=candidates,
         )
@@ -714,6 +908,17 @@ def identify(
         resolution = resolve_anilist(
             matched.mal_id, anilist=anilist, crosswalk=crosswalk,
         )
+        if not resolution.ok:
+            # AniList could not be asked by MAL id and the crosswalk had no
+            # answer; its search may still name the one entry carrying this link.
+            linked = anilist_link_for_mal(
+                matched.mal_id, title=matched.title, kind=kind, anilist=anilist,
+            )
+            if linked is not None:
+                resolution = AniListResolution(
+                    anilist_id=linked, source=Reason.ANILIST_TITLE,
+                    validated=True, reason=Reason.ANILIST_TITLE,
+                )
     if resolution.ok:
         identity = AnimeIdentity(
             status=IdentityStatus.VERIFIED_ANIME,

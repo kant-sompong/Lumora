@@ -2032,6 +2032,19 @@ class MoviesWindow(Gtk.Box):
         except Exception:  # noqa: BLE001
             return streaming.DEFAULT_PROVIDER
 
+    def _anime_provider_choice(self) -> str:
+        """The anime provider the owner picked, or ani.pm when they have not."""
+        try:
+            stored = str(self._settings.get("anime_streaming_provider", "") or "")
+        except Exception:  # noqa: BLE001 - a bad setting is no choice
+            return streaming.ANI_PROVIDER
+        if not stored:
+            return streaming.ANI_PROVIDER
+        try:
+            return streaming.clean_anime_provider(stored)
+        except Exception:  # noqa: BLE001
+            return streaming.ANI_PROVIDER
+
     def _anime_provider(self) -> str:
         try:
             return streaming.clean_anime_provider(
@@ -3899,11 +3912,36 @@ class MoviesWindow(Gtk.Box):
         self._anime_status.set_text(
             f"Playing “{title[:60]}” via ani.pm (episode {number})."
         )
+        # ani.pm plays first; the other AniList-keyed providers stay reachable,
+        # and the one the owner picked comes before ani.pm.
+        chosen = self._anime_provider_choice()
+        attempts = [(streaming.ANI_PROVIDER, url)]
+        alternatives = sorted(
+            streaming.ANILIST_ANIME_PROVIDERS,
+            key=lambda name: name != chosen,
+        )
+        for provider in alternatives:
+            try:
+                other = streaming.validate_embed_url(
+                    provider,
+                    streaming.anime_url(
+                        provider,
+                        int(getattr(route, "anilist_id", 0) or 0),
+                        played,
+                    ),
+                )
+            except (streaming.EmbedUrlError, ValueError):
+                continue
+            if provider == chosen:
+                attempts.insert(0, (provider, other))
+            else:
+                attempts.append((provider, other))
+        first_provider, first_url = attempts[0]
         self._open_player(
-            url,
+            first_url,
             f"{title} · Episode {number} ({label})",
-            provider=streaming.ANI_PROVIDER,
-            attempts=[(streaming.ANI_PROVIDER, url)],
+            provider=first_provider,
+            attempts=attempts,
         )
 
     def _ani_track_embed(self, number: int, track: str) -> str:
@@ -5173,13 +5211,25 @@ class MoviesWindow(Gtk.Box):
         return "dub" if self._settings.get("anime_dub", False) else "sub"
 
     def _play_forced_ani(self, item, season, episode, route) -> None:
-        """Play a verified anime on ani.pm only: one attempt, no fallback.
+        """Play a verified anime on ani.pm first, with the rest still reachable.
 
-        The single-entry chain is what disables both fallbacks: the player's
-        Try another provider button needs more than one attempt, and the
-        automatic HTTP/load-failure walk has nowhere to go.
+        ani.pm stays the first attempt, and the selected provider chain is kept
+        behind it so the player's Try another provider button and the automatic
+        load-failure walk both work.  Picking another anime provider in the
+        header plays the title there instead.
         """
         title = self._playback_label(item, season, episode)
+        dub = bool(self._settings.get("anime_dub", False))
+        if season is not None and episode is not None:
+            build = lambda provider: streaming.episode_url(  # noqa: E731
+                provider, item.tmdb_id, int(season), episode.number,
+                title=title, dub=dub,
+            )
+        else:
+            build = lambda provider: streaming.movie_url(  # noqa: E731
+                provider, item.tmdb_id, title=item.title, dub=dub
+            )
+        chosen = self._anime_provider_choice()
         try:
             url = streaming.ani_url(
                 int(getattr(route, "anilist_id", 0) or 0),
@@ -5188,8 +5238,10 @@ class MoviesWindow(Gtk.Box):
             )
             url = streaming.validate_embed_url(streaming.ANI_PROVIDER, url)
         except (streaming.EmbedUrlError, ValueError) as error:
-            self._open_player_message(title, str(error))
-            return
+            if chosen == streaming.ANI_PROVIDER:
+                self._open_player_message(title, str(error))
+                return
+            url = ""
         self._record_playback(item.key, item.title, item.poster_url, item.year)
         if season is not None and episode is not None:
             # Bookkeeping stays in TMDB numbers, so Next episode and resume
@@ -5197,12 +5249,18 @@ class MoviesWindow(Gtk.Box):
             self._playing_episode = (int(season), int(episode.number))
         else:
             self._playing_episode = None
-        self._open_player(
-            url,
-            title,
-            provider=streaming.ANI_PROVIDER,
-            attempts=[(streaming.ANI_PROVIDER, url)],
-        )
+        ani_attempt = [(streaming.ANI_PROVIDER, url)] if url else []
+        others = [
+            pair for pair in self._provider_attempts(build, preferred=chosen)
+            if pair[0] != streaming.ANI_PROVIDER
+        ]
+        if chosen == streaming.ANI_PROVIDER:
+            attempts = ani_attempt + others
+        else:
+            picked = [pair for pair in others if pair[0] == chosen]
+            rest = [pair for pair in others if pair[0] != chosen]
+            attempts = picked + ani_attempt + rest
+        self._play_attempts(attempts, title)
 
     def _play_with_providers(self, item, season, episode) -> None:
         """Today's path: the selected provider chain, for non-anime titles."""

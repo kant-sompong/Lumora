@@ -255,7 +255,7 @@ def test_verified_anime_always_plays_on_ani_pm(window, monkeypatch):
     assert len(captured.players) == 1
     player = captured.players[0]
     assert player["provider"] == streaming.ANI_PROVIDER
-    assert player["attempts"] == [(streaming.ANI_PROVIDER, player["url"])]
+    assert player["attempts"][0] == (streaming.ANI_PROVIDER, player["url"])
     assert f"/embed/ani/{ANILIST_ID}/" in player["url"]
     assert "/embed/mal/" not in player["url"]
     assert str(MOVIE_MAL_ID) not in player["url"]
@@ -268,11 +268,14 @@ def test_the_selected_normal_provider_cannot_change_that(window, monkeypatch):
     assert "vidy" not in captured.players[0]["url"]
 
 
-def test_the_saved_anime_provider_cannot_override_ani_pm(window, monkeypatch):
+def test_the_saved_anime_provider_plays_instead_of_ani_pm(window, monkeypatch):
+    """ani.pm is the default, and the owner's own anime pick wins over it."""
     window._settings.set("anime_streaming_provider", "toflix")
     captured = play_movie(window, monkeypatch)
-    assert captured.players[0]["provider"] == streaming.ANI_PROVIDER
-    assert len(captured.players[0]["attempts"]) == 1
+    attempts = captured.players[0]["attempts"]
+    assert attempts[0][0] == "toflix"
+    assert all(provider != "cinesrc" for provider, _url in attempts[:1])
+    assert streaming.ANI_PROVIDER in [provider for provider, _url in attempts]
 
 
 def test_a_resolution_failure_is_an_error_and_plays_nothing(window, monkeypatch):
@@ -310,7 +313,7 @@ def test_a_confirmed_non_anime_title_uses_the_selected_provider(window, monkeypa
     assert captured.attempts[0][0][0] == "cinesrc"
 
 
-def test_forced_ani_pm_has_no_manual_or_automatic_fallback(window, monkeypatch):
+def test_ani_pm_alone_has_no_fallback_when_it_is_the_only_attempt(window, monkeypatch):
     captured = play_movie(window, monkeypatch)
     url = captured.players[0]["url"]
     window._playback_attempts = [(streaming.ANI_PROVIDER, url)]
@@ -442,7 +445,7 @@ def test_a_verified_mal_page_plays_ani_pm(window, monkeypatch):
     player = window.captured.players[0]
     assert player["provider"] == streaming.ANI_PROVIDER
     assert f"/embed/ani/{ANILIST_ID}/1/" in player["url"]
-    assert len(player["attempts"]) == 1
+    assert player["attempts"][0][0] == streaming.ANI_PROVIDER
     assert window._playing_episode == (1, 1)
 
 
@@ -493,7 +496,7 @@ def test_an_episode_button_cannot_bypass_mal_verification(window, monkeypatch):
     assert wait_for(lambda: window.captured.players or window.captured.messages)
     player = window.captured.players[0]
     assert f"/embed/ani/{ANILIST_ID}/3/dub" in player["url"]
-    assert len(player["attempts"]) == 1
+    assert player["attempts"][0][0] == streaming.ANI_PROVIDER
 
 
 def test_the_mal_page_resumes_at_the_next_episode(window, monkeypatch):
