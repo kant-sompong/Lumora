@@ -43,6 +43,7 @@ from . import gtk_feed_home  # noqa: E402
 from . import (  # noqa: E402
     anipm,
     framextv,
+    gtk_playback,
     mal,
     media_history,
     ratings,
@@ -1618,6 +1619,9 @@ class MoviesWindow(Gtk.Box):
         #: Seasons fetched in full: MediaDetails carries only their summaries,
         #: so the Next episode target reads the episodes from here.
         self._season_cache: dict[int, Any] = {}
+        #: Newest playback / anime-page routing request; older workers are stale.
+        self._playback_token = 0
+        self._anime_route_token = 0
         #: The title line of the player, where Next episode is added.
         self._player_header: Any | None = None
         self._active_section = "home"
@@ -3732,85 +3736,12 @@ class MoviesWindow(Gtk.Box):
         box.show_all()
 
     def _on_ani_episode_play(self, _button, item, episode, language) -> None:
-        self._play_anime_pm(item, episode, language)
-
-    def _play_anime_pm(self, item, episode, language) -> None:
-        """Play an ani.pm catalogue title by its **AniList** id.
-
-        The API's own embed URL for this episode and track wins whenever the
-        catalogue returned one (it was already validated against the pinned
-        ani.pm origin at parse time); otherwise the documented
-        ``/embed/ani/<anilist>/<episode>/<lang>`` route is constructed from the
-        ids.  The AniList-routed providers stay in the chain as fallbacks.
-        """
-        try:
-            number = max(1, int(episode))
-        except (TypeError, ValueError):
-            return
-        language = anipm.language_key(language) or anipm.LANGUAGES[0]
-        # Watch state, not storage: the episode this title is on, so Watch
-        # resumes at the next one instead of restarting the series.
-        self._playing_episode = (1, number)
-        self._anime_playing_key = str(getattr(item, "key", "") or "")
-        api_embed = ""
-        for ep in list(getattr(self, "_current_ani_episodes", []) or []):
-            if ep.number == number:
-                try:
-                    api_embed = ep.embed_url_for(language)
-                except streaming.EmbedUrlError:
-                    api_embed = ""
-                break
-        preferred = self._anime_provider()
-        if preferred != streaming.ANI_PROVIDER and not streaming.has_anime_route(preferred):
-            # The chosen provider plays movies and TV through TMDB, so look the
-            # title up there instead of quietly opening ani.pm.
-            token = self._search_token + 1
-            self._search_token = token
-
-            def work() -> None:
-                try:
-                    results = self._client.search(item.title)
-                except TmdbError as error:
-                    GLib.idle_add(self._anime_watch_error, token, error)
-                    return
-                GLib.idle_add(
-                    self._anime_watch_apply_tmdb,
-                    token,
-                    item.title,
-                    results,
-                    preferred,
-                    language == "dub",
-                )
-
-            threading.Thread(target=work, daemon=True, name="lgl-anime-watch").start()
-            return
-        attempts: list[tuple[str, str]] = []
-        if preferred == streaming.ANI_PROVIDER:
-            try:
-                url = anipm.playback_url(
-                    item.anilist_id, number, language, api_embed
-                )
-                attempts.append(
-                    (streaming.ANI_PROVIDER,
-                     streaming.validate_embed_url(streaming.ANI_PROVIDER, url))
-                )
-            except (streaming.EmbedUrlError, ValueError):
-                pass
-        order = list(streaming.ANILIST_ANIME_PROVIDERS)
-        if preferred in order:
-            order.remove(preferred)
-            order.insert(0, preferred)
-        for provider in order:
-            try:
-                url = streaming.anime_url(provider, item.anilist_id, number)
-                attempts.append(
-                    (provider, streaming.validate_embed_url(provider, url))
-                )
-            except (streaming.EmbedUrlError, ValueError):
-                continue
-        label = anipm.LANGUAGE_LABELS.get(language, language)
-        self._start_anime_attempts(
-            item, f"{item.title} · Episode {number} ({label})", number, attempts
+        """An episode button plays through the shared MAL decision, never around it."""
+        self._watch_anime_routed(
+            item,
+            " ".join(str(getattr(item, "title", "") or "").split()),
+            max(1, int(episode)),
+            language,
         )
 
     def _apply_anime_details(self, token: int, details: AnimeDetails) -> bool:
@@ -3887,60 +3818,153 @@ class MoviesWindow(Gtk.Box):
             return 1
         return number
 
+    # -- anime-page playback ------------------------------------------------
+    #
+    # Anime detail pages (MAL and ani.pm/AniList) carry no TMDB identity, so
+    # the same MAL verification is asked with what the page holds.  An AniList
+    # id alone does not bypass it: a verified title plays on ani.pm,
+    # an unverified one keeps the selected normal provider, and a verified
+    # title whose AniList entry cannot be resolved is an error.
+
     def _watch_anime(self, item, episode=None, language=None) -> None:
-        """Play an anime in the in-app player via the selected provider."""
+        """Play an anime page through the shared MAL identity decision."""
         title = " ".join(str(getattr(item, "title", "") or "").split())
         if not title:
             return
-        if isinstance(item, anipm.AniTitle):
-            # An ani.pm catalogue title plays by its own AniList id through
-            # the ani.pm route; its MAL id (if any) is never substituted here.
-            chosen_episode, chosen_language = self._anime_playback_choice(item)
-            number = chosen_episode if episode is None else max(1, int(episode))
-            self._play_anime_pm(
-                item, number, anipm.language_key(language or chosen_language)
-                or anipm.LANGUAGES[0]
+        chosen_episode, _chosen_language = self._anime_playback_choice(item)
+        number = chosen_episode if episode is None else max(1, int(episode))
+        track = anipm.language_key(language) or self._ani_playback_language()
+        self._watch_anime_routed(item, title, number, track)
+
+    def _watch_anime_routed(self, item, title, number, language=None) -> None:
+        """Decide off the UI thread: MAL/AniList identity, then the route."""
+        # AniTitle.id is its *AniList* id, so only a MAL tile may fall back to
+        # .id; the two identifiers are never interchangeable.
+        mal_id = (
+            getattr(item, "id", 0)
+            if isinstance(item, mal.AnimeItem)
+            else getattr(item, "mal_id", 0)
+        )
+        anilist_id = getattr(item, "anilist_id", 0)
+        # A MAL tile is a TV entry unless it says it is a film or special.
+        kind = "movie" if str(getattr(item, "media_type", "")).lower() in (
+            "movie", "special",
+        ) else "tv"
+
+        # Same guard for anime pages: a stale identity answer must not play.
+        self._anime_route_token += 1
+        token = self._anime_route_token
+
+        def work() -> None:
+            route = gtk_playback.decide_anime(
+                title=title,
+                kind=kind,
+                year=str(getattr(item, "year", "") or ""),
+                mal_id=mal_id or None,
+                anilist_id=anilist_id or None,
+                episode=number,
+                settings=self._settings,
             )
-            return
-        provider = self._anime_provider()
-        chosen_episode, chosen_language = self._anime_playback_choice(item)
-        episode = chosen_episode if episode is None else max(1, int(episode))
-        language = chosen_language if language is None else language
-        try:
-            language = streaming.ensure_language(provider, language)
-        except streaming.EmbedUrlError as error:
-            self._anime_status.set_text(str(error))
-            return
-        dub = language == "dub"
-
-        if provider == streaming.ANI_PROVIDER or streaming.has_anime_route(provider):
-            if not streaming.has_anime_route(provider):
-                # ani.pm plays from the MAL id this page already holds.
-                attempts = self._anime_attempts(item, episode, language, None)
-                self._start_anime_attempts(item, title, episode, attempts)
+            if token != self._anime_route_token:
                 return
-            # ToFlix and CineLite route anime by AniList id, which this page
-            # does not hold.  Look it up by title rather than reusing the MAL
-            # or TMDB id as if it were an AniList one.
-            token = self._anime_detail_token + 1
-            self._anime_detail_token = token
-            self._anime_status.set_text(f"Looking up “{title[:60]}” on AniList…")
+            GLib.idle_add(
+                self._apply_anime_route, token, item, title, number, language, route
+            )
 
-            def work() -> None:
-                found = streaming.anilist_search(title)
-                GLib.idle_add(
-                    self._apply_anime_attempts,
-                    token,
-                    item,
-                    title,
-                    episode,
-                    language,
-                    found,
-                )
+        threading.Thread(
+            target=work, daemon=True, name="lgl-anime-identity"
+        ).start()
 
-            threading.Thread(target=work, daemon=True, name="lgl-anilist").start()
+    def _apply_anime_route(self, token, item, title, number, language, route) -> bool:
+        if token != self._anime_route_token:
+            return False
+        mode = getattr(route, "mode", gtk_playback.MODE_NORMAL)
+        if mode == gtk_playback.MODE_ERROR:
+            message = str(getattr(route, "message", "") or gtk_playback.UNRESOLVED)
+            self._anime_status.set_text(message)
+            self._open_player_message(title, message)
+            return False
+        if mode == gtk_playback.MODE_ANI:
+            self._play_ani_verified(item, title, number, language, route)
+            return False
+        self._watch_anime_unverified(item, title, number, language)
+        return False
+
+    def _play_ani_verified(self, item, title, number, language, route) -> None:
+        """Play a MAL-verified anime on ani.pm only: one attempt, no fallback.
+
+        The single-entry chain disables both fallbacks: the player's Try
+        another provider button needs more than one attempt, and the automatic
+        load-failure walk has nowhere to go.
+        """
+        played = int(getattr(route, "episode", number) or number)
+        track = anipm.language_key(language) or self._ani_playback_language()
+        # Hard-sub/hard-dub tracks exist only as the API's own embed; ordinary
+        # Sub/Dub must never be substituted for the track the user clicked.
+        api_embed = self._ani_track_embed(number, track)
+        if track not in anipm.CONSTRUCTABLE_LANGUAGES and not api_embed:
+            label = anipm.LANGUAGE_LABELS.get(track, track)
+            message = (
+                f"ani.pm does not offer the {label} track for “{title[:60]}” "
+                f"episode {number}. Pick Sub or Dub."
+            )
+            self._anime_status.set_text(message)
+            self._open_player_message(title, message)
             return
+        try:
+            url = streaming.validate_embed_url(
+                streaming.ANI_PROVIDER,
+                anipm.playback_url(
+                    int(getattr(route, "anilist_id", 0) or 0),
+                    played,
+                    track,
+                    api_embed,
+                ),
+            )
+        except (streaming.EmbedUrlError, ValueError) as error:
+            self._anime_status.set_text(str(error))
+            self._open_player_message(title, str(error))
+            return
+        label = anipm.LANGUAGE_LABELS.get(track, track)
+        # Watch state, not storage: the episode this title is on, so Watch
+        # resumes at the next one instead of restarting the series.
+        self._playing_episode = (1, number)
+        self._anime_playing_key = str(getattr(item, "key", "") or "")
+        self._record_playback(
+            str(getattr(item, "key", "") or ""),
+            str(getattr(item, "title", title) or title),
+            str(getattr(item, "poster_url", "") or ""),
+            str(getattr(item, "year", "") or ""),
+        )
+        self._anime_status.set_text(
+            f"Playing “{title[:60]}” via ani.pm (episode {number})."
+        )
+        self._open_player(
+            url,
+            f"{title} · Episode {number} ({label})",
+            provider=streaming.ANI_PROVIDER,
+            attempts=[(streaming.ANI_PROVIDER, url)],
+        )
 
+    def _ani_track_embed(self, number: int, track: str) -> str:
+        """The API's own validated embed URL for one page episode and track."""
+        for episode in list(getattr(self, "_current_ani_episodes", []) or []):
+            if getattr(episode, "number", None) != number:
+                continue
+            try:
+                return episode.embed_url_for(track)
+            except (streaming.EmbedUrlError, ValueError):
+                return ""
+        return ""
+
+    def _watch_anime_unverified(self, item, title, number, language) -> None:
+        """An unverified anime page keeps the selected normal provider."""
+        provider = self._streaming_provider()
+        label = streaming.LABELS.get(provider, provider)
+        self._anime_status.set_text(
+            f"Playing “{title[:60]}” via {label} (episode {number})."
+        )
+        dub = bool(self._settings.get("anime_dub", False))
         token = self._search_token + 1
         self._search_token = token
 
@@ -3955,75 +3979,6 @@ class MoviesWindow(Gtk.Box):
             )
 
         threading.Thread(target=work, daemon=True, name="lgl-anime-watch").start()
-
-    def _anime_attempts(
-        self, item, episode, language, anilist_id
-    ) -> list[tuple[str, str]]:
-        """Anime providers that can play this title, the preferred one first.
-
-        ani.pm plays from the MAL id this page already holds; ToFlix and
-        CineLite only join once an AniList id was resolved.  The two
-        identifiers are never substituted for one another.
-        """
-        attempts: list[tuple[str, str]] = []
-        preferred = self._anime_provider()
-        for provider in streaming.fallback_anime_providers(preferred):
-            # Never quietly play from ani.pm when another anime provider was
-            # chosen: the pick is what the user asked for.
-            if provider == streaming.ANI_PROVIDER and preferred != streaming.ANI_PROVIDER:
-                continue
-            try:
-                if provider == streaming.ANI_PROVIDER:
-                    url = streaming.ani_mal_url(
-                        getattr(item, "id", 0), episode, language=language
-                    )
-                elif streaming.has_anime_route(provider):
-                    if anilist_id is None:
-                        continue
-                    url = streaming.anime_url(provider, anilist_id, episode)
-                else:
-                    continue
-                attempts.append(
-                    (provider, streaming.validate_embed_url(provider, url))
-                )
-            except (streaming.EmbedUrlError, ValueError):
-                continue
-        return attempts
-
-    def _apply_anime_attempts(
-        self, token, item, title, episode, language, anilist_id
-    ) -> bool:
-        if token != self._anime_detail_token:
-            return False
-        if anilist_id is None:
-            label = streaming.LABELS.get(self._anime_provider(), "That provider")
-            self._anime_status.set_text(
-                f"No AniList match for “{title[:60]}”, which {label} needs. "
-                "Trying another provider."
-            )
-        self._start_anime_attempts(
-            item, title, episode,
-            self._anime_attempts(item, episode, language, anilist_id),
-        )
-        return False
-
-    def _start_anime_attempts(self, item, title, episode, attempts) -> None:
-        if not attempts:
-            self._anime_status.set_text(
-                f"No provider could play “{title[:60]}” (episode {episode})."
-            )
-            return
-        label = streaming.LABELS.get(attempts[0][0], attempts[0][0])
-        self._anime_status.set_text(
-            f"Playing “{title[:60]}” via {label} (episode {episode})."
-        )
-        self._record_playback(
-            getattr(item, "key", ""),
-            getattr(item, "title", title),
-            getattr(item, "poster_url", ""),
-            getattr(item, "year", ""),
-        )
-        self._play_attempts(attempts, getattr(item, "title", title))
 
     def _anime_watch_apply_tmdb(
         self, token: int, title: str, results, provider=None, dub=None
@@ -5162,8 +5117,149 @@ class MoviesWindow(Gtk.Box):
         if item.kind == "tv":
             self._open_details(item)
             return
-        self._playing_episode = None
+        self._play_routed(item, None, None)
+
+    def _play_episode(self, season: int, episode) -> None:
+        show = self._current_details or self._current_item
+        if show is None:
+            return
+        self._play_routed(show, int(season), episode)
+
+    # -- identity routing ---------------------------------------------------
+    #
+    # MAL-verified anime plays on ani.pm and nowhere else: the selected normal
+    # provider and any saved anime-provider preference are ignored, and a
+    # failure to resolve the AniList entry is an error rather than a fall back
+    # to another provider.  Unverified guesses and confirmed non-anime keep
+    # today's provider chain exactly as it was.
+
+    def _play_routed(self, item, season, episode) -> None:
+        """Decide the route off the UI thread, then play it on the UI thread."""
+        kind = "tv" if str(getattr(item, "kind", "movie")) == "tv" else "movie"
+        try:
+            tmdb_id = int(getattr(item, "tmdb_id", 0) or 0)
+        except (TypeError, ValueError):
+            tmdb_id = 0
+        season_number = int(season or 1) if kind == "tv" else 1
+        episode_number = 1
+        if kind == "tv" and episode is not None:
+            try:
+                episode_number = max(1, int(getattr(episode, "number", 1) or 1))
+            except (TypeError, ValueError):
+                episode_number = 1
+        # Only the newest request may play: an older worker that finishes late
+        # is stale and must not start playback or overwrite the newer result.
+        self._playback_token += 1
+        token = self._playback_token
+
+        def work() -> None:
+            route = gtk_playback.decide_playback(
+                kind,
+                tmdb_id,
+                title=str(getattr(item, "title", "") or ""),
+                year=str(getattr(item, "year", "") or ""),
+                season=season_number,
+                episode=episode_number,
+                settings=self._settings,
+            )
+            if token != self._playback_token:
+                return
+            GLib.idle_add(
+                self._apply_playback_route, token, item, season, episode, route
+            )
+
+        threading.Thread(
+            target=work, daemon=True, name="lgl-playback-route"
+        ).start()
+
+    def _apply_playback_route(self, token, item, season, episode, route) -> bool:
+        """Play the route the shared identity API chose for this title."""
+        if token != self._playback_token:
+            return False
+        mode = getattr(route, "mode", gtk_playback.MODE_NORMAL)
+        if mode == gtk_playback.MODE_ERROR:
+            self._open_player_message(
+                self._playback_label(item, season, episode),
+                str(getattr(route, "message", "") or gtk_playback.UNRESOLVED),
+            )
+            return False
+        if mode == gtk_playback.MODE_ANI:
+            self._play_forced_ani(item, season, episode, route)
+            return False
+        self._play_with_providers(item, season, episode)
+        return False
+
+    def _playback_label(self, item, season, episode) -> str:
+        title = " ".join(str(getattr(item, "title", "") or "").split())
+        if season is not None and episode is not None:
+            episode_title = str(getattr(episode, "title", "") or "")
+            number = int(getattr(episode, "number", 1) or 1)
+            return f"{episode_title or title} · S{int(season):02d}E{number:02d}"
+        return title
+
+    def _ani_playback_language(self) -> str:
+        """The sub/dub track the owner chose, in ani.pm's own spelling."""
+        try:
+            chosen = self._settings.get("anime_language", "") or (
+                "dub" if self._settings.get("anime_dub", False) else "sub"
+            )
+            track = anipm.language_key(streaming.clean_language(
+                streaming.ANI_PROVIDER, chosen
+            ))
+            if track in anipm.CONSTRUCTABLE_LANGUAGES:
+                return track
+        except Exception:  # noqa: BLE001 - a bad setting must not block a play
+            pass
+        return "dub" if self._settings.get("anime_dub", False) else "sub"
+
+    def _play_forced_ani(self, item, season, episode, route) -> None:
+        """Play a verified anime on ani.pm only: one attempt, no fallback.
+
+        The single-entry chain is what disables both fallbacks: the player's
+        Try another provider button needs more than one attempt, and the
+        automatic HTTP/load-failure walk has nowhere to go.
+        """
+        title = self._playback_label(item, season, episode)
+        try:
+            url = streaming.ani_url(
+                int(getattr(route, "anilist_id", 0) or 0),
+                int(getattr(route, "episode", 1) or 1),
+                language=self._ani_playback_language(),
+            )
+            url = streaming.validate_embed_url(streaming.ANI_PROVIDER, url)
+        except (streaming.EmbedUrlError, ValueError) as error:
+            self._open_player_message(title, str(error))
+            return
         self._record_playback(item.key, item.title, item.poster_url, item.year)
+        if season is not None and episode is not None:
+            # Bookkeeping stays in TMDB numbers, so Next episode and resume
+            # keep working from the season list the page already loaded.
+            self._playing_episode = (int(season), int(episode.number))
+        else:
+            self._playing_episode = None
+        self._open_player(
+            url,
+            title,
+            provider=streaming.ANI_PROVIDER,
+            attempts=[(streaming.ANI_PROVIDER, url)],
+        )
+
+    def _play_with_providers(self, item, season, episode) -> None:
+        """Today's path: the selected provider chain, for non-anime titles."""
+        self._record_playback(item.key, item.title, item.poster_url, item.year)
+        if season is not None and episode is not None:
+            self._playing_episode = (int(season), int(episode.number))
+            title = self._playback_label(item, season, episode)
+            dub = bool(self._settings.get("anime_dub", False))
+            attempts = self._provider_attempts(
+                lambda provider: streaming.episode_url(
+                    provider, item.tmdb_id, int(season), episode.number,
+                    title=title, dub=dub,
+                )
+            )
+            self._play_attempts(attempts, title)
+            return
+        self._playing_episode = None
         dub = bool(self._settings.get("anime_dub", False))
         attempts = self._provider_attempts(
             lambda provider: streaming.movie_url(
@@ -5171,22 +5267,6 @@ class MoviesWindow(Gtk.Box):
             )
         )
         self._play_attempts(attempts, item.title)
-
-    def _play_episode(self, season: int, episode) -> None:
-        show = self._current_details or self._current_item
-        if show is None:
-            return
-        self._record_playback(show.key, show.title, show.poster_url, show.year)
-        self._playing_episode = (int(season), int(episode.number))
-        title = f"{episode.title} · S{season:02d}E{episode.number:02d}"
-        dub = bool(self._settings.get("anime_dub", False))
-        attempts = self._provider_attempts(
-            lambda provider: streaming.episode_url(
-                provider, show.tmdb_id, season, episode.number,
-                title=title, dub=dub,
-            )
-        )
-        self._play_attempts(attempts, title)
 
     def _provider_attempts(self, build, preferred: str | None = None) -> list[tuple[str, str]]:
         """Every provider that can build a URL, the preferred one first.

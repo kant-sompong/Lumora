@@ -57,6 +57,7 @@ BOUND = (
     "_dark_button",
     "_watch_anime",
     "_anime_playback_choice",
+    "_ani_playback_language",
     "_anime_track",
     "_anime_start_episode",
     "_render_ani_episodes",
@@ -84,17 +85,12 @@ def page(settings=None):
     stub._anime_provider = lambda: "ani"
     stub._load_detail_art = lambda *a, **k: None
     stub._navigate_back = lambda *a, **k: stub.navigated.append(True)
-    stub._play_anime_pm = lambda item, episode, language: stub.played.append(
-        (item, episode, language)
-    )
-    # The MAL path builds its attempts per track, so recording the build is
-    # how these tests read back the language Watch chose.
-    stub._anime_attempts = lambda item, episode, language, embed: (
-        stub.attempts.append((item, episode, language)) or [("ani", "u")]
-    )
-    stub._start_anime_attempts = (
-        lambda item, title, episode, attempts: stub.started.append(
-            (item, title, episode, attempts)
+    # Watch hands the chosen episode and track to the identity routing step;
+    # these tests pin that choice, not the lookup itself.
+    stub.routed = []
+    stub._watch_anime_routed = (
+        lambda item, title, number, language: stub.routed.append(
+            (item, title, number, language)
         )
     )
     stub._anime_status = Gtk.Label()
@@ -202,8 +198,8 @@ def test_watch_in_the_hero_plays_this_title():
         if button_text(button) == "Watch"
     ][0]
     watch.clicked()
-    assert [entry[0].id for entry in stub.started] == [21]
-    assert stub.started[0][2] == 1
+    assert [entry[0].id for entry in stub.routed] == [21]
+    assert stub.routed[0][2] == 1
 
 
 @needs_display
@@ -224,7 +220,7 @@ def test_back_in_the_hero_goes_back():
 def test_watch_starts_at_the_first_episode():
     stub = page()
     stub._watch_anime(ani_title())
-    assert stub.played[-1][1] == 1
+    assert stub.routed[-1][2] == 1
 
 
 def test_watch_resumes_at_the_next_episode():
@@ -233,7 +229,7 @@ def test_watch_resumes_at_the_next_episode():
     stub._playing_episode = (1, 3)
     stub._anime_playing_key = show.key
     stub._watch_anime(show)
-    assert stub.played[-1][1] == 4
+    assert stub.routed[-1][2] == 4
 
 
 def test_a_finished_series_starts_over():
@@ -242,7 +238,7 @@ def test_a_finished_series_starts_over():
     stub._playing_episode = (1, 12)
     stub._anime_playing_key = show.key
     stub._watch_anime(show)
-    assert stub.played[-1][1] == 1
+    assert stub.routed[-1][2] == 1
 
 
 def test_progress_for_another_title_is_ignored():
@@ -251,7 +247,7 @@ def test_progress_for_another_title_is_ignored():
     stub._playing_episode = (1, 5)
     stub._anime_playing_key = "anipm:999"
     stub._watch_anime(show)
-    assert stub.played[-1][1] == 1
+    assert stub.routed[-1][2] == 1
 
 
 def test_an_unknown_episode_count_does_not_block_resuming():
@@ -261,7 +257,7 @@ def test_an_unknown_episode_count_does_not_block_resuming():
     stub._playing_episode = (1, 4)
     stub._anime_playing_key = show.key
     stub._watch_anime(show)
-    assert stub.played[-1][1] == 5
+    assert stub.routed[-1][2] == 5
 
 
 # -- Watch: which track ----------------------------------------------------
@@ -271,21 +267,21 @@ def test_an_unknown_episode_count_does_not_block_resuming():
 def test_watch_plays_the_track_from_settings(track, expected):
     stub = page(settings={"anime_language": track})
     stub._watch_anime(ani_title())
-    assert stub.played[-1][2] == expected
+    assert stub.routed[-1][3] == expected
 
 
 def test_the_dub_flag_is_the_fallback_when_no_track_is_set():
     stub = page(settings={"anime_dub": True})
     stub._watch_anime(ani_title())
-    assert stub.played[-1][2] == "dub"
+    assert stub.routed[-1][3] == "dub"
 
 
-def test_a_vostfr_setting_reaches_an_anime_provider():
+def test_the_track_is_always_one_ani_pm_offers():
     show = item()
     stub = page(settings={"anime_language": "vostfr"})
     stub._watch_anime(show)
-    assert stub.attempts[-1][2] == "vostfr"
-    assert stub.started[-1][2] == 1
+    assert stub.routed[-1][3] in anipm.CONSTRUCTABLE_LANGUAGES
+    assert stub.routed[-1][2] == 1
 
 
 @pytest.mark.parametrize("track", ("sub", "dub", "vostfr"))
@@ -334,9 +330,9 @@ def test_a_row_button_plays_the_clicked_track():
     )
     buttons = {button.get_label(): button for button in widgets(box, Gtk.Button)}
     buttons["Dub"].clicked()
-    assert stub.played[-1][1:] == (3, "dub")
+    assert stub.routed[-1][2:] == (3, "dub")
     buttons["Sub"].clicked()
-    assert stub.played[-1][1:] == (3, "sub")
+    assert stub.routed[-1][2:] == (3, "sub")
 
 
 @needs_display
