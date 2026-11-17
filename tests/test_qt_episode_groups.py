@@ -25,7 +25,14 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtCore import QObject, QUrl, Signal  # noqa: E402
 from PySide6.QtWidgets import QApplication, QWidget  # noqa: E402
 
-from lgl import anime_map, qt_media, qt_player, streaming, tmdb  # noqa: E402
+from lgl import (  # noqa: E402
+    anime_map,
+    qt_anime_routing,
+    qt_media,
+    qt_player,
+    streaming,
+    tmdb,
+)
 
 #: TMDB's own Re:Zero episode group, as the API sent it.
 REZERO_FIXTURE = (
@@ -376,6 +383,15 @@ def test_a_rezero_group_click_lands_on_anipm_with_the_original_episode(app, monk
     monkeypatch.setattr(
         anime_map, "load_mapping",
         lambda **kwargs: anime_map.MappingList(records=REZERO_RECORDS),
+        raising=False,
+    )
+    # Identity comes from the shared module now; the records above still decide
+    # which AniList episode the group's TMDB number maps to.
+    monkeypatch.setattr(
+        qt_anime_routing, "identify_tmdb",
+        lambda *args, **kwargs: qt_anime_routing.Identity(
+            verified=True, playable_anilist_id=178201,
+        ),
         raising=False,
     )
     monkeypatch.setattr(tmdb, "choose_layout", lambda standard, groups: INFO,
