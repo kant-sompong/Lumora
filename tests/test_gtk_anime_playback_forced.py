@@ -199,7 +199,8 @@ def window(monkeypatch):
         {
             "network_timeout": 5,
             "streaming_provider": "cinesrc",
-            "anime_streaming_provider": "toflix",
+            # No anime provider is saved: ani.pm is the default for anime, and
+            # the tests that check an explicit pick set it themselves.
             "anime_dub": False,
         }
     )
