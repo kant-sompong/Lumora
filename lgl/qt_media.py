@@ -1433,8 +1433,7 @@ class MediaPage(QWidget):
         head = self._section_head(column, "Anime")
         column.addWidget(label(
             "Popular anime from MyAnimeList. Metadata comes from MAL; playback uses the "
-            "anime provider picked in the bar above (or Settings → Media). The main "
-            "search also queries the ani.pm catalogue, where titles missing from MAL live.",
+            "anime provider picked in the bar above (or Settings → Media).",
             "detailNote", wrap=True,
         ))
         self.anime_note = label("Popular now", "mediaNote")
@@ -1457,17 +1456,7 @@ class MediaPage(QWidget):
         column.addWidget(self.search_note)
         self.search_result_title = label("", "mediaNote")
         column.addWidget(self.search_result_title)
-        self.anilist_btn = QPushButton("Play on AniList…")
-        self.anilist_btn.setObjectName("suggested")
-        self.anilist_btn.setCursor(Qt.PointingHandCursor)
-        self.anilist_btn.setToolTip(
-            "Play the AniList match for this search, for titles with no TMDB or "
-            "MyAnimeList id"
-        )
-        self.anilist_btn.setVisible(False)
-        self.anilist_btn.clicked.connect(self._play_anilist_match)
         self._anilist_match: tuple[str, int] | None = None
-        column.addWidget(self.anilist_btn, 0, Qt.AlignLeft)
         grid = PosterGrid()
         grid.item_clicked.connect(self.open_card)
         column.addWidget(grid)
@@ -1856,7 +1845,6 @@ class MediaPage(QWidget):
             self._search_empty.setVisible(True)
             self.search_result_title.setText("")
             self._anilist_match = None
-            self.anilist_btn.setVisible(False)
             return
         if self.settings is None:
             return
@@ -1877,14 +1865,6 @@ class MediaPage(QWidget):
                     found["anime"] = mal_client.search(query)
                 except Exception as exc:  # noqa: BLE001
                     found["errors"].append(f"MyAnimeList: {exc}")  # type: ignore[union-attr]
-            # The search *is* the lookup: resolve the anime provider's AniList
-            # route in the same pass instead of asking for the title a second
-            # time in a dialog.
-            if self._anime_provider() in streaming.ANILIST_ANIME_PROVIDERS:
-                try:
-                    found["anilist"] = streaming.anilist_search(query)
-                except Exception as exc:  # noqa: BLE001
-                    found["errors"].append(f"AniList: {exc}")  # type: ignore[union-attr]
             return found
 
         def done(result: object) -> None:
@@ -1897,17 +1877,7 @@ class MediaPage(QWidget):
                 f"“{query}” · {len(cards)} result{'s' if len(cards) != 1 else ''}"
                 if cards else f"No results for “{query}”."
             )
-            anilist_id = int(data.get("anilist") or 0)  # type: ignore[arg-type]
-            if anilist_id:
-                self._anilist_match = (query, anilist_id)
-                provider = self._anime_provider()
-                self.anilist_btn.setText(
-                    f"Play “{query}” on {streaming.LABELS.get(provider, provider)} (AniList)"
-                )
-                self.anilist_btn.setVisible(True)
-            else:
-                self._anilist_match = None
-                self.anilist_btn.setVisible(False)
+            self._anilist_match = None
             self._load_posters_when_shown()
 
         run_async(work, done, lambda exc: self._note_error(exc))

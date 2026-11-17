@@ -2946,7 +2946,7 @@ class MoviesWindow(Gtk.Box):
         inner.pack_start(head, False, False, 0)
 
         self._search_status = Gtk.Label(
-            label="Type a title above to search TMDB and ani.pm.", xalign=0
+            label="Type a title above to search TMDB.", xalign=0
         )
         self._search_status.set_line_wrap(True)
         self._search_status.get_style_context().add_class("movie-status")
@@ -2954,9 +2954,8 @@ class MoviesWindow(Gtk.Box):
 
         self._search_empty = self._empty_state(
             "Search movies, TV and anime",
-            "Results come straight from TMDB and ani.pm's catalogue - "
-            "anime that only exists on ani.pm shows up here too. "
-            "Nothing is suggested or invented.",
+            "Results come straight from TMDB's catalogue. Nothing is "
+            "suggested or invented.",
             icon="edit-find-symbolic",
         )
         inner.pack_start(self._search_empty, False, False, 10)
@@ -2979,7 +2978,7 @@ class MoviesWindow(Gtk.Box):
         if not text:
             self._spin(self._search_spinner, False)
             self._clear_flow(self._search_flow)
-            self._search_status.set_text("Type a title above to search TMDB and ani.pm.")
+            self._search_status.set_text("Type a title above to search TMDB.")
             self._search_empty.show()
             return
 
@@ -3000,78 +2999,44 @@ class MoviesWindow(Gtk.Box):
         GLib.timeout_add(350, later)
 
     def _run_search(self, text: str, token: int) -> None:
-        """Search TMDB and ani.pm in parallel, then show both in one grid.
+        """Search TMDB on a worker; a stale token drops a late arrival.
 
-        ani.pm is queried alongside TMDB so anime that exists only in the
-        ani.pm catalogue still appears.  Either source may fail without
-        hiding the other's results; stale tokens drop late arrivals.
+        The ani.pm catalogue is not queried here: search shows TMDB results.
         """
         results: dict[str, object] = {}
-        lock = threading.Lock()
-        remaining = 2
-
-        def finish() -> None:
-            nonlocal remaining
-            with lock:
-                remaining -= 1
-                done = remaining == 0
-            if done:
-                GLib.idle_add(
-                    self._apply_search, token, text,
-                    results.get("tmdb") or [], results.get("ani") or [],
-                    results.get("tmdb_error"), results.get("ani_error"),
-                )
 
         def tmdb_work() -> None:
             try:
                 results["tmdb"] = self._client.search(text)
             except TmdbError as error:
                 results["tmdb_error"] = error
-            finish()
-
-        def ani_work() -> None:
-            try:
-                results["ani"] = self._ani_client.search(text, limit=24)
-            except anipm.AniPmError as error:
-                results["ani_error"] = error
-            finish()
+            GLib.idle_add(
+                self._apply_search, token, text,
+                results.get("tmdb") or [], results.get("tmdb_error"),
+            )
 
         threading.Thread(target=tmdb_work, daemon=True, name="lgl-tmdb-search").start()
-        threading.Thread(target=ani_work, daemon=True, name="lgl-anipm-search").start()
 
-    def _apply_search(self, token: int, text: str, items, ani_items,
-                      tmdb_error=None, ani_error=None) -> bool:
+    def _apply_search(self, token: int, text: str, items,
+                      tmdb_error=None) -> bool:
         if token != self._search_token:
             return False
         self._spin(self._search_spinner, False)
         self._clear_flow(self._search_flow)
-        # ani.pm results first: this integration exists because anime that
-        # only lives there was invisible before.
-        for item in (ani_items or []):
-            self._search_flow.add(
-                AniPmTile(item, self._images, self._open_anime_details)
-            )
         for item in (items or []):
             self._search_flow.add(PosterTile(item, self._images, self._open_details))
-        total = len(items or []) + len(ani_items or [])
+        total = len(items or [])
         if not total:
-            if tmdb_error is None and ani_error is None:
+            if tmdb_error is None:
                 self._search_status.set_text(f"No titles matched “{text[:60]}”.")
             else:
-                self._search_status.set_text(
-                    self._search_error_text(tmdb_error, ani_error)
-                )
+                self._search_status.set_text(self._search_error_text(tmdb_error))
             self._search_empty.show()
             if getattr(tmdb_error, "kind", "") == "missing-key":
                 self._search_configure.show()
             return False
-        bits = []
-        if ani_items:
-            bits.append(f"{len(ani_items)} from ani.pm")
-        if items:
-            bits.append(f"{len(items)} from TMDB")
-        note = f"{total} results · " + " · ".join(bits)
-        degraded = self._search_error_text(tmdb_error, ani_error)
+        note = f"{total} results from TMDB"
+        degraded = self._search_error_text(tmdb_error)
         if degraded:
             note += f" · {degraded}"
         self._search_status.set_text(note)
@@ -3079,14 +3044,11 @@ class MoviesWindow(Gtk.Box):
         return False
 
     @staticmethod
-    def _search_error_text(tmdb_error, ani_error) -> str:
-        """A short, per-source explanation for whichever search failed."""
-        parts = []
-        if tmdb_error is not None:
-            parts.append(f"TMDB: {tmdb_error}")
-        if ani_error is not None:
-            parts.append(f"ani.pm: {ani_error}")
-        return " · ".join(parts)
+    def _search_error_text(tmdb_error) -> str:
+        """A short explanation for a search that could not be asked."""
+        if tmdb_error is None:
+            return ""
+        return f"TMDB: {tmdb_error}"
 
     # -- anime --------------------------------------------------------------
 
@@ -3112,9 +3074,7 @@ class MoviesWindow(Gtk.Box):
 
         sub = Gtk.Label(
             label="Popular anime from MyAnimeList. Metadata comes from MAL; "
-            "playback uses the anime provider selected in Settings. The main "
-            "search above also queries ani.pm's catalogue, where titles "
-            "missing from MAL/TMDB live.",
+            "playback uses the anime provider selected in Settings.",
             xalign=0,
         )
         sub.set_line_wrap(True)
