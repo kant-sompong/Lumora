@@ -919,6 +919,8 @@ class _VerifiedPlayback:
     tmdb_episode: object | None = None
     api_embed: str = ""
     via_tmdb: bool = False
+    #: The provider this session is actually playing on, ani.pm to start with.
+    provider: str = streaming.ANI_PROVIDER
 
 
 class MediaPage(QWidget):
@@ -2704,12 +2706,16 @@ class MediaPage(QWidget):
         if not key:
             return
         if self._switch_verified_session(str(key)):
+            self._update_badge()
             return
         if self.settings is None:
             return
-        if self._section == "anime":
+        if self._section == "anime" and self._verified_session() is None:
             self.settings.set("anime_streaming_provider", key)
         else:
+            # A provider with no anime route, picked while a verified anime
+            # plays, is an ordinary movie/TV preference change: it must not be
+            # swallowed by the session, and the session keeps playing.
             self.settings.set("streaming_provider", key)
         # A manual pick wins for the rest of the session.
         health = getattr(self, "health", None)
@@ -2719,16 +2725,26 @@ class MediaPage(QWidget):
             self._update_badge()
 
     # provider health -------------------------------------------------------
+    def _verified_session(self) -> _VerifiedPlayback | None:
+        """The MAL-verified anime playing now, if any; it outranks the section."""
+        context = getattr(self, "_verified_context", None)
+        return context if isinstance(context, _VerifiedPlayback) else None
+
+    def _anime_providers(self) -> tuple[str, ...]:
+        """ani.pm plus every provider that documents a route for anime."""
+        return tuple(
+            key for key in streaming.ANIME_PROVIDERS
+            if key == streaming.ANI_PROVIDER or streaming.has_anime_route(key)
+        )
+
     def _menu_providers(self) -> tuple[str, ...]:
-        """Every provider the menu offers: only those that can play this section."""
+        """Every provider the menu offers for what is playing or open."""
         return self._section_providers()
 
     def _section_providers(self) -> tuple[str, ...]:
-        if self._section == "anime":
-            return tuple(
-                key for key in streaming.ANIME_PROVIDERS
-                if key == streaming.ANI_PROVIDER or streaming.has_anime_route(key)
-            )
+        """A verified anime session decides the menu, whatever section opened it."""
+        if self._section == "anime" or self._verified_session() is not None:
+            return self._anime_providers()
         return streaming.PROVIDERS
 
     def _playing(self) -> bool:
@@ -2796,6 +2812,10 @@ class MediaPage(QWidget):
             )
 
     def _active_provider(self) -> str:
+        """The provider playing now: a verified session names its own."""
+        context = self._verified_session()
+        if context is not None:
+            return context.provider or streaming.ANI_PROVIDER
         return self._anime_provider() if self._section == "anime" else self._provider()
 
     def _provider_row_text(self, key: str) -> str:
@@ -2996,7 +3016,7 @@ class MediaPage(QWidget):
 
     def _play_tmdb_plain(self, card: Card, provider: str,
                          season: int | None = None,
-                         episode: object | None = None) -> None:
+                         episode: object | None = None) -> bool:
         """Today's play path: the provider's own URL for these numbers."""
         try:
             if card.kind == "tv":
@@ -3008,7 +3028,7 @@ class MediaPage(QWidget):
                 url = streaming.movie_url(provider, card.tmdb_id, title=card.title)
         except (streaming.EmbedUrlError, ValueError) as exc:
             self._note_error(str(exc))
-            return
+            return False
         self._record_history(card)
         # Next episode belongs to TV episodes only; a card's Watch button has
         # no season or episode to move on from.
@@ -3022,6 +3042,7 @@ class MediaPage(QWidget):
             self._playing_card = None
         self.play_embedded(url, card.title)
         self._refresh_next_episode()
+        return True
 
     # anime routing ----------------------------------------------------------
     def _anime_verdict_applies(self, card: Card) -> bool:
@@ -3255,7 +3276,7 @@ class MediaPage(QWidget):
 
         run_async(work, done, failed)
 
-    def _play_anilist_provider(self, title: str, anilist_id: int) -> None:
+    def _play_anilist_provider(self, title: str, anilist_id: int) -> bool:
         """The unforced route: the selected provider keeps the play.
 
         A provider that documents an AniList route gets the id the search
@@ -3268,16 +3289,17 @@ class MediaPage(QWidget):
         provider = self._anime_provider()
         if provider not in streaming.ANILIST_ANIME_PROVIDERS:
             self._play_anilist_via_tmdb(title, provider)
-            return
+            return True
         try:
             url = streaming.anime_url(provider, anilist_id, 1)
         except (streaming.EmbedUrlError, ValueError) as exc:
             self._note_error(str(exc))
-            return
+            return False
         self._playing_episode = None
         self._playing_card = None
         self.play_embedded(url, title)
         self._refresh_next_episode()
+        return True
 
     def _play_anilist_via_tmdb(self, title: str, provider: str) -> None:
         """A provider with no AniList route: find the title on TMDB first.
@@ -3491,6 +3513,7 @@ class MediaPage(QWidget):
         use, so picking another one has to work during playback too.
         """
         self._forced_anime_playback = True
+        self._update_badge()
 
     def _switch_verified_session(self, key: str) -> bool:
         """Play the verified anime on screen on ``key``: this session only.
@@ -3501,8 +3524,12 @@ class MediaPage(QWidget):
         ``False`` means no verified anime is playing, so the pick is a normal
         preference change.
         """
-        context = getattr(self, "_verified_context", None)
+        context = self._verified_session()
         if context is None:
+            return False
+        if key != streaming.ANI_PROVIDER and not streaming.has_anime_route(key):
+            # Not an anime provider: a movie/TV preference change, separate
+            # from the session, so the session keeps playing.
             return False
         if key == streaming.ANI_PROVIDER:
             if context.card is None:
@@ -3516,28 +3543,33 @@ class MediaPage(QWidget):
                 )
             return True
         if context.card is None:
-            self._play_anilist_provider(context.title, context.anilist_id)
-            # Still the same verified session, so picking ani.pm goes back.
-            self._verified_context = context
-            self._begin_forced_anime_session()
+            if self._play_anilist_provider(context.title, context.anilist_id):
+                # Still the same verified session, so picking ani.pm goes back.
+                self._verified_context = replace(context, provider=key)
+                self._begin_forced_anime_session()
             return True
         if context.via_tmdb:
             # A provider keyed by TMDB plays this season and episode, not the
             # first episode of the series.
-            self._play_tmdb_plain(
+            if self._play_tmdb_plain(
                 context.card, key, context.season, context.tmdb_episode,
-            )
+            ):
+                self._verified_context = replace(context, provider=key)
+                self._begin_forced_anime_session()
             return True
         self._play_anime_provider(
             context.card, key, anilist_id=context.anilist_id,
             keep_verified_session=True,
         )
+        self._verified_context = replace(context, provider=key)
+        self._update_badge()
         return True
 
     def _end_forced_anime_session(self) -> None:
         """Forget the verified-anime playback, for the next-request bookkeeping."""
         self._forced_anime_playback = False
         self._verified_context = None
+        self._update_badge()
 
     def _record_history(self, card: Card) -> None:
         if self.settings is None or card.key.startswith("anime:"):

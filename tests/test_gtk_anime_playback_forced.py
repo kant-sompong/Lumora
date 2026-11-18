@@ -635,6 +635,101 @@ def test_an_ani_pm_build_failure_offers_another_provider(window, monkeypatch):
     assert called and called[0][0] is item
 
 
+def test_a_verified_movies_session_offers_ani_pm_and_anime_routes(window, monkeypatch):
+    """Opened from Movies, a verified anime still decides the header menu."""
+    window._active_section = "movies"
+    play_movie(window, monkeypatch)
+    assert window._forced_playback
+    offered = window._provider_choices()
+    assert streaming.ANI_PROVIDER in offered
+    assert set(offered) == {streaming.ANI_PROVIDER, *streaming.ANILIST_ANIME_PROVIDERS}
+    assert "cinesrc" not in offered
+    labels = [
+        child.get_label() for child in window._provider_menu.get_children()
+        if isinstance(child, Gtk.RadioMenuItem)
+    ]
+    assert len(labels) == len(offered)
+    assert streaming.LABELS["cinesrc"] not in labels
+    assert window._provider_label.get_text() == streaming.LABELS[streaming.ANI_PROVIDER]
+
+
+def test_a_verified_movies_session_switches_and_restores_the_mapped_episode(
+    window, monkeypatch
+):
+    install_core(monkeypatch)
+    window._active_section = "movies"
+    route = PlayTarget(ANILIST_ID, 12, True, "mapped episode")
+    window._play_forced_ani(movie(), None, None, route)
+    ani_url = window.captured.players[0]["url"]
+    assert f"/embed/ani/{ANILIST_ID}/12/" in ani_url
+    assert window._forced_playback["provider"] == streaming.ANI_PROVIDER
+    assert window._provider_label.get_text() == streaming.LABELS[streaming.ANI_PROVIDER]
+
+    window._choose_provider("toflix")
+    assert window.captured.attempts[-1][0][0] == "toflix"
+    assert window._forced_playback["provider"] == "toflix", (
+        "the header button did not follow the session's actual provider"
+    )
+    assert window._provider_label.get_text() == streaming.LABELS["toflix"]
+    assert window._settings.get("anime_streaming_provider", "") == "", (
+        "a session switch overwrote the saved anime preference"
+    )
+    assert streaming.ANI_PROVIDER in window._provider_choices(), (
+        "ani.pm was no longer offered, so the session could not switch back"
+    )
+
+    window._choose_provider(streaming.ANI_PROVIDER)
+    assert window.captured.players[-1]["url"] == ani_url, (
+        "the mapped AniList episode was lost"
+    )
+    assert window._forced_playback["provider"] == streaming.ANI_PROVIDER
+
+
+def test_a_failed_play_of_another_anime_clears_the_previous_session(
+    window, monkeypatch
+):
+    install_core(monkeypatch)
+    window._active_section = "movies"
+    window._play_forced_ani(
+        movie(), None, None, PlayTarget(ANILIST_ID, 1, True, "first"),
+    )
+    assert window._forced_playback
+
+    def broken(*_args, **_kwargs):
+        raise streaming.EmbedUrlError("no route for this entry")
+
+    monkeypatch.setattr(streaming, "ani_url", broken)
+    window._play_forced_ani(
+        movie(tmdb_id=2, title="Another One"), None, None,
+        PlayTarget(99148, 1, True, "second"),
+    )
+
+    assert window.captured.messages, "the failure was not reported"
+    assert window._forced_playback is None, "anime A's session outlived anime B's failure"
+    assert window._provider_choices() == streaming.PROVIDERS
+    assert window._provider_label.get_text() == streaming.LABELS["cinesrc"]
+
+
+def test_a_movie_provider_preference_changes_independently_of_a_session(
+    window, monkeypatch
+):
+    window._active_section = "movies"
+    play_movie(window, monkeypatch)
+    players = len(window.captured.players)
+
+    window._choose_provider("velarium")
+
+    assert window._settings.get("streaming_provider") == "velarium"
+    assert window._settings.get("anime_streaming_provider", "") == "", (
+        "a movie preference change rewrote the anime preference"
+    )
+    assert len(window.captured.players) == players, (
+        "a movie preference change replayed the anime"
+    )
+    assert window._forced_playback["provider"] == streaming.ANI_PROVIDER
+    assert window._provider_label.get_text() == streaming.LABELS[streaming.ANI_PROVIDER]
+
+
 def test_the_anime_provider_menu_only_offers_anime_routes(window):
     window._active_section = "anime"
     window._refresh_provider_button()
