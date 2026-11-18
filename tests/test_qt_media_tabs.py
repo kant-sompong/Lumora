@@ -285,3 +285,186 @@ def test_tabs_stay_visible_while_other_pages_are_open(app, tmp_path):
         assert window._current == "media"  # noqa: SLF001
     finally:
         window.close()
+
+
+@pytest.fixture
+def qt_window(app, tmp_path):
+    """A real window, with stub players behind every tab page."""
+    from lgl import qt_main
+
+    qt_main.apply_theme(app, "dark")
+    window = qt_main.Window(
+        None, None, None, tmp_path, Settings(tmp_path / "config.json", keyring=False)
+    )
+    factory = PlayerFactory()
+    # Only the tabs get stub views; the hub keeps its own player.
+    window.media_tabs.player_factory = factory
+    window.show()
+    pump(app)
+    window.stub_factory = factory
+    try:
+        yield window
+    finally:
+        window.close()
+        pump(app, 0.02)
+
+
+def test_leaving_the_media_view_suspends_the_tabs_player(qt_window, app):
+    window = qt_window
+    window.media.open_card(card("movie:9", "Interstellar"))
+    pump(app)
+    page = window.media_tabs.page_for(window.media_tabs.active_id)
+    page.play_embedded("https://provider.test/watch/9", "Interstellar")
+    view = page.player.view
+    view.position = 120.0
+    assert page.player.is_playing() is True
+
+    window.show_view("browse")
+    pump(app)
+
+    tab = window.media_tabs.store.find("movie:9")
+    assert tab.playing is True
+    assert tab.url == "https://provider.test/watch/9"
+    assert tab.position == pytest.approx(120.0)
+    # Nothing is left loaded, so no page can keep playing in the background.
+    assert page.player.view is None
+    assert view.stopped >= 1
+    assert page.player.is_playing() is False
+
+    window.show_view("media")
+    pump(app)
+
+    # Returning restores the page and the position, paused until Resume.
+    assert window.stack.currentWidget() is page
+    assert page.player.pages.currentWidget() is page.player.paused
+    assert page.player.view is None
+    assert page.player.is_playing() is False
+    assert "2:00" in page.player.paused_note.text()
+
+
+def test_leaving_the_media_view_twice_stays_suspended(qt_window, app):
+    window = qt_window
+    window.media.open_card(card("movie:9", "Interstellar"))
+    pump(app)
+    page = window.media_tabs.page_for(window.media_tabs.active_id)
+    page.play_embedded("https://provider.test/watch/9", "Interstellar")
+    window.show_view("browse")
+    pump(app)
+    window.show_view("library")
+    pump(app)
+
+    assert page.player.is_playing() is False
+    assert page.player.view is None
+    assert window.media_tabs.showing is False
+
+
+def test_two_tabs_cannot_play_at_the_same_time(tabs):
+    controller, stack, _bar, factory = tabs
+    first = controller.open(card("movie:1", "One"))
+    first.play_embedded("https://provider.test/one", "One")
+    second = controller.open(card("movie:2", "Two"))
+    second.play_embedded("https://provider.test/two", "Two")
+
+    playing = [player for player in factory.players if player.is_playing()]
+    assert playing == [second.player]
+    assert first.player.is_playing() is False
+    assert first.player.view is None
+
+
+def test_closing_the_last_tab_while_another_page_is_visible_stays_there(
+    qt_window, app
+):
+    window = qt_window
+    window.media.open_card(card("movie:9", "Interstellar"))
+    pump(app)
+    window.show_view("browse")
+    pump(app)
+
+    window.media_tabs.close(window.media_tabs.active_id)
+    pump(app)
+
+    assert window.media_tabs_bar.isVisible() is False
+    assert window.stack.currentWidget() is window.browse
+    assert window._current == "browse"  # noqa: SLF001
+
+
+def test_a_paused_tab_keeps_its_stream_across_switches(tabs):
+    controller, _stack, _bar, _factory = tabs
+    controller.open(card("movie:1", "Interstellar"))
+    show = controller.open(card("tv:2", "Breaking Bad", "tv"))
+    show._playing_episode = (2, 5)  # noqa: SLF001 - the page's own selection
+    show.play_embedded("https://provider.test/watch/2", "Breaking Bad")
+    show.player.view.position = 754.0
+    controller.activate(controller.tabs[0].tab_id)
+    controller.activate(controller.tabs[1].tab_id)
+    assert show.player.is_playing() is False  # the panel, not the video
+
+    # Away again without pressing Resume: the saved stream must survive.
+    controller.activate(controller.tabs[0].tab_id)
+    tab = controller.store.find("tv:2")
+    assert tab.url == "https://provider.test/watch/2"
+    assert tab.position == pytest.approx(754.0)
+    assert tab.playing is True
+
+    controller.activate(controller.tabs[1].tab_id)
+    assert show.player.pages.currentWidget() is show.player.paused
+    assert "12:34" in show.player.paused_note.text()
+
+
+def test_next_episode_survives_a_tab_round_trip(tabs):
+    from types import SimpleNamespace
+
+    controller, _stack, _bar, _factory = tabs
+    controller.open(card("movie:1", "Interstellar"))
+    show = controller.open(card("tv:2", "Breaking Bad", "tv"))
+    show._playing_episode = (1, 1)  # noqa: SLF001
+    show._next_episode = lambda: (1, SimpleNamespace(number=2, title="Cat"))  # noqa: SLF001
+    show._refresh_next_episode()  # noqa: SLF001
+    assert show.player.next_episode.isHidden() is False
+
+    controller.activate(controller.tabs[0].tab_id)
+    controller.activate(controller.tabs[1].tab_id)
+
+    assert show.player.next_episode.isHidden() is False
+    assert "S01E02" in show.player.next_episode.toolTip()
+    requests: list[bool] = []
+    show.player.next_requested.connect(lambda: requests.append(True))
+    show.player.next_episode.click()
+    assert requests == [True]
+
+
+def test_rapid_switching_and_closing_releases_every_view(tabs):
+    controller, _stack, bar, factory = tabs
+    pages = [controller.open(card(f"movie:{n}", f"Title {n}")) for n in (1, 2, 3)]
+    for page in pages:
+        key = page.detail_card().key
+        tab = controller.store.find(key)
+        controller.activate(tab.tab_id)
+        page.play_embedded(f"https://provider.test/{key}", tab.title)
+        page.player.view.position = float(10 * len(factory.views))
+
+    assert sum(1 for player in factory.players if player.is_playing()) == 1
+    for tab in controller.tabs:
+        controller.close(tab.tab_id)
+    assert bar.count() == 0
+    assert not any(player.is_playing() for player in factory.players)
+    assert all(view.stopped for view in factory.views)
+
+
+def test_a_released_view_cannot_report_a_position_later(tabs):
+    controller, _stack, _bar, _factory = tabs
+    page = controller.open(card("movie:1", "One"))
+    page.player.play("https://provider.test/one", "One")
+    page.player._position = 12.0  # noqa: SLF001 - the last live sample
+    callbacks: list = []
+    page.player.view.page().runJavaScript = (  # noqa: SLF001
+        lambda script, callback: callbacks.append(callback)
+    )
+    page.player.capture_position()
+    assert callbacks
+    callbacks[0](30.0)
+    assert page.player._position == pytest.approx(30.0)  # noqa: SLF001
+
+    page.player.release_resources()
+    callbacks[0](999.0)  # a late answer from the freed view
+    assert page.player._position == pytest.approx(30.0)  # noqa: SLF001

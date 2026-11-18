@@ -1622,6 +1622,9 @@ class MoviesWindow(Gtk.Box):
         self._playback_url = ""
         self._playback_provider = ""
         self._playback_position = 0.0
+        #: The tab key the current stream belongs to, so playback started
+        #: outside a tab can never be saved into one.
+        self._playback_key = ""
         self._position_source = 0
         #: Season and scroll to reapply once a restored page has its data.
         self._restore_season = None
@@ -1940,6 +1943,25 @@ class MoviesWindow(Gtk.Box):
             except Exception:  # noqa: BLE001
                 pass
 
+    def leave_view(self) -> None:
+        """The app shell left Movies & TV: keep the tab, stop the video.
+
+        Called while the page is still in front, so the active tab keeps its
+        URL and position; coming back then shows its paused panel instead of
+        an empty player.
+        """
+        on_player = self._stack.get_visible_child_name() == "player"
+        self._capture_active_tab()
+        if not on_player:
+            return
+        self.stop_playback()
+        tab = self._tabs.active
+        if tab is not None and tab.url:
+            self._restore_player_panel(tab)
+        elif self._current_item is not None:
+            self._stack.set_visible_child_name("details")
+            self._update_back()
+
     # -- media tabs ---------------------------------------------------------
 
     #: How often the open player asks the page where the video is.
@@ -2078,14 +2100,30 @@ class MoviesWindow(Gtk.Box):
             self._season_cache.clear()
             self._activate_nav("home")
 
-    def _open_tab_for(self, item) -> None:
-        """A title was opened: create its tab, or select the one it has."""
+    def _open_tab_for(self, item) -> bool:
+        """A title was opened: create its tab, or select the one it has.
+
+        Returns True when the title already had a tab and that tab's own
+        session was brought back, so the caller must not build a fresh page
+        over it.
+        """
         if self._restoring_tab or item is None:
-            return
+            return False
         key = self._media_key(item)
         if not key:
-            return
+            return False
         leaving_player = self._stack.get_visible_child_name() == "player"
+        existing = self._tabs.find(key)
+        if existing is not None:
+            # Already open: save the page in front, then restore the tab's own
+            # details, seasons, scroll, episode and paused stream.
+            self._capture_active_tab()
+            if leaving_player:
+                self.stop_playback()
+            tab = self._tabs.activate(existing.tab_id)
+            if tab is not None:
+                self._restore_tab(tab)
+            return True
         self._capture_active_tab()
         if leaving_player:
             self.stop_playback()
@@ -2097,15 +2135,20 @@ class MoviesWindow(Gtk.Box):
         payload["item"] = item
         self._tabs.update(tab.tab_id, payload=payload)
         self._render_tabs()
+        return False
 
     def _capture_active_tab(self) -> None:
         """Save the active tab's page state before anything replaces it."""
         tab = self._tabs.active
         if tab is None or self._restoring_tab:
             return
-        playing = (
+        # Playback belongs to this tab only when it started for this title: a
+        # stream opened outside the tabs must not be written into one.
+        owns = not self._playback_key or self._playback_key == tab.key
+        playing = bool(
             self._stack.get_visible_child_name() == "player"
-            and getattr(self, "_webview", None) is not None
+            and owns
+            and getattr(self, "_playback_url", "")
         )
         season, episode = self._playing_episode or (None, None)
         if season is None:
@@ -2118,13 +2161,32 @@ class MoviesWindow(Gtk.Box):
             payload["details"] = self._current_details
         if self._season_cache:
             payload["seasons"] = dict(self._season_cache)
+        # A returning anime tab keeps the ani.pm series, its episode list and
+        # its MAL details, so the verified route and its tracks still work.
+        if getattr(self, "_current_ani_series", None) is not None:
+            payload["ani_series"] = self._current_ani_series
+            payload["ani_episodes"] = list(
+                getattr(self, "_current_ani_episodes", ()) or ()
+            )
+        if getattr(self, "_current_anime_details", None) is not None:
+            payload["anime_details"] = self._current_anime_details
+        if playing:
+            # A paused tab has no web view, so its last known position is its
+            # saved one; asking the page would only lose it.
+            position = (
+                float(self._capture_position())
+                if getattr(self, "_webview", None) is not None
+                else float(self._playback_position or 0.0)
+            )
+        else:
+            position = 0.0
         self._tabs.update(
             tab.tab_id,
             season=int(season) if season else None,
             episode=int(episode) if episode else None,
             scroll=int(self._details_scroll.get_vadjustment().get_value()),
             playing=bool(playing),
-            position=float(self._capture_position() if playing else 0.0),
+            position=position,
             url=self._playback_url if playing else "",
             provider=self._playback_provider if playing else "",
             payload=payload,
@@ -2138,6 +2200,12 @@ class MoviesWindow(Gtk.Box):
             return
         self._restore_season = tab.season
         self._restore_scroll = tab.scroll
+        # The episode the tab was on is what Next episode and Watch read.
+        self._playing_episode = (
+            (int(tab.season), int(tab.episode))
+            if tab.season and tab.episode else None
+        )
+        self._playback_key = tab.key
         self._restoring_tab = True
         try:
             if int(getattr(item, "anilist_id", 0) or 0) > 0:
@@ -2157,6 +2225,12 @@ class MoviesWindow(Gtk.Box):
 
     def _restore_player_panel(self, tab) -> None:
         """A returning tab shows where it stopped, paused, with Resume."""
+        # The panel stands for the tab's own stream: holding its URL, track and
+        # position here means switching away again cannot lose them.
+        self._playback_url = tab.url
+        self._playback_provider = tab.provider
+        self._playback_position = float(tab.position or 0.0)
+        self._playback_key = tab.key
         for child in list(self._player.get_children()):
             self._player.remove(child)
             child.destroy()
@@ -2181,6 +2255,19 @@ class MoviesWindow(Gtk.Box):
         resume.get_style_context().add_class("movie-btn-dark")
         resume.connect("clicked", lambda *_a: self._resume_tab(tab))
         row.pack_start(resume, False, False, 0)
+        following = self._next_episode()
+        if following is not None:
+            next_season, next_one = following
+            following_button = Gtk.Button(label="Next episode")
+            following_button.get_style_context().add_class("movie-btn-dark")
+            following_button.set_tooltip_text(
+                f"Play S{next_season:02d}E{next_one.number:02d}"
+            )
+            following_button.connect(
+                "clicked",
+                lambda _b, s=next_season, e=next_one: self._play_episode(s, e),
+            )
+            row.pack_start(following_button, False, False, 0)
         close = Gtk.Button(label="Close tab")
         close.get_style_context().add_class("movie-btn-dark")
         close.connect("clicked", lambda *_a: self._close_tab(tab.tab_id))
@@ -2195,6 +2282,7 @@ class MoviesWindow(Gtk.Box):
     def _resume_tab(self, tab) -> None:
         if not tab.url:
             return
+        self._playback_key = tab.key
         self._open_player(
             tab.url, tab.title or self._playback_title,
             provider=tab.provider or None, start=tab.position,
@@ -3033,8 +3121,15 @@ class MoviesWindow(Gtk.Box):
     def _hero_watch(self, item: MediaItem) -> None:
         if item.kind == "tv":
             self._open_details(item)
-        else:
-            self._play(item)
+            return
+        tab = self._tabs.find(self._media_key(item))
+        if tab is not None and tab.url:
+            # This title's tab already has a stream: bring it back paused, the
+            # way its own tab does, instead of playing outside every tab.
+            self._show_tab(tab.tab_id)
+            return
+        self._open_details(item)
+        self._play(item)
 
     def _load_home(self) -> None:
         self._home_token += 1
@@ -3689,14 +3784,16 @@ class MoviesWindow(Gtk.Box):
     # -- anime details ------------------------------------------------------
 
     def _open_anime_details(self, item, *, restore=None) -> None:
-        if restore is None:
-            self._open_tab_for(item)
+        if restore is None and self._open_tab_for(item):
+            return
         current = self._stack.get_visible_child_name() or "home"
         if current not in ("details", "player"):
             self._back_target = current
             self._details_origin = current
         self._current_item = item
         self._current_details = None
+        self._current_ani_series = None
+        self._current_ani_episodes = []
         self._anime_detail_token += 1
         token = self._anime_detail_token
 
@@ -3709,7 +3806,24 @@ class MoviesWindow(Gtk.Box):
         self._details_scroll.get_vadjustment().set_value(
             float(restore.scroll) if restore is not None else 0
         )
-        self._load_anime_details(item, token)
+        cached_series = restore.payload.get("ani_series") if restore is not None else None
+        cached_episodes = restore.payload.get("ani_episodes") if restore is not None else None
+        cached_anime = restore.payload.get("anime_details") if restore is not None else None
+        if cached_series is not None:
+            # A returning tab keeps the ani.pm series and episode list it had:
+            # the verified route reads that list, so it must not be lost.
+            self._current_ani_series = cached_series
+            self._current_ani_episodes = list(cached_episodes or ())
+            self._anime_playing_key = str(getattr(item, "key", "") or "")
+            GLib.idle_add(
+                self._apply_anime_details_ani, token, cached_series,
+                list(cached_episodes or ()),
+            )
+        elif cached_anime is not None:
+            self._current_anime_details = cached_anime
+            GLib.idle_add(self._apply_anime_details, token, cached_anime)
+        else:
+            self._load_anime_details(item, token)
         if restore is not None:
             if getattr(self, "_restore_scroll", None):
                 GLib.idle_add(self._restore_scroll_now)
@@ -4060,6 +4174,7 @@ class MoviesWindow(Gtk.Box):
     def _apply_anime_details(self, token: int, details: AnimeDetails) -> bool:
         if token != self._anime_detail_token:
             return False
+        self._current_anime_details = details
         self._set_anime_detail_status("")
         state = getattr(self, "_anime_detail_state", {})
         title = state.get("title")
@@ -4166,6 +4281,7 @@ class MoviesWindow(Gtk.Box):
 
         # Same guard for anime pages: a stale identity answer must not play.
         self._anime_route_token += 1
+        self._playback_key = self._media_key(item)
         token = self._anime_route_token
 
         def work() -> None:
@@ -4658,8 +4774,8 @@ class MoviesWindow(Gtk.Box):
     # -- details ------------------------------------------------------------
 
     def _open_details(self, item: MediaItem, *, restore=None) -> None:
-        if restore is None:
-            self._open_tab_for(item)
+        if restore is None and self._open_tab_for(item):
+            return
         current = self._stack.get_visible_child_name() or "home"
         if current not in ("details", "player"):
             self._back_target = current
@@ -5490,6 +5606,24 @@ class MoviesWindow(Gtk.Box):
             return
         self._play_routed(show, int(season), episode)
 
+    def _sync_playing_tab(self) -> None:
+        """The strip names the episode that just started, Next episode too."""
+        tab = self._tabs.active
+        item = self._current_item
+        if tab is None or item is None or not self._playback_key:
+            return
+        if tab.key != self._playback_key:
+            return
+        if str(getattr(item, "kind", "")) != "tv":
+            return
+        season, episode = self._playing_episode or (None, None)
+        if not season or not episode:
+            return
+        if tab.season == int(season) and tab.episode == int(episode):
+            return
+        self._tabs.update(tab.tab_id, season=int(season), episode=int(episode))
+        self._render_tabs()
+
     # -- identity routing ---------------------------------------------------
     #
     # MAL-verified anime plays on ani.pm and nowhere else: the selected normal
@@ -5516,6 +5650,7 @@ class MoviesWindow(Gtk.Box):
         # is stale and must not start playback or overwrite the newer result.
         self._playback_token += 1
         token = self._playback_token
+        self._playback_key = self._media_key(item)
 
         def work() -> None:
             route = gtk_playback.decide_playback(
@@ -5910,6 +6045,7 @@ class MoviesWindow(Gtk.Box):
         self._stack.set_visible_child_name("player")
         self._update_back()
         self._start_position_sampling()
+        self._sync_playing_tab()
 
     def _next_episode(self):
         """The episode after the one playing, from the seasons already loaded."""

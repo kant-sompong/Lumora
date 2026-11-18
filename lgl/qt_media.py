@@ -1132,23 +1132,38 @@ class MediaPage(QWidget):
             return None
 
     def tab_snapshot(self) -> dict:
-        """What a tab switch has to remember about this page."""
+        """What a tab switch has to remember about this page.
+
+        A tab showing the paused panel still has a stream to come back to, so
+        its URL and position are saved even though no view is running.
+        """
         card = self.detail_card()
         player = getattr(self, "player", None)
-        playing = bool(
+        playing_now = bool(
             card is not None and player is not None
             and self._playing() and player.is_playing()
         )
         season, episode = getattr(self, "_playing_episode", None) or (None, None)
         if season is None:
             season = self._current_season()
+        url = player.current_url() if player is not None else ""
+        if player is None:
+            position = 0.0
+        elif playing_now:
+            position = player.capture_position()
+        else:
+            position = player.saved_position()
+        next_episode = ""
+        if player is not None and not player.next_episode.isHidden():
+            next_episode = player.next_episode.toolTip()
         return {
             "season": int(season) if season else None,
             "episode": int(episode) if episode else None,
             "scroll": self.scroll_position(),
-            "playing": playing,
-            "position": player.capture_position() if playing else 0.0,
-            "url": player.current_url() if playing else "",
+            "playing": bool(url),
+            "position": position,
+            "url": url,
+            "payload": {"next_episode": next_episode},
         }
 
     def suspend_tab(self) -> None:
@@ -1180,6 +1195,14 @@ class MediaPage(QWidget):
             self.stack.setCurrentWidget(player)
         else:
             player.release_resources()
+        # The episode that follows must still be one click away after a return.
+        next_episode = str(
+            (getattr(tab, "payload", {}) or {}).get("next_episode") or ""
+        )
+        if next_episode:
+            player.offer_next_episode(next_episode)
+        else:
+            player.clear_next_episode()
 
     def close_tab(self) -> None:
         """Stop this tab for good and let go of the player."""

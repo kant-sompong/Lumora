@@ -34,8 +34,10 @@ def format_position(seconds: object) -> str:
 def with_start(url: str, position: object) -> str:
     """Add a media-fragment start hint so a resumed stream opens where it was.
 
-    Only a real position is added, and only as the ``#t=`` fragment every
+    Only a real position is added, and only as the ``t=`` media fragment a
     media element understands; an embed that ignores it still loads normally.
+    Other fragment pieces are kept, and an existing ``t=`` is replaced rather
+    than stacked, so a URL's own anchors survive a resume.
     """
     text = str(url or "")
     try:
@@ -44,7 +46,12 @@ def with_start(url: str, position: object) -> str:
         return text
     if seconds < 1 or not text:
         return text
-    return f"{text.split('#', 1)[0]}#t={seconds}"
+    base, _, fragment = text.partition("#")
+    pieces = [
+        part for part in fragment.split("&") if part and not part.startswith("t=")
+    ]
+    pieces.append(f"t={seconds}")
+    return f"{base}#{'&'.join(pieces)}"
 
 
 def subtitle_for(kind: str, season: object = None, episode: object = None) -> str:

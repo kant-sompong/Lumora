@@ -117,6 +117,8 @@ class Window(QMainWindow):
         self.bridge = DownloadBridge()
         self._history: list[str] = []
         self._history_index = -1
+        #: Set while a tab's Back asks for the hub rather than for that tab.
+        self._media_hub = False
         self._titles: dict[str, str] = {}
         self.catalog = CatalogStore(platform_support.data_dir() / "catalog.json")
         self.setWindowTitle(APP_TITLE)
@@ -195,7 +197,7 @@ class Window(QMainWindow):
             self.stack, self.media_tabs_bar, settings=self._settings,
             cache_root=platform_support.cache_dir(),
             on_empty=self._tabs_empty, on_show=self._tabs_shown,
-            on_hub=lambda: self.show_view("media"),
+            on_hub=self._show_media_hub,
         )
         self.media.tab_host = self.media_tabs
 
@@ -383,12 +385,26 @@ class Window(QMainWindow):
             "downloads": self.downloads,
             "media": self.media,
         }[key]
-        self._transition_to(page)  # type: ignore[arg-type]
+        showing_tab = False
+        if key == "media":
+            if self._media_hub:
+                self._media_hub = False
+            elif self.media_tabs.active_id:
+                # Returning to Media brings the open tab back, paused.
+                showing_tab = self.media_tabs.show_active()
+        else:
+            # Leaving Media stops the video and frees its engine; the tab keeps
+            # its page, its selection and its position for when it is back.
+            self.media_tabs.suspend_shown()
+        if not showing_tab:
+            self._transition_to(page)  # type: ignore[arg-type]
         self.browse.detail.hide() if key != "browse" else None
         self._remember(key)
         self._current = key
         self._sync_rail()
         self._sync_search_field(key)
+        if showing_tab:
+            return
         if key == "browse":
             self.browse.load()
         elif key == "media":
@@ -403,8 +419,18 @@ class Window(QMainWindow):
         self._sync_search_field("media")
 
     def _tabs_empty(self) -> None:
-        """The last tab closed: back to the normal Movies & TV page."""
+        """The last tab closed: back to the hub, but only if it was in front.
+
+        Closing the final tab from Browse or Settings removes the strip and
+        leaves the page the user is on alone.
+        """
         self.media_tabs_bar.setVisible(False)
+        if self.media_tabs.closed_while_visible:
+            self._show_media_hub()
+
+    def _show_media_hub(self) -> None:
+        """Show the normal Movies & TV page, even when tabs are still open."""
+        self._media_hub = True
         self.show_view("media")
 
     def _remember(self, key: str) -> None:

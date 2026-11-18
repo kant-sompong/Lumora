@@ -90,6 +90,14 @@ class MediaTabButton(QFrame):
         style.polish(self)
         self.update()
 
+    def set_state(self, tab: media_tabs.TabState, active: bool = False) -> None:
+        """Refresh a tab already on the strip, without rebuilding its widgets."""
+        self.title_label.setText(_elide(tab.title))
+        self.meta_label.setText(tab.subtitle)
+        self.setToolTip(f"{tab.title}\n{tab.subtitle}")
+        self.close_button.setToolTip(f"Close {tab.title}")
+        self.set_active(active)
+
     def mouseReleaseEvent(self, event) -> None:  # noqa: N802 - Qt's name
         if event.button() == Qt.LeftButton:
             self.activated.emit(self._tab_id)
@@ -138,7 +146,15 @@ class MediaTabBar(QFrame):
 
     # rendering -------------------------------------------------------------
     def set_tabs(self, tabs: list[media_tabs.TabState], active_id: str | None) -> None:
-        """Redraw the strip; the tab count is small, so a rebuild is enough."""
+        """Redraw the strip, or update it in place when the tabs are the same.
+
+        Playback updates the active tab's subtitle, so the common case is the
+        same tab ids in the same order: that only relabels the buttons.
+        """
+        if self._same_tabs(tabs):
+            for button, tab in zip(self._buttons, tabs):
+                button.set_state(tab, tab.tab_id == active_id)
+            return
         for button in self._buttons:
             self._row.removeWidget(button)
             button.deleteLater()
@@ -155,6 +171,9 @@ class MediaTabBar(QFrame):
             self._buttons.append(button)
         self.setVisible(bool(self._buttons))
         self._scroll.setVisible(bool(self._buttons))
+
+    def _same_tabs(self, tabs: list[media_tabs.TabState]) -> bool:
+        return bool(tabs) and [tab.tab_id for tab in tabs] == self.tab_ids()
 
 
 class MediaTabsController(QObject):
@@ -186,6 +205,8 @@ class MediaTabsController(QObject):
         #: Which tab this controller put in front last (the stack may be
         #: showing another application page in the meantime).
         self._shown: str | None = None
+        #: True when the tab just closed was the page in front.
+        self.closed_while_visible = False
         bar.tab_activated.connect(self.activate)
         bar.tab_closed.connect(self.close)
 
@@ -239,6 +260,30 @@ class MediaTabsController(QObject):
         return page
 
     # switching -------------------------------------------------------------
+    @property
+    def showing(self) -> bool:
+        """True while the stack is showing one of this controller's pages."""
+        return self._shown_id() is not None
+
+    def show_active(self) -> bool:
+        """Bring the active tab's page back, paused; False when there is none."""
+        tab = self.store.active
+        if tab is None or tab.tab_id not in self._pages:
+            return False
+        if self._shown_id() != tab.tab_id:
+            self.activate(tab.tab_id)
+        return self.stack.currentWidget() is self._pages.get(tab.tab_id)
+
+    def suspend_shown(self) -> None:
+        """Leaving the Media view: stop and free the tab that was in front.
+
+        The tab keeps its page, its title selection and its saved position, so
+        returning to it shows the paused panel instead of playing on.
+        """
+        self._suspend_current()
+        self._shown = None
+        self._sync_bar()
+
     def activate(self, tab_id: str) -> None:
         tab = self.store.activate(tab_id)
         if tab is None or tab_id == self._shown_id():
@@ -300,15 +345,19 @@ class MediaTabsController(QObject):
     # closing ---------------------------------------------------------------
     def close(self, tab_id: str) -> None:
         was_active = self.store.active_id == tab_id
-        page = self._pages.pop(tab_id, None)
+        page = self._pages.get(tab_id)
+        # Closing a tab whose page is not in front must not navigate.
+        was_visible = page is not None and self.stack.currentWidget() is page
+        self._pages.pop(tab_id, None)
         if self._shown == tab_id:
             self._shown = None
         new_active = self.store.close(tab_id)
+        self.closed_while_visible = was_visible
         if page is not None:
             page.close_tab()
             self.stack.removeWidget(page)
             page.deleteLater()
-        if was_active and new_active is not None:
+        if was_active and new_active is not None and was_visible:
             self.activate(new_active.tab_id)
             return
         self._sync_bar()

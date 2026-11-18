@@ -266,3 +266,178 @@ def test_tabs_stay_visible_when_navigating_the_media_pages(window):
     assert len(window._tabs) == 1
     assert window._tab_bar.get_visible() is True
     assert window._stack.get_visible_child_name() == "home"
+
+
+def test_reopening_an_open_tv_tab_restores_its_session(window):
+    open_title(window, movie(2, "Breaking Bad", "tv"))
+    open_title(window, movie(1, "One"))
+    show_tab = tab(window, "tv:2")
+    window._tabs.update(
+        show_tab.tab_id, season=2, episode=5, scroll=140, playing=True,
+        url="https://provider.test/2", position=754.0, provider="cinesrc",
+    )
+    restores: list = []
+    original = window._open_details
+
+    def spy(item, *, restore=None):
+        restores.append(restore)
+        return original(item, restore=restore)
+
+    window._open_details = spy
+
+    open_title(window, movie(2, "Breaking Bad", "tv"))
+
+    assert restores and restores[-1] is not None
+    reopened = tab(window, "tv:2")
+    assert reopened.season == 2 and reopened.episode == 5
+    assert reopened.url == "https://provider.test/2"
+    assert reopened.position == pytest.approx(754.0)
+    assert reopened.playing is True
+    assert window._playing_episode == (2, 5)
+    # The saved position comes back paused, with nothing autoplaying.
+    assert window._stack.get_visible_child_name() == "player"
+    assert window._webview is None
+    assert any("12:34" in text for text in label_texts(window._player))
+
+
+def test_reopening_an_open_anime_tab_keeps_its_episode_list(window):
+    from lgl import anipm
+
+    title = anipm.AniTitle(anilist_id=7, title="Frieren")
+    series = anipm.AniSeries(anilist_id=7, title="Frieren")
+    episode = anipm.AniEpisode(number=3, title="The Journey's End")
+    window._open_anime_details(title)
+    pump(0.02)
+    window._current_ani_series = series
+    window._current_ani_episodes = [episode]
+    window._playing_episode = (1, 3)
+    open_title(window, movie(1, "Other"))  # captures the anime tab's state
+    loads: list = []
+    window._load_anime_details = lambda *a, **k: loads.append(True)
+
+    window._open_anime_details(title)
+    pump(0.02)
+
+    assert loads == []  # no refetch: the tab's own data came back
+    assert window._current_ani_series is series
+    assert window._current_ani_episodes == [episode]
+    assert window._playing_episode == (1, 3)
+    assert window._anime_playing_key == "anipm:7"
+
+
+def test_a_paused_tab_keeps_its_place_across_switches(window):
+    open_title(window, movie(1, "One"))
+    open_title(window, movie(2, "Two"))
+    window._show_tab(tab(window, "movie:1").tab_id)
+    pump(0.02)
+    # A tab that was playing has a stream saved; its page opens on the panel.
+    window._tabs.update(
+        tab(window, "movie:2").tab_id, season=2, episode=5, playing=True,
+        url="https://provider.test/2", position=754.0, provider="cinesrc",
+    )
+    window._show_tab(tab(window, "movie:2").tab_id)
+    pump(0.02)
+    assert window._stack.get_visible_child_name() == "player"
+
+    # Away without pressing Resume, then back.
+    window._show_tab(tab(window, "movie:1").tab_id)
+    pump(0.02)
+    assert tab(window, "movie:2").url == "https://provider.test/2"
+    assert tab(window, "movie:2").position == pytest.approx(754.0)
+    assert tab(window, "movie:2").playing is True
+
+    window._show_tab(tab(window, "movie:2").tab_id)
+    pump(0.02)
+    assert window._webview is None
+    assert any("12:34" in text for text in label_texts(window._player))
+
+
+def test_leaving_the_media_view_stops_playback_and_keeps_the_tab(window):
+    open_title(window, movie(1, "One"))
+    window._stack.set_visible_child_name("player")
+    window._webview = object()
+    window._playback_url = "https://provider.test/1"
+    window._playback_provider = "cinesrc"
+    window._playback_position = 90.0
+    window._playback_key = "movie:1"
+    window._playing_episode = (1, 2)
+    window._position_source = GLib.timeout_add(10_000, lambda: False)
+
+    window.leave_view()
+    pump(0.02)
+
+    saved = tab(window, "movie:1")
+    assert saved.playing is True
+    assert saved.url == "https://provider.test/1"
+    assert saved.position == pytest.approx(90.0)
+    assert window._webview is None
+    assert window._position_source == 0
+    # The page left behind is the paused panel, never an empty player.
+    assert window._stack.get_visible_child_name() == "player"
+    assert any("1:30" in text for text in label_texts(window._player))
+
+
+def test_hero_playback_opens_the_hero_titles_own_tab(window):
+    open_title(window, movie(1, "Interstellar"))
+    played: list = []
+    window._play = lambda item: played.append(item)
+
+    window._hero_watch(movie(2, "Dune"))
+    pump(0.02)
+
+    assert window._tabs.active.key == "movie:2"
+    assert [item.tmdb_id for item in played] == [2]
+    assert tab(window, "movie:1").playing is False
+
+
+def test_playback_from_another_title_is_not_captured_into_the_active_tab(window):
+    open_title(window, movie(1, "Interstellar"))
+    window._playback_key = "movie:99"
+    window._playback_url = "https://provider.test/99"
+    window._playback_position = 300.0
+    window._stack.set_visible_child_name("player")
+
+    window._capture_active_tab()
+
+    saved = tab(window, "movie:1")
+    assert saved.playing is False
+    assert saved.url == ""
+    assert saved.position == 0.0
+
+
+def buttons(widget) -> list:
+    found: list = []
+    if isinstance(widget, Gtk.Button):
+        found.append(widget)
+    if isinstance(widget, Gtk.Container):
+        for child in widget.get_children():
+            found.extend(buttons(child))
+    return found
+
+
+def test_next_episode_survives_a_tab_round_trip(window):
+    from types import SimpleNamespace
+
+    open_title(window, movie(2, "Breaking Bad", "tv"))
+    open_title(window, movie(1, "One"))
+    window._tabs.update(
+        tab(window, "tv:2").tab_id, season=2, episode=5, playing=True,
+        url="https://provider.test/2", position=10.0, provider="cinesrc",
+    )
+    clicked: list = []
+    window._play_episode = lambda season, episode: clicked.append(
+        (season, episode.number)
+    )
+    window._next_episode = lambda: (2, SimpleNamespace(number=6))
+
+    window._show_tab(tab(window, "tv:2").tab_id)
+    pump(0.02)
+
+    labels = [button.get_label() for button in buttons(window._player)]
+    assert "Next episode" in labels
+    next_button = [
+        button for button in buttons(window._player)
+        if button.get_label() == "Next episode"
+    ][0]
+    next_button.clicked()
+    assert clicked == [(2, 6)]

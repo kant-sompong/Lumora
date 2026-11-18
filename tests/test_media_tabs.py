@@ -126,3 +126,12 @@ def test_a_resumed_url_carries_its_start_only_once():
     assert media_tabs.with_start("https://x.test/a.m3u8", 0) == (
         "https://x.test/a.m3u8"
     )
+
+
+def test_a_resume_keeps_the_urls_own_fragment():
+    assert media_tabs.with_start("https://x.test/e#foo", 754) == (
+        "https://x.test/e#foo&t=754"
+    )
+    assert media_tabs.with_start("https://x.test/e#t=10&foo", 754) == (
+        "https://x.test/e#foo&t=754"
+    )

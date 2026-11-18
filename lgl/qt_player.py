@@ -107,6 +107,9 @@ class EmbeddedPlayer(QWidget):
         self._url = ""
         #: Where the video is, as last read from the page (seconds).
         self._position = 0.0
+        #: Bumped whenever the view is freed: a late JavaScript answer that
+        #: belongs to the old view must not overwrite a newer position.
+        self._view_token = 0
         #: ``(url, title, position)`` kept while this tab is in the background.
         self._resume: tuple[str, str, float] = ("", "", 0.0)
         self._sample_timer = QTimer(self)
@@ -286,6 +289,12 @@ class EmbeddedPlayer(QWidget):
         """The URL on screen, or the one a paused tab will resume."""
         return self._url or self._resume[0]
 
+    def saved_position(self) -> float:
+        """Where a tab with no running view would resume from."""
+        if self._url:
+            return float(self._position or 0.0)
+        return float(self._resume[2] or 0.0)
+
     def capture_position(self) -> float:
         """Ask the page where the video is, and answer with the last sample.
 
@@ -340,6 +349,7 @@ class EmbeddedPlayer(QWidget):
         self._sample_timer.stop()
         view = self.view
         self.view = None
+        self._view_token += 1
         if view is None:
             return
         stopper = getattr(view, "stop", None)
@@ -386,8 +396,16 @@ class EmbeddedPlayer(QWidget):
             "(() => { const v = document.querySelector('video');"
             " return v && isFinite(v.currentTime) ? v.currentTime : 0; })()"
         )
+        token = self._view_token
+
+        def store(value: object) -> None:
+            # The view may have been released while the page was answering.
+            if token != self._view_token or self.view is None:
+                return
+            self._store_position(value)
+
         try:
-            runner(script, self._store_position)
+            runner(script, store)
         except Exception:  # noqa: BLE001 - a page that is still loading
             pass
 
