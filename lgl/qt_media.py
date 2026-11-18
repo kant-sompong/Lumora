@@ -1156,6 +1156,14 @@ class MediaPage(QWidget):
         next_episode = ""
         if player is not None and not player.next_episode.isHidden():
             next_episode = player.next_episode.toolTip()
+        payload: dict[str, object] = {"next_episode": next_episode}
+        # A verified anime keeps its provider session with its tab: suspending
+        # must not drop the AniList episode a provider switch has to replay.
+        verified = getattr(self, "_verified_context", None)
+        if verified is not None:
+            payload["verified_anime"] = verified
+        if getattr(self, "_forced_anime_playback", False):
+            payload["forced_anime"] = True
         return {
             "season": int(season) if season else None,
             "episode": int(episode) if episode else None,
@@ -1163,7 +1171,7 @@ class MediaPage(QWidget):
             "playing": bool(url),
             "position": position,
             "url": url,
-            "payload": {"next_episode": next_episode},
+            "payload": payload,
         }
 
     def suspend_tab(self) -> None:
@@ -1183,6 +1191,23 @@ class MediaPage(QWidget):
         """Put this tab's page back, paused, where it was left."""
         self.stack.setCurrentWidget(self._detail_page)
         self.set_scroll_position(getattr(tab, "scroll", 0))
+        # A verified anime comes back as it left: the same provider session and
+        # the same AniList episode, so the badge, the session-scoped provider
+        # menu and a provider switch all agree with what was playing.
+        state = getattr(tab, "payload", {}) or {}
+        verified = state.get("verified_anime")
+        if verified is not None:
+            self._verified_context = verified
+            begin = getattr(self, "_begin_forced_anime_session", None)
+            if callable(begin):
+                begin()
+            else:
+                self._forced_anime_playback = True
+            menu = getattr(self, "_fill_provider_menu", None)
+            if callable(menu):
+                menu(self._section)
+            else:
+                self._update_badge()
         player = getattr(self, "player", None)
         if player is None:
             return
@@ -1203,6 +1228,29 @@ class MediaPage(QWidget):
             player.offer_next_episode(next_episode)
         else:
             player.clear_next_episode()
+
+    def release_playback(self) -> None:
+        """Stop the hub's own player and free its view for good.
+
+        A tab's stream is suspended with its tab instead; this is only for
+        playback that started on the hub page, so leaving Media - or bringing
+        a tab in front of it - can never leave a second video running.
+        """
+        if self._session_only:
+            return
+        player = getattr(self, "player", None)
+        if player is None:
+            return
+        player.stop_playback()
+        player.release_resources()
+        self._end_forced_anime_session()
+        self._player_return = None
+        if self.stack.currentWidget() is player:
+            self.stack.setCurrentWidget(
+                self._pages.get(self._section)
+                or self._pages.get("home")
+                or self._detail_page
+            )
 
     def close_tab(self) -> None:
         """Stop this tab for good and let go of the player."""
@@ -2094,6 +2142,10 @@ class MediaPage(QWidget):
         return media_history.load(self.settings)
 
     def _render_history(self) -> None:
+        if self._session_only:
+            # A tab has one detail page and no history grid: the play is still
+            # recorded, there is just no section page to redraw.
+            return
         entries = self._history()
         cards = [card_from_history(entry) for entry in entries]
         self._history_grid.set_cards(cards)
@@ -2704,8 +2756,23 @@ class MediaPage(QWidget):
         TrailerDialog(url, getattr(card, "title", "") or "", self).exec()
 
     def _play_current(self) -> None:
-        """Play button on the home hero: the hero's own title."""
-        self._play_card(getattr(self, "_hero_card", None))
+        """Play button on the home hero: the hero's own title.
+
+        The hub never plays anything itself: Watch Now opens or selects the
+        title's own tab and starts the stream there.  Leaving Media then
+        suspends that tab like any other, and a second player can never be
+        left running behind it.
+        """
+        card = getattr(self, "_hero_card", None)
+        host = getattr(self, "tab_host", None)
+        if card is not None and host is not None and not self._session_only:
+            host.open_and_play(card, section=self._section)
+            return
+        self._play_card(card)
+
+    def play_card(self, card: Card | None) -> None:
+        """Start a title from outside this page: the hub's Watch Now."""
+        self._play_card(card)
 
     def _play_detail(self) -> None:
         """Play button on a details page: the title that page shows."""

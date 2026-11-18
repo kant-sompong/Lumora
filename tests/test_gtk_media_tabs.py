@@ -441,3 +441,81 @@ def test_next_episode_survives_a_tab_round_trip(window):
     ][0]
     next_button.clicked()
     assert clicked == [(2, 6)]
+
+
+def test_closing_the_active_tab_while_media_is_not_shown_does_not_restore(window):
+    """N1: a hidden page forgets the tab; it must not navigate to a neighbour."""
+    open_title(window, movie(1, "One"))
+    open_title(window, movie(2, "Two"))
+    assert window._current_item.title == "Two"
+
+    window.set_visible(False)
+    pump(0.02)
+    window._close_tab(window._tabs.active_id)
+    pump(0.02)
+
+    assert len(window._tabs) == 1
+    assert window._tabs.active.key == "movie:1"
+    # No restore happened: the closed tab's page is exactly where it was.
+    assert window._current_item.title == "Two"
+
+
+def test_switching_tabs_carries_a_verified_anime_session(window):
+    """N5: a verified session travels with its tab, not with the window."""
+    open_title(window, movie(1, "Frieren", "tv"))
+    session = {
+        "kind": "tmdb",
+        "item": window._current_item,
+        "season": 1,
+        "episode": None,
+        "route": object(),
+        "provider": "ani",
+        "number": 5,
+    }
+    window._forced_playback = dict(session)
+    open_title(window, movie(2, "Another", "tv"))
+
+    saved = tab(window, "tv:1")
+    assert saved.payload["verified_playback"]["number"] == 5
+
+    # PR #126 tears the live session down with the player it belonged to.
+    window._forced_playback = None
+    refreshed: list[bool] = []
+    window._refresh_provider_button = lambda: refreshed.append(True)
+
+    window._show_tab(saved.tab_id)
+    pump(0.02)
+
+    assert window._forced_playback == session
+    assert refreshed
+
+
+@pytest.mark.skipif(
+    not hasattr(movies_ui.MoviesWindow, "_switch_forced_provider"),
+    reason="PR #126's session-scoped provider switch is not on this branch yet",
+)
+def test_provider_switch_after_a_tab_round_trip_keeps_the_mapped_episode(window):
+    """N5: after a return, a provider pick still switches the same session."""
+    open_title(window, movie(1, "Frieren", "tv"))
+    session = {
+        "kind": "tmdb",
+        "item": window._current_item,
+        "season": 1,
+        "episode": None,
+        "route": object(),
+        "provider": "ani",
+        "number": 5,
+    }
+    window._forced_playback = dict(session)
+    open_title(window, movie(2, "Another", "tv"))
+    window._forced_playback = None
+    window._show_tab(tab(window, "tv:1").tab_id)
+    pump(0.02)
+
+    calls: list[str] = []
+    window._switch_forced_provider = lambda provider: calls.append(provider) or True
+    window._refresh_provider_button = lambda: None
+    window._choose_provider("toflix")
+
+    assert calls == ["toflix"]
+    assert window._forced_playback["number"] == 5

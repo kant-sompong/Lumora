@@ -2082,11 +2082,15 @@ class MoviesWindow(Gtk.Box):
     def _close_tab(self, tab_id: str) -> None:
         """Close a tab; the active one stops playing, an inactive one does not."""
         was_active = self._tabs.active_id == tab_id
+        # Restoring a neighbour is navigation, so it belongs only to the page
+        # the app is showing: a hidden Movies & TV just forgets the tab.  This
+        # is Qt's ``was_visible`` rule, kept the same on both frontends.
+        was_visible = bool(self.get_mapped())
         if was_active and self._stack.get_visible_child_name() == "player":
             self.stop_playback()
         new_active = self._tabs.close(tab_id)
         if new_active is not None:
-            if was_active:
+            if was_active and was_visible:
                 self._restore_tab(new_active)
             else:
                 self._render_tabs()
@@ -2170,6 +2174,10 @@ class MoviesWindow(Gtk.Box):
             )
         if getattr(self, "_current_anime_details", None) is not None:
             payload["anime_details"] = self._current_anime_details
+        # A verified anime keeps its provider session with its tab, so a switch
+        # away and back keeps the AniList episode and the provider badge.
+        if getattr(self, "_forced_playback", None):
+            payload["verified_playback"] = dict(self._forced_playback)
         if playing:
             # A paused tab has no web view, so its last known position is its
             # saved one; asking the page would only lose it.
@@ -2214,6 +2222,16 @@ class MoviesWindow(Gtk.Box):
                 self._open_details(item, restore=tab)
         finally:
             self._restoring_tab = False
+        # A verified anime comes back as it left: same session, provider and
+        # AniList episode, so the badge, the session-scoped provider menu and a
+        # provider switch all agree with what was playing.
+        state = getattr(tab, "payload", {}) or {}
+        verified = state.get("verified_playback")
+        if verified:
+            self._forced_playback = dict(verified)
+            refresh = getattr(self, "_refresh_provider_button", None)
+            if callable(refresh):
+                refresh()
         self._render_tabs()
 
     def _restore_scroll_now(self) -> bool:

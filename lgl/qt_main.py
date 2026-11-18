@@ -396,6 +396,9 @@ class Window(QMainWindow):
             # Leaving Media stops the video and frees its engine; the tab keeps
             # its page, its selection and its position for when it is back.
             self.media_tabs.suspend_shown()
+            # Playback started from the hub itself is not a tab: release it too,
+            # so nothing keeps playing behind another app page.
+            self.media.release_playback()
         if not showing_tab:
             self._transition_to(page)  # type: ignore[arg-type]
         self.browse.detail.hide() if key != "browse" else None
@@ -415,6 +418,9 @@ class Window(QMainWindow):
     def _tabs_shown(self, page: QWidget, tab: object) -> None:
         """A tab page is in front: the rail and header follow it."""
         self._current = "media"
+        # Only one video ever plays: a stream the hub started is stopped as
+        # soon as a tab comes in front of it.
+        self.media.release_playback()
         self._sync_rail()
         self._sync_search_field("media")
 

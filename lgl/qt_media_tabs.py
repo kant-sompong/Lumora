@@ -251,6 +251,19 @@ class MediaTabsController(QObject):
             page.open_card(card)
         return page
 
+    def open_and_play(self, card: object, section: str = "") -> MediaPage | None:
+        """Watch a title from the hub: its tab comes forward and plays there.
+
+        The hub's own player is never used for this.  Opening or selecting the
+        tab puts it in front first, which also stops anything the hub had
+        playing, so two videos can never run at once.
+        """
+        page = self.open(card, section=section)
+        if page is None:
+            return None
+        page.play_card(card)
+        return page
+
     def _new_page(self) -> MediaPage:
         page = MediaPage(
             self.settings, self.cache_root,

@@ -468,3 +468,129 @@ def test_a_released_view_cannot_report_a_position_later(tabs):
     page.player.release_resources()
     callbacks[0](999.0)  # a late answer from the freed view
     assert page.player._position == pytest.approx(30.0)  # noqa: SLF001
+
+
+class VerifiedSession:
+    """Stand-in for PR #126's verified-playback record a tab must carry.
+
+    The tab layer only transports it; #126's provider switch reads it back, so
+    the mapped AniList episode and the session provider must survive a switch.
+    """
+
+    def __init__(self) -> None:
+        self.title = "Frieren"
+        self.anilist_id = 42
+        self.ani_episode = 5
+        self.provider = "ani"
+        self.season = 1
+        self.tmdb_episode = None
+
+
+def test_home_hero_watch_plays_in_the_titles_tab_not_the_hub(
+    qt_window, app, monkeypatch
+):
+    """B1: Watch Now must open the tab, and leaving Media must pause it."""
+    window = qt_window
+    # No identity lookup: this test is about which player starts.
+    monkeypatch.setattr(qt_media.qt_anime_routing, "available", lambda: False)
+    window.media._hero_card = qt_media.Card(
+        key="movie:9", title="Interstellar", kind="movie", tmdb_id=9,
+    )
+
+    window.media._play_current()
+    pump(app)
+
+    tab_id = window.media_tabs.active_id
+    assert tab_id is not None
+    page = window.media_tabs.page_for(tab_id)
+    assert page is not None and page is not window.media
+    url = page.player.current_url()
+    assert url
+    # The stream started in the tab's player; the hub's never loaded anything.
+    assert page.player.is_playing() is True
+    assert window.media.player.is_playing() is False
+    assert window.media.player.view is None
+
+    window.show_view("browse")
+    pump(app)
+
+    saved = window.media_tabs.store.find("movie:9")
+    assert saved.playing is True
+    assert saved.url == url
+    assert page.player.is_playing() is False
+    assert page.player.view is None
+    assert window.media.player.is_playing() is False
+
+    window.show_view("media")
+    pump(app)
+
+    # Returning shows the same tab, paused, with nothing playing by itself.
+    assert window.stack.currentWidget() is page
+    assert page.player.is_playing() is False
+    assert page.player.view is None
+    assert window.media.player.is_playing() is False
+
+
+def test_a_tab_snapshot_carries_a_verified_anime_session(tabs, app):
+    """N5: the session is saved before the suspend tears it down."""
+    controller, _stack, _bar, _factory = tabs
+    first = controller.open(card("movie:9", "Frieren"))
+    pump(app)
+    session = VerifiedSession()
+    first._verified_context = session
+    first._forced_anime_playback = True
+
+    def end_session() -> None:
+        # PR #126's teardown forgets the live session, so the tab must already
+        # own it when the page is suspended.
+        first._forced_anime_playback = False
+        first._verified_context = None
+
+    first._end_forced_anime_session = end_session
+    refreshed: list[str] = []
+    original_fill = first._fill_provider_menu
+    first._fill_provider_menu = (
+        lambda section: (refreshed.append(section), original_fill(section))
+    )
+
+    controller.open(card("movie:10", "Another"))
+    pump(app)
+
+    saved = controller.store.find("movie:9")
+    assert saved.payload["verified_anime"] is session
+    assert saved.payload["forced_anime"] is True
+    assert first._verified_context is None
+
+    controller.activate(saved.tab_id)
+    pump(app)
+
+    # The session, its provider badge and its menu come back with the tab.
+    assert first._verified_context is session
+    assert first._verified_context.ani_episode == 5
+    assert first._forced_anime_playback is True
+    assert refreshed and refreshed[-1] == first._section
+
+
+@pytest.mark.skipif(
+    not hasattr(qt_media.MediaPage, "_switch_verified_session"),
+    reason="PR #126's session-scoped provider switch is not on this branch yet",
+)
+def test_provider_switch_after_a_tab_round_trip_replays_the_anilist_episode(tabs, app):
+    """N5: switching providers after a return uses the restored session."""
+    controller, _stack, _bar, _factory = tabs
+    page = controller.open(card("movie:9", "Frieren"))
+    pump(app)
+    page._verified_context = VerifiedSession()
+    page._forced_anime_playback = True
+    controller.open(card("movie:10", "Another"))
+    pump(app)
+    controller.activate(controller.store.find("movie:9").tab_id)
+    pump(app)
+
+    calls: list[str] = []
+    page._switch_verified_session = lambda key: calls.append(key) or True
+    page._choose_provider("toflix")
+
+    assert calls == ["toflix"]
+    assert page._verified_context.ani_episode == 5
+    assert page._forced_anime_playback is True
