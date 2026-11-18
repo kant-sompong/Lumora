@@ -1,4 +1,9 @@
-"""ani.pm catalogue reads: search, title metadata, series and episodes.
+"""ani.pm reads for playback: title metadata, series, episodes and embeds.
+
+No Lumora surface searches this catalogue or shows its rows as results:
+``AniPmClient.search`` stays for the documented API and tests, but neither
+``lgl/movies_ui.py`` nor ``lgl/qt_media.py`` calls it.  ani.pm is a player,
+reached only after MyAnimeList verification.
 
 ani.pm (https://ani.pm/developers) is an anime catalogue and player that keys
 playback by AniList **or** MyAnimeList id and needs no API key for catalogue
@@ -65,7 +70,7 @@ Fetch = Callable[[str, Mapping[str, Any], Mapping[str, str]], Any]
 
 
 class AniPmError(Exception):
-    """An ani.pm catalogue read failed, in a way the UI can explain.
+    """An ani.pm read failed, in a way the UI can explain.
 
     ``kind`` is ``"rate-limited"``, ``"not-found"``, ``"server"``, ``"network"``
     or ``"invalid-response"``.  ani.pm needs no key, so there is no auth kind.
@@ -581,7 +586,11 @@ def _http_json(url: str, *, timeout: float) -> tuple[Any, float]:
 
 
 class AniPmClient:
-    """The ani.pm catalogue reads this app needs.  No key, no account."""
+    """The ani.pm reads this app needs.  No key, no account.
+
+    The UI uses :meth:`series`, :meth:`episodes` and :meth:`title` for verified
+    anime; :meth:`search` is not wired to any catalogue or search surface.
+    """
 
     def __init__(
         self,

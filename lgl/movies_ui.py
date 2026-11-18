@@ -967,12 +967,12 @@ class PosterTile(Gtk.FlowBoxChild):
         images.load(item.poster_url, POSTER_SIZE, poster.set_pixbuf)
 
 
-class AniPmTile(Gtk.FlowBoxChild):
-    """One ani.pm catalogue result: poster, title, meta and an 18+ badge.
+class AniListTile(Gtk.FlowBoxChild):
+    """One AniList-sourced anime poster in a grid: art, title, meta, 18+ badge.
 
-    Metadata is exactly what the ani.pm catalogue API returned - year, format
-    and score when present, genres in the tooltip, and a visible 18+ badge
-    when the title is flagged ``adult``.  Nothing is filled in by guesswork.
+    The title is an :class:`anipm.AniTitle` used as the anime card model, but
+    every field here comes from AniList (Hidden Gems) rather than an ani.pm
+    catalogue search, which no surface performs any more.
     """
 
     def __init__(self, item: "anipm.AniTitle", images: Images, on_open) -> None:
@@ -1007,7 +1007,7 @@ class AniPmTile(Gtk.FlowBoxChild):
             badge.set_margin_top(7)
             badge.set_margin_end(7)
             badge.get_style_context().add_class("movie-adult-badge")
-            badge.set_tooltip_text("Marked adult (18+) by ani.pm")
+            badge.set_tooltip_text("Marked adult (18+) by AniList")
             holder.add_overlay(badge)
         box.pack_start(holder, False, False, 0)
 
@@ -3321,7 +3321,7 @@ class MoviesWindow(Gtk.Box):
 
     @staticmethod
     def _gem_title(entry):
-        """One gem as an AniPm title: its key carries the AniList id."""
+        """One gem as an AniList title: its key carries the AniList id."""
         if not isinstance(entry, dict):
             return None
         ident = _anilist_id_from_key(entry.get("key"))
@@ -3351,7 +3351,7 @@ class MoviesWindow(Gtk.Box):
         for child in self._gems_flow.get_children():
             self._gems_flow.remove(child)
         for item in items:
-            self._gems_flow.add(AniPmTile(item, self._images, self._open_anime_details))
+            self._gems_flow.add(AniListTile(item, self._images, self._open_anime_details))
         self._gems_flow.set_no_show_all(False)
         self._gems_flow.show_all()
 
@@ -3409,7 +3409,7 @@ class MoviesWindow(Gtk.Box):
             adult_badge = Gtk.Label(label="18+")
             adult_badge.set_halign(Gtk.Align.START)
             adult_badge.get_style_context().add_class("movie-adult-badge")
-            adult_badge.set_tooltip_text("Marked adult (18+) by ani.pm")
+            adult_badge.set_tooltip_text("Marked adult (18+) by the anime source")
             badge_row.pack_start(adult_badge, False, False, 0)
         content.pack_start(badge_row, False, False, 0)
 
@@ -3468,10 +3468,10 @@ class MoviesWindow(Gtk.Box):
 
         note = Gtk.Label(xalign=0)
         if isinstance(item, anipm.AniTitle):
-            # ani.pm catalogue titles play by their own AniList id; the other
+            # An AniList-sourced anime plays by its own AniList id; the other
             # anime providers join the fallback chain with the same id.
             note.set_label(
-                "Anime metadata from the ani.pm catalogue. Watch plays the "
+                "Anime metadata from AniList. Watch plays the "
                 "ani.pm player in the app using this title's AniList id "
                 "(never the MAL id or page slug); the episode list below "
                 "shows exactly which tracks ani.pm offers."
@@ -3522,7 +3522,7 @@ class MoviesWindow(Gtk.Box):
 
     def _load_anime_details(self, item, token: int) -> None:
         if isinstance(item, anipm.AniTitle):
-            # ani.pm catalogue title: series metadata, availability and the
+            # An AniList-sourced anime: series metadata, availability and the
             # episode list all come from ani.pm, keyed by the AniList id.
             def work_ani() -> None:
                 series = None

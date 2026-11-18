@@ -49,8 +49,10 @@ Browse → Download → Library → Play
 ## Movies, TV and anime
 
 - Dedicated Movies, TV Shows and Anime areas, with Search, My List and History
-- TMDB metadata for movies and TV, MyAnimeList ranking data for anime, and
-  ani.pm catalogue lookup for titles not found through the other anime sources
+- TMDB metadata for movies and TV, and MyAnimeList ranking data for anime;
+  search results come from TMDB and MyAnimeList only
+- ani.pm is a player, not a catalogue: a title is verified against
+  MyAnimeList first, and only then does verified anime play on ani.pm
 - Episode selection with a season picker and episode rows showing episode
   numbers, titles and air dates
 - Provider selection in the Media bar, saved per library and switched
