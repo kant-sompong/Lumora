@@ -69,6 +69,7 @@ from .qt_downloads import (
 from .qt_icons import icon
 from .qt_library import LibraryPage
 from .qt_media import MediaPage
+from .qt_media_tabs import MediaTabBar, MediaTabsController
 from .qt_settings import AboutDialog, SettingsDialog
 from .qt_theme import build_stylesheet
 from .qt_widgets import (
@@ -141,6 +142,12 @@ class Window(QMainWindow):
         column.setSpacing(0)
         column.addWidget(self._build_header())
 
+        # Browser-style media tabs live above every page, not inside Movies &
+        # TV, so they stay put while Browse or Downloads is open.
+        self.media_tabs_bar = MediaTabBar()
+        self.media_tabs_bar.setVisible(False)
+        column.addWidget(self.media_tabs_bar)
+
         self.stack = QStackedWidget()
         column.addWidget(self.stack, 1)
         shell.addWidget(body, 1)
@@ -182,6 +189,15 @@ class Window(QMainWindow):
         self.media.configure_requested.connect(lambda: self.show_settings("providers"))
         self.media.surprise_requested.connect(self.pick_random)
         self.stack.addWidget(self.media)
+        # One media page per tab, in this same page stack: a tab restores its
+        # own detail view, episode selection and scroll position.
+        self.media_tabs = MediaTabsController(
+            self.stack, self.media_tabs_bar, settings=self._settings,
+            cache_root=platform_support.cache_dir(),
+            on_empty=self._tabs_empty, on_show=self._tabs_shown,
+            on_hub=lambda: self.show_view("media"),
+        )
+        self.media.tab_host = self.media_tabs
 
         self.toast = Toast(root)
         # The interface preferences are applied before the first page is shown,
@@ -378,6 +394,18 @@ class Window(QMainWindow):
         elif key == "media":
             self.media.show_section(self.media._section)
             QTimer.singleShot(0, self.media.reload) if not self.media._loaded else None
+
+    # media tabs -----------------------------------------------------------
+    def _tabs_shown(self, page: QWidget, tab: object) -> None:
+        """A tab page is in front: the rail and header follow it."""
+        self._current = "media"
+        self._sync_rail()
+        self._sync_search_field("media")
+
+    def _tabs_empty(self) -> None:
+        """The last tab closed: back to the normal Movies & TV page."""
+        self.media_tabs_bar.setVisible(False)
+        self.show_view("media")
 
     def _remember(self, key: str) -> None:
         if self._history_index >= 0 and self._history[self._history_index] == key:
@@ -1127,6 +1155,10 @@ class Window(QMainWindow):
         self.toast.show_message("Image cache cleared.")
 
     def closeEvent(self, event) -> None:  # noqa: N802
+        # Every tab's player is stopped and its view released with the window.
+        controller = getattr(self, "media_tabs", None)
+        if controller is not None:
+            controller.close_all()
         if not self.isMaximized():
             self._settings.set_window_size(self.width(), self.height())
         self._settings.set_maximized(self.isMaximized())

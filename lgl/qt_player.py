@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
-from PySide6.QtCore import QEvent, QUrl, Qt, Signal
+from PySide6.QtCore import QEvent, QTimer, QUrl, Qt, Signal
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QFrame,
@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
 )
 
 from . import platform_support
+from .media_tabs import format_position, with_start
 from .qt_widgets import label
 
 # Qt refuses to load WebEngine once a QCoreApplication exists ("QtWebEngineWidgets
@@ -104,6 +105,13 @@ class EmbeddedPlayer(QWidget):
         self.setObjectName("playerPage")
         self._view_factory = view_factory or webengine_view
         self._url = ""
+        #: Where the video is, as last read from the page (seconds).
+        self._position = 0.0
+        #: ``(url, title, position)`` kept while this tab is in the background.
+        self._resume: tuple[str, str, float] = ("", "", 0.0)
+        self._sample_timer = QTimer(self)
+        self._sample_timer.setInterval(self.POSITION_SAMPLE_MS)
+        self._sample_timer.timeout.connect(self._request_position)
         self._fullscreen = False
         self._page_exit_requested = False
         self._hidden: list[tuple[QWidget, bool]] = []
@@ -161,11 +169,48 @@ class EmbeddedPlayer(QWidget):
             self._connect_view(self.view)
         self.fallback = self._build_fallback()
         self.pages.addWidget(self.fallback)
+        self.paused = self._build_paused()
+        self.pages.addWidget(self.paused)
         self.pages.setCurrentWidget(
             self.view if self.view is not None else self.fallback
         )
 
+    #: How often the open player asks the page where the video is.
+    POSITION_SAMPLE_MS = 4000
+
     # construction ---------------------------------------------------------
+    def _build_paused(self) -> QWidget:
+        """What a backgrounded tab shows: where it stopped and one way back.
+
+        Nothing is loaded here — returning to a tab must not start video by
+        itself — so the view can stay released until Resume is pressed.
+        """
+        panel = QWidget()
+        panel.setObjectName("playerPaused")
+        inner = QVBoxLayout(panel)
+        inner.setContentsMargins(28, 28, 28, 28)
+        inner.setSpacing(10)
+        inner.addStretch(1)
+        inner.addWidget(label("Playback paused", "pageTitle"))
+        self.paused_note = label(
+            "This tab was playing when you switched away.",
+            "detailNote", wrap=True,
+        )
+        inner.addWidget(self.paused_note)
+        self.resume_button = QPushButton("▶  Resume")
+        self.resume_button.setObjectName("suggested")
+        self.resume_button.setCursor(Qt.PointingHandCursor)
+        self.resume_button.setToolTip("Continue this tab from where it stopped")
+        self.resume_button.clicked.connect(self.resume)
+        inner.addWidget(self.resume_button, 0, Qt.AlignLeft)
+        self.paused_browser = QPushButton("Open in browser")
+        self.paused_browser.setObjectName("heroAction")
+        self.paused_browser.setCursor(Qt.PointingHandCursor)
+        self.paused_browser.clicked.connect(self.open_in_browser)
+        inner.addWidget(self.paused_browser, 0, Qt.AlignLeft)
+        inner.addStretch(1)
+        return panel
+
     def _build_fallback(self) -> QWidget:
         """What a build without WebEngine shows: a button, never a pop-up."""
         panel = QWidget()
@@ -207,7 +252,10 @@ class EmbeddedPlayer(QWidget):
     def play(self, url: str, title: str = "") -> None:
         """Show ``url`` in the page; no other window is opened."""
         self._url = str(url or "")
+        self._position = 0.0
+        self._resume = ("", "", 0.0)
         self.title_label.setText(title or "Play")
+        self._ensure_view()
         if self.view is not None:
             self.pages.setCurrentWidget(self.view)
             loader = getattr(self.view, "setUrl", None)
@@ -215,6 +263,142 @@ class EmbeddedPlayer(QWidget):
                 loader(QUrl(self._url))
         else:
             self.pages.setCurrentWidget(self.fallback)
+        if self._url:
+            self._sample_timer.start()
+
+    def play_at(self, url: str, title: str = "", position: object = 0.0) -> None:
+        """Play ``url`` starting at ``position``, the way a tab resumes."""
+        try:
+            seconds = max(0.0, float(position or 0.0))
+        except (TypeError, ValueError):
+            seconds = 0.0
+        self.play(with_start(url, seconds), title)
+        self._position = seconds
+
+    # tab lifecycle ---------------------------------------------------------
+    def is_playing(self) -> bool:
+        """True while a URL is loaded in a live view."""
+        return bool(self._url) and self.view is not None and (
+            self.pages.currentWidget() is self.view
+        )
+
+    def current_url(self) -> str:
+        """The URL on screen, or the one a paused tab will resume."""
+        return self._url or self._resume[0]
+
+    def capture_position(self) -> float:
+        """Ask the page where the video is, and answer with the last sample.
+
+        Reading ``currentTime`` is asynchronous, so the sampler keeps a recent
+        value and a fresh request is queued for the next switch.
+        """
+        self._request_position()
+        return float(self._position or 0.0)
+
+    def suspend(self) -> float:
+        """Background this tab: save the position, stop, free the view."""
+        url, title = self._url, self.title_label.text()
+        position = self.capture_position() if url else 0.0
+        if url:
+            self._resume = (url, title, position)
+        self.stop_playback()
+        self.release_resources()
+        if url:
+            where = format_position(position)
+            self.paused_note.setText(
+                f"Resume {title or 'this title'}" + (f" from {where}" if where else "")
+            )
+            self.pages.setCurrentWidget(self.paused)
+        return position
+
+    def pause_for_tab(self, url: str, title: str = "", position: object = 0.0) -> None:
+        """Show the paused panel for a tab restored from its saved state."""
+        try:
+            seconds = max(0.0, float(position or 0.0))
+        except (TypeError, ValueError):
+            seconds = 0.0
+        self._url = ""
+        self._resume = (str(url or ""), str(title or ""), seconds)
+        self.title_label.setText(title or "")
+        where = format_position(seconds)
+        self.paused_note.setText(
+            f"Resume {title or 'this title'}" + (f" from {where}" if where else "")
+        )
+        self.pages.setCurrentWidget(self.paused)
+
+    def resume(self) -> None:
+        """Continue the backgrounded tab at its saved position."""
+        url, title, position = self._resume
+        if not url:
+            return
+        self.play_at(url, title, position)
+
+    def release_resources(self) -> None:
+        """Free the web view of a backgrounded tab; it is rebuilt on resume."""
+        if self._fullscreen:
+            self.set_fullscreen(False)
+        self._sample_timer.stop()
+        view = self.view
+        self.view = None
+        if view is None:
+            return
+        stopper = getattr(view, "stop", None)
+        if callable(stopper):
+            try:
+                stopper()
+            except Exception:  # noqa: BLE001 - a view that is already gone
+                pass
+        self.pages.removeWidget(view)
+        deleter = getattr(view, "deleteLater", None)
+        if callable(deleter):
+            try:
+                deleter()
+            except Exception:  # noqa: BLE001
+                pass
+
+    def _ensure_view(self) -> bool:
+        """Build the view again after :meth:`release_resources` freed it."""
+        if self.view is not None:
+            return True
+        try:
+            view = self._view_factory(self.pages)
+        except Exception:  # noqa: BLE001 - a factory that fails means no player
+            view = None
+        if view is None:
+            return False
+        self.view = view
+        self.pages.addWidget(view)
+        self._connect_view(view)
+        return True
+
+    def _request_position(self) -> None:
+        """Ask the page for ``currentTime``; a stub view may not answer."""
+        view = self.view
+        getter = getattr(view, "page", None) if view is not None else None
+        try:
+            page = getter() if callable(getter) else getter
+        except Exception:  # noqa: BLE001 - a view that has no page yet
+            page = None
+        runner = getattr(page, "runJavaScript", None) if page is not None else None
+        if not callable(runner):
+            return
+        script = (
+            "(() => { const v = document.querySelector('video');"
+            " return v && isFinite(v.currentTime) ? v.currentTime : 0; })()"
+        )
+        try:
+            runner(script, self._store_position)
+        except Exception:  # noqa: BLE001 - a page that is still loading
+            pass
+
+    def _store_position(self, value: object) -> None:
+        try:
+            seconds = float(value)
+        except (TypeError, ValueError):
+            return
+        if seconds != seconds or seconds < 0:  # NaN or nonsense
+            return
+        self._position = seconds
 
     def offer_next_episode(self, tooltip: str = "") -> None:
         """Show the button that plays the episode after the one on screen."""
@@ -228,6 +412,7 @@ class EmbeddedPlayer(QWidget):
     def stop_playback(self) -> None:
         """Stop loading and clear the video, like the GTK page's Back."""
         self.clear_next_episode()
+        self._sample_timer.stop()
         if self._fullscreen:
             self.set_fullscreen(False)
         view = self.view
@@ -408,6 +593,8 @@ def make_player(parent: QWidget | None = None, *,
 
 __all__ = [
     "EmbeddedPlayer",
+    "format_position",
+    "with_start",
     "ViewFactory",
     "WEBENGINE_AVAILABLE",
     "make_player",
