@@ -902,6 +902,25 @@ class TrailerDialog(QDialog):
 # --------------------------------------------------------------------------
 
 
+@dataclass(frozen=True)
+class _VerifiedPlayback:
+    """What a MAL-verified anime is playing, so a manual pick can replay it.
+
+    ``card`` is ``None`` for a match resolved from an AniList page, which has
+    no TMDB card to replay; ``via_tmdb`` marks a play opened from a TMDB
+    catalogue card, whose providers use its season and episode numbers.
+    """
+
+    card: Card | None
+    title: str
+    anilist_id: int
+    ani_episode: int = 1
+    season: int | None = None
+    tmdb_episode: object | None = None
+    api_embed: str = ""
+    via_tmdb: bool = False
+
+
 class MediaPage(QWidget):
     """Movies & TV: Home, Movies, TV Shows, Anime, Search, My List, History."""
 
@@ -2701,10 +2720,8 @@ class MediaPage(QWidget):
 
     # provider health -------------------------------------------------------
     def _menu_providers(self) -> tuple[str, ...]:
-        """Every provider the menu offers: the same list the old combo had."""
-        if self._section == "anime":
-            return tuple(streaming.ANIME_PROVIDERS)
-        return tuple(streaming.PROVIDERS)
+        """Every provider the menu offers: only those that can play this section."""
+        return self._section_providers()
 
     def _section_providers(self) -> tuple[str, ...]:
         if self._section == "anime":
@@ -3112,32 +3129,54 @@ class MediaPage(QWidget):
     def _play_on_ani(self, card: Card, anilist_id: object, episode_number: object,
                      season: int | None, episode: object | None,
                      api_embed: str = "") -> None:
-        """Play an AniList id at an episode through the existing ani.pm embed.
+        """Play a verified anime from a TMDB card on ani.pm, always first.
 
-        The chosen anime provider keeps the play when it is not ani.pm.
+        This is the TMDB catalogue route for a MAL-verified anime, so the saved
+        anime provider never preempts ani.pm here either.  The verified session
+        is recorded with the AniList episode that plays, so picking another
+        provider replays this title at this episode for the current session
+        only (see :meth:`_switch_verified_session`).
         """
-        if self._anime_provider_choice() != streaming.ANI_PROVIDER:
-            self._play_anilist_provider(card.title, anilist_id)
+        identifier = int(anilist_id or 0)
+        if identifier <= 0:
+            self._end_forced_anime_session()
+            self._note_error(
+                qt_anime_routing.UNRESOLVED.format(title=card.title)
+            )
             return
+        played = int(episode_number or 1)
         try:
             url = qt_anime_routing.embed_url(
-                anilist_id, episode_number, language=self._language(),
+                identifier, played, language=self._language(),
                 api_embed=api_embed,
             )
         except (streaming.EmbedUrlError, ValueError) as exc:
+            self._end_forced_anime_session()
             self._note_error(str(exc))
             return
         self._record_history(card)
         if card.kind == "tv" and season is not None:
             # Bookkeeping stays in TMDB numbers: the next episode is looked up
             # in the seasons the page loaded, not in the AniList entry.
-            tracked = int(getattr(episode, "number", 0) or 0) or int(episode_number)
+            tracked = int(getattr(episode, "number", 0) or 0) or played
             self._playing_episode = (int(season), tracked)
             self._playing_card = card
         else:
             self._playing_episode = None
             self._playing_card = None
-        self.play_embedded(url, card.title)
+        self._verified_context = _VerifiedPlayback(
+            card=card, title=card.title, anilist_id=identifier,
+            ani_episode=played,
+            season=int(season) if season is not None else None,
+            tmdb_episode=episode, api_embed=api_embed, via_tmdb=True,
+        )
+        self._begin_forced_anime_session()
+        try:
+            self.play_embedded(url, card.title)
+        except Exception as exc:  # noqa: BLE001 - no player is not a fallback
+            self._end_forced_anime_session()
+            self._note_error(f"ani.pm could not be opened: {exc}")
+            return
         self._refresh_next_episode()
 
     def _ask_which_part(self, card: Card, target: object, season: int | None,
@@ -3378,6 +3417,7 @@ class MediaPage(QWidget):
         Sub or Dub.
         """
         if route.anilist_id <= 0:
+            self._end_forced_anime_session()
             self._note_error(route.error)
             return
         try:
@@ -3386,6 +3426,7 @@ class MediaPage(QWidget):
                 api_embed=api_embed,
             )
         except (streaming.EmbedUrlError, ValueError) as exc:
+            self._end_forced_anime_session()
             self._note_error(str(exc))
             return
         self._record_history(card)
@@ -3393,7 +3434,10 @@ class MediaPage(QWidget):
         self._playing_card = None
         # What is playing, so a manual provider pick replays exactly this
         # title without a new identity lookup or a title search.
-        self._verified_context = (card, route, api_embed)
+        self._verified_context = _VerifiedPlayback(
+            card=card, title=card.title,
+            anilist_id=int(route.anilist_id), api_embed=api_embed,
+        )
         self._begin_forced_anime_session()
         try:
             self.play_embedded(url, card.title)
@@ -3405,15 +3449,15 @@ class MediaPage(QWidget):
 
     def _play_forced_anilist(self, title: str, anilist_id: int,
                              api_embed: str = "") -> None:
-        """An ani.pm play with no card to record: the AniList match.
+        """An ani.pm play with no TMDB card: the search's AniList match.
 
-        The chosen anime provider still wins, so a title resolved through
-        AniList plays wherever the owner is actually watching.
+        A MAL-verified match is a verified anime like any other, so ani.pm
+        starts it whatever anime provider is saved.  The session is recorded
+        without a card, so a provider pick still replays this match for the
+        current session only (see :meth:`_switch_verified_session`).
         """
-        if self._anime_provider_choice() != streaming.ANI_PROVIDER:
-            self._play_anilist_provider(title, anilist_id)
-            return
         if anilist_id <= 0:
+            self._end_forced_anime_session()
             self._note_error(qt_anime_routing.UNRESOLVED.format(title=title))
             return
         try:
@@ -3421,10 +3465,15 @@ class MediaPage(QWidget):
                 anilist_id, 1, language=self._language(), api_embed=api_embed,
             )
         except (streaming.EmbedUrlError, ValueError) as exc:
+            self._end_forced_anime_session()
             self._note_error(str(exc))
             return
         self._playing_episode = None
         self._playing_card = None
+        self._verified_context = _VerifiedPlayback(
+            card=None, title=title, anilist_id=int(anilist_id),
+            api_embed=api_embed,
+        )
         self._begin_forced_anime_session()
         try:
             self.play_embedded(url, title)
@@ -3455,12 +3504,32 @@ class MediaPage(QWidget):
         context = getattr(self, "_verified_context", None)
         if context is None:
             return False
-        card, route, api_embed = context
         if key == streaming.ANI_PROVIDER:
-            self._play_forced_anime(card, route, api_embed)
+            if context.card is None:
+                self._play_forced_anilist(
+                    context.title, context.anilist_id, context.api_embed,
+                )
+            else:
+                self._play_on_ani(
+                    context.card, context.anilist_id, context.ani_episode,
+                    context.season, context.tmdb_episode, context.api_embed,
+                )
+            return True
+        if context.card is None:
+            self._play_anilist_provider(context.title, context.anilist_id)
+            # Still the same verified session, so picking ani.pm goes back.
+            self._verified_context = context
+            self._begin_forced_anime_session()
+            return True
+        if context.via_tmdb:
+            # A provider keyed by TMDB plays this season and episode, not the
+            # first episode of the series.
+            self._play_tmdb_plain(
+                context.card, key, context.season, context.tmdb_episode,
+            )
             return True
         self._play_anime_provider(
-            card, key, anilist_id=route.anilist_id,
+            context.card, key, anilist_id=context.anilist_id,
             keep_verified_session=True,
         )
         return True

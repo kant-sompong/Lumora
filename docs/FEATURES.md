@@ -55,9 +55,11 @@ Browse → Download → Library → Play
   queries TMDB only
 - ani.pm is a player, not a catalogue: a title is verified against
   MyAnimeList first, and verified anime then starts on ani.pm whatever anime
-  provider is saved; the header menu or the player's Try another provider
-  button switches it for the current playback only, so the saved preference
-  is never overwritten
+  provider is saved, including a title opened from a TMDB catalogue card; the
+  header menu on both frontends, or the GTK player's Try another provider
+  button, switches it for the current playback only, so the saved preference
+  is never overwritten.  The anime provider menu lists only providers that
+  can play the title in front of it
 - Episode selection with a season picker and episode rows showing episode
   numbers, titles and air dates
 - Provider selection in the Media bar, saved per library and switched

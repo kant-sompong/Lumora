@@ -37,6 +37,7 @@ from lgl import (  # noqa: E402
 )
 from lgl.qt_widgets import Toast  # noqa: E402
 from lgl.settings import Settings  # noqa: E402
+from lgl.tmdb import Episode  # noqa: E402
 
 ANIME = qt_media.Card(
     key="anime:21", title="One Piece", year="1999", kind="anime", mal_id=21
@@ -684,17 +685,31 @@ def test_a_player_that_cannot_open_does_not_strand_the_lock(app, monkeypatch, tm
     assert "could not be opened" in harness.toast_text
 
 
-def test_the_anilist_match_plays_on_the_saved_anime_provider(app, monkeypatch, tmp_path):
-    """The anime provider the owner picked also keeps the resolved match."""
+def test_a_verified_anilist_match_starts_on_ani_pm_whatever_is_saved(
+    app, monkeypatch, tmp_path
+):
+    """A MAL-verified search match is a verified anime like any other."""
     use_identity(monkeypatch, VERIFIED)
     harness = Harness(app, {"anime_streaming_provider": "toflix"}, tmp_path)
     harness.page._detail_card = ANIME
     harness.page._anilist_match = ("One Piece", 999)
     harness.page._play_anilist_match()
     settle(app, lambda: harness.loaded or harness.toast_text)
-    assert harness.loaded
-    assert "toflix" in harness.loaded[-1]
-    assert all("ani.pm/embed/ani/999" not in url for url in harness.loaded)
+    assert harness.loaded == [ANIME_URL]
+    assert harness.settings.get("anime_streaming_provider") == "toflix"
+
+    # A pick is session-only, and picking ani.pm goes back to the match.
+    harness.page._choose_provider("toflix")
+    pump(app)
+    assert len(harness.loaded) == 2
+    assert harness.loaded[-1] == "https://toflix.co/embed/anime/16498/1", (
+        "a switch must play the verified AniList entry, not the search's id"
+    )
+    assert harness.settings.get("anime_streaming_provider") == "toflix"
+
+    harness.page._choose_provider(streaming.ANI_PROVIDER)
+    pump(app)
+    assert harness.loaded[-1] == ANIME_URL
 
 
 def test_an_unverified_anilist_match_still_plays_the_match(app, monkeypatch, tmp_path):
@@ -976,6 +991,43 @@ def test_a_mal_verified_anime_plays_ani_pm_without_a_tmdb_client(app, monkeypatc
             break
     assert harness.loaded == ["https://ani.pm/embed/ani/16498/1/sub"]
     assert all("cinesrc" not in url for url in harness.loaded)
+
+
+def test_a_verified_tmdb_card_starts_on_ani_pm_with_its_mapped_episode(
+    app, monkeypatch, tmp_path
+):
+    """A TMDB catalogue card is the same verified session, with its episode."""
+    use_identity(monkeypatch, VERIFIED)
+    monkeypatch.setattr(
+        anime_map, "tmdb_to_anilist",
+        lambda *_a, **_k: anime_map.PlayTarget(
+            anilist_id=16498, episode=12, confident=True,
+        ),
+    )
+    harness = Harness(app, {"anime_streaming_provider": "vidy"}, tmp_path)
+    episode = Episode(season=2, number=5, title="The Wolf and the Lion")
+    harness.page._play_tmdb(TV, 2, episode)
+    settle(app, lambda: harness.loaded or harness.toast_text)
+    assert harness.loaded == ["https://ani.pm/embed/ani/16498/12/sub"], (
+        "the saved anime provider preempted ani.pm, or the mapped episode was lost"
+    )
+    assert harness.page._playing_episode == (2, 5)
+
+    # A manual pick is session-only, and plays the same season and episode.
+    harness.page._choose_provider("toflix")
+    pump(app)
+    assert len(harness.loaded) == 2
+    assert "toflix" in harness.loaded[-1]
+    assert "/1399/2/5" in harness.loaded[-1]
+    assert harness.settings.get("anime_streaming_provider") == "vidy", (
+        "a manual switch overwrote the saved preference"
+    )
+
+    # Switching back restores the anime and its mapped episode.
+    harness.page._choose_provider(streaming.ANI_PROVIDER)
+    pump(app)
+    assert harness.loaded[-1] == "https://ani.pm/embed/ani/16498/12/sub"
+    assert harness.page._playing_episode == (2, 5)
 
 
 def test_a_missing_mal_client_id_keeps_the_provider_for_a_tmdb_title(app, monkeypatch, tmp_path):

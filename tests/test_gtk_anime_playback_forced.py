@@ -612,6 +612,46 @@ def test_an_anilist_page_alone_does_not_bypass_mal_verification(window, monkeypa
     assert window.captured.players == []
 
 
+def test_an_ani_pm_build_failure_offers_another_provider(window, monkeypatch):
+    """A resolved ani.pm play that cannot be built leaves the choice explicit."""
+    install_core(monkeypatch)
+    called: list = []
+    monkeypatch.setattr(
+        window, "_watch_anime_unverified", lambda *args: called.append(args)
+    )
+
+    def broken(*_args, **_kwargs):
+        raise streaming.EmbedUrlError("ani.pm has no route for this entry")
+
+    monkeypatch.setattr(anipm, "playback_url", broken)
+    item = mal_item()
+    window._watch_anime(item)
+    assert wait_for(lambda: window.captured.messages)
+    assert window.captured.players == []
+    options = window.captured.message_options[-1]
+    label, action = options["alternative_action"]
+    assert label == "Try another provider"
+    action()
+    assert called and called[0][0] is item
+
+
+def test_the_anime_provider_menu_only_offers_anime_routes(window):
+    window._active_section = "anime"
+    window._refresh_provider_button()
+    offered = window._provider_choices()
+    assert streaming.ANI_PROVIDER in offered
+    assert set(offered) == {streaming.ANI_PROVIDER, *streaming.ANILIST_ANIME_PROVIDERS}
+    labels = [
+        child.get_label() for child in window._provider_menu.get_children()
+        if isinstance(child, Gtk.RadioMenuItem)
+    ]
+    assert len(labels) == len(offered)
+    assert streaming.LABELS["cinesrc"] not in labels
+
+    window._active_section = "movies"
+    assert window._provider_choices() == streaming.PROVIDERS
+
+
 def test_a_mal_page_resolution_failure_errors(window, monkeypatch):
     install_core(monkeypatch, links={})
     window._watch_anime(mal_item())

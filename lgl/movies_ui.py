@@ -1788,10 +1788,21 @@ class MoviesWindow(Gtk.Box):
         """Whether the header button offers anime or movie/TV providers."""
         return "anime" if self._active_section in ("anime", "gems") else "movies"
 
-    def _provider_choices(self) -> tuple[str, ...]:
+    def _section_providers(self) -> tuple[str, ...]:
+        """Providers that can play what the open section shows.
+
+        The anime menu only lists providers with a route for an anime title:
+        ani.pm by AniList id, and the providers that document one.
+        """
         if self._provider_section() == "anime":
-            return tuple(streaming.ANIME_PROVIDERS)
+            return tuple(
+                key for key in streaming.ANIME_PROVIDERS
+                if key == streaming.ANI_PROVIDER or streaming.has_anime_route(key)
+            )
         return tuple(streaming.PROVIDERS)
+
+    def _provider_choices(self) -> tuple[str, ...]:
+        return self._section_providers()
 
     def _current_provider(self) -> str:
         if self._provider_section() == "anime":
@@ -3920,7 +3931,18 @@ class MoviesWindow(Gtk.Box):
             )
         except (streaming.EmbedUrlError, ValueError) as error:
             self._anime_status.set_text(str(error))
-            self._open_player_message(title, str(error))
+            # ani.pm could not build this play: say so, and leave another
+            # provider to an explicit click rather than switching on its own.
+            self._open_player_message(
+                title,
+                str(error),
+                alternative_action=(
+                    "Try another provider",
+                    lambda: self._watch_anime_unverified(
+                        item, title, number, language
+                    ),
+                ),
+            )
             return
         label = anipm.LANGUAGE_LABELS.get(track, track)
         # Watch state, not storage: the episode this title is on, so Watch
