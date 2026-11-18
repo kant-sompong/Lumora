@@ -18,7 +18,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
-from lgl import anipm, qt_media, tmdb  # noqa: E402
+from lgl import anipm, mal, qt_media, tmdb  # noqa: E402
 
 
 @pytest.fixture(scope="module")
@@ -51,6 +51,18 @@ class Results:
 
     def search(self, _query):
         return list(self.items)
+
+
+class MalResults(Results):
+    """A MAL client that remembers the titles it was asked for."""
+
+    def __init__(self, items):
+        super().__init__(items)
+        self.queries: list[str] = []
+
+    def search(self, query):
+        self.queries.append(str(query))
+        return super().search(query)
 
 
 @pytest.fixture
@@ -101,6 +113,36 @@ def test_the_search_page_shows_tmdb_rows_and_never_queries_anipm(
     assert titles == ["The Matrix"]
     note = page.search_note.text()
     assert "1 result" in note
+    assert "ani.pm" not in note
+
+
+def test_the_search_page_still_asks_mal_and_shows_its_rows(
+    app, page, anipm_search_calls
+):
+    """Removing ani.pm must not remove MAL, Qt's other catalogue source."""
+    page._tmdb = Results([
+        tmdb.MediaItem(kind="movie", tmdb_id=603, title="The Matrix"),
+    ])
+    mal_client = MalResults([
+        mal.AnimeItem(
+            id=16498,
+            title="Attack on Titan",
+            year="2013",
+            media_type="tv",
+            episodes=25,
+        ),
+    ])
+    page._mal = mal_client
+
+    search(page, "titan")
+
+    assert wait_for(app, lambda: len(page._search_grid.cards()) == 2)
+    assert mal_client.queries == ["titan"], "MAL was not asked for anime rows"
+    assert anipm_search_calls == []
+    titles = [poster.card.title for poster in page._search_grid.cards()]
+    assert titles == ["The Matrix", "Attack on Titan"]
+    note = page.search_note.text()
+    assert "2 results" in note
     assert "ani.pm" not in note
 
 

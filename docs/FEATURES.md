@@ -49,8 +49,10 @@ Browse → Download → Library → Play
 ## Movies, TV and anime
 
 - Dedicated Movies, TV Shows and Anime areas, with Search, My List and History
-- TMDB metadata for movies and TV, and MyAnimeList ranking data for anime;
-  search results come from TMDB and MyAnimeList only
+- TMDB metadata for movies and TV, and MyAnimeList ranking data for anime
+- Search results come from TMDB, plus MyAnimeList on the Qt frontend: the Qt
+  Search page combines TMDB and MyAnimeList rows, while the GTK Search page
+  queries TMDB only
 - ani.pm is a player, not a catalogue: a title is verified against
   MyAnimeList first, and only then does verified anime play on ani.pm
 - Episode selection with a season picker and episode rows showing episode
