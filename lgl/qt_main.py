@@ -379,26 +379,7 @@ class Window(QMainWindow):
         if key == "downloads" and self.downloads is None:
             self.toast.show_message("Downloads are not available.", error=True)
             return
-        page = {
-            "browse": self.browse,
-            "library": self.library,
-            "downloads": self.downloads,
-            "media": self.media,
-        }[key]
-        showing_tab = False
-        if key == "media":
-            if self._media_hub:
-                self._media_hub = False
-            elif self.media_tabs.active_id:
-                # Returning to Media brings the open tab back, paused.
-                showing_tab = self.media_tabs.show_active()
-        else:
-            # Leaving Media stops the video and frees its engine; the tab keeps
-            # its page, its selection and its position for when it is back.
-            self.media_tabs.suspend_shown()
-            # Playback started from the hub itself is not a tab: release it too,
-            # so nothing keeps playing behind another app page.
-            self.media.release_playback()
+        page, showing_tab = self._prepare_view(key)
         if not showing_tab:
             self._transition_to(page)  # type: ignore[arg-type]
         self.browse.detail.hide() if key != "browse" else None
@@ -413,6 +394,35 @@ class Window(QMainWindow):
         elif key == "media":
             self.media.show_section(self.media._section)
             QTimer.singleShot(0, self.media.reload) if not self.media._loaded else None
+
+    def _prepare_view(self, key: str) -> tuple[QWidget | None, bool]:
+        """Resolve ``key``'s page and run the Media leave/return lifecycle.
+
+        Shared by the rail, the shortcuts and the header's Back/Forward
+        buttons, so history navigation stops a playing tab or a hub stream
+        exactly like a rail click does.
+        """
+        page = {
+            "browse": self.browse,
+            "library": self.library,
+            "downloads": self.downloads,
+            "media": self.media,
+        }.get(key)
+        showing_tab = False
+        if key == "media":
+            if self._media_hub:
+                self._media_hub = False
+            elif self.media_tabs.active_id:
+                # Returning to Media brings the open tab back, paused.
+                showing_tab = self.media_tabs.show_active()
+        else:
+            # Leaving Media stops the video and frees its engine; the tab keeps
+            # its page, its selection and its position for when it is back.
+            self.media_tabs.suspend_shown()
+            # Playback started from the hub itself is not a tab: release it too,
+            # so nothing keeps playing behind another app page.
+            self.media.release_playback()
+        return page, showing_tab
 
     # media tabs -----------------------------------------------------------
     def _tabs_shown(self, page: QWidget, tab: object) -> None:
@@ -462,13 +472,14 @@ class Window(QMainWindow):
         self._apply_history(self._history[self._history_index])
 
     def _apply_history(self, key: str) -> None:
-        page = {
-            "browse": self.browse, "library": self.library,
-            "downloads": self.downloads, "media": self.media,
-        }.get(key)
+        # The same lifecycle a rail click runs: leaving Media through Back or
+        # Forward stops the player instead of leaving it running behind the
+        # page history moves to.
+        page, showing_tab = self._prepare_view(key)
         if page is None:
             return
-        self._transition_to(page)
+        if not showing_tab:
+            self._transition_to(page)
         self._current = key
         self._sync_rail()
         self._sync_search_field(key)

@@ -358,6 +358,100 @@ def test_leaving_the_media_view_twice_stays_suspended(qt_window, app):
     assert window.media_tabs.showing is False
 
 
+def test_back_leaving_media_suspends_a_playing_tab(qt_window, app):
+    """B1: the header's Back runs the same cleanup as the rail."""
+    window = qt_window
+    window.show_view("browse")
+    pump(app)
+    window.media.open_card(card("movie:9", "Interstellar"))
+    pump(app)
+    window.show_view("media")
+    pump(app)
+    page = window.media_tabs.page_for(window.media_tabs.active_id)
+    page.play_embedded("https://provider.test/watch/9", "Interstellar")
+    view = page.player.view
+    view.position = 90.0
+    assert page.player.is_playing() is True
+
+    window.go_back()
+    pump(app)
+
+    assert window._current == "browse"  # noqa: SLF001
+    assert window.stack.currentWidget() is window.browse
+    # Nothing is left loaded, so no page can keep playing behind Browse.
+    assert page.player.is_playing() is False
+    assert page.player.view is None
+    assert view.stopped >= 1
+    saved = window.media_tabs.store.find("movie:9")
+    assert saved.playing is True
+    assert saved.position == pytest.approx(90.0)
+
+    # Forward brings the same tab back, paused, with nothing autoplaying.
+    window.go_forward()
+    pump(app)
+
+    assert window._current == "media"  # noqa: SLF001
+    assert window.stack.currentWidget() is page
+    assert page.player.is_playing() is False
+    assert page.player.view is None
+    assert page.player.pages.currentWidget() is page.player.paused
+    assert "1:30" in page.player.paused_note.text()
+
+
+def test_forward_leaving_media_suspends_a_playing_tab(qt_window, app):
+    """B1: the header's Forward cleans up too, not only Back."""
+    window = qt_window
+    window.show_view("browse")
+    pump(app)
+    window.media.open_card(card("movie:9", "Interstellar"))
+    pump(app)
+    window.show_view("media")
+    pump(app)
+    window.show_view("library")
+    pump(app)
+
+    window.go_back()
+    pump(app)
+    page = window.media_tabs.page_for(window.media_tabs.active_id)
+    assert window.stack.currentWidget() is page
+    page.play_embedded("https://provider.test/watch/9", "Interstellar")
+    view = page.player.view
+    assert page.player.is_playing() is True
+
+    window.go_forward()
+    pump(app)
+
+    assert window._current == "library"  # noqa: SLF001
+    assert window.stack.currentWidget() is window.library
+    assert page.player.is_playing() is False
+    assert page.player.view is None
+    assert view.stopped >= 1
+
+
+def test_leaving_media_by_history_stops_the_hub_player(qt_window, app):
+    """B1: a hub stream, not a tab, is released when Back leaves Media."""
+    window = qt_window
+    hub = EmbeddedPlayer(window.media, view_factory=window.stub_factory._view)
+    window.media.player = hub
+    window.show_view("browse")
+    pump(app)
+    window.show_view("media")
+    pump(app)
+    window.media.play_embedded("https://provider.test/hub", "Hub title")
+    pump(app)
+    view = hub.view
+    assert hub.is_playing() is True
+
+    window.go_back()
+    pump(app)
+
+    assert window._current == "browse"  # noqa: SLF001
+    assert window.stack.currentWidget() is window.browse
+    assert hub.is_playing() is False
+    assert hub.view is None
+    assert view.stopped >= 1
+
+
 def test_two_tabs_cannot_play_at_the_same_time(tabs):
     controller, stack, _bar, factory = tabs
     first = controller.open(card("movie:1", "One"))
