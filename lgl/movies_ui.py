@@ -5264,12 +5264,13 @@ class MoviesWindow(Gtk.Box):
         if playing["kind"] == "anilist":
             self._play_ani_verified(
                 playing["item"], playing["title"], playing["number"],
-                playing["language"], route,
+                playing.get("language"), route,
                 preferred=None if provider == streaming.ANI_PROVIDER else provider,
             )
             return True
         item = playing["item"]
-        season, episode = playing["season"], playing["episode"]
+        season = playing["season"]
+        episode = playing.get("episode")
         if provider == streaming.ANI_PROVIDER:
             self._play_forced_ani(item, season, episode, route)
             return True
