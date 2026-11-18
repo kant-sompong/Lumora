@@ -2676,8 +2676,17 @@ class MediaPage(QWidget):
         self._update_badge()
 
     def _choose_provider(self, key: str) -> None:
-        """Persist a provider picked from the menu, exactly as the combo did."""
-        if self.settings is None or not key:
+        """Persist a provider picked from the menu, exactly as the combo did.
+
+        While a MAL-verified anime plays, the pick is a switch for this
+        playback session only: the same title is replayed on that provider and
+        the saved anime-provider preference is left untouched.
+        """
+        if not key:
+            return
+        if self._switch_verified_session(str(key)):
+            return
+        if self.settings is None:
             return
         if self._section == "anime":
             self.settings.set("anime_streaming_provider", key)
@@ -3309,18 +3318,28 @@ class MediaPage(QWidget):
 
         run_async(work, done, failed)
 
-    def _play_anime_provider(self, card: Card, provider: str) -> None:
-        """Today's unforced play path for a MAL-keyed anime card."""
-        self._end_forced_anime_session()
+    def _play_anime_provider(
+        self, card: Card, provider: str, *, anilist_id: int = 0,
+        keep_verified_session: bool = False,
+    ) -> None:
+        """Today's unforced play path for a MAL-keyed anime card.
+
+        ``anilist_id`` is an AniList entry already resolved for this title, so a
+        manual switch never searches a title again.  ``keep_verified_session``
+        leaves the verified-anime session in place, which keeps the next
+        provider pick session-only too.
+        """
+        if not keep_verified_session:
+            self._end_forced_anime_session()
         try:
             if provider == streaming.ANI_PROVIDER and card.mal_id:
                 url = streaming.ani_mal_url(card.mal_id, 1, language=self._language())
             elif card.mal_id and provider in streaming.ANILIST_ANIME_PROVIDERS:
-                anilist_id = streaming.anilist_search(card.title)
-                if not anilist_id:
+                found = int(anilist_id or 0) or streaming.anilist_search(card.title)
+                if not found:
                     self._note_error("No AniList id matched this title.")
                     return
-                url = streaming.anime_url(provider, anilist_id, 1)
+                url = streaming.anime_url(provider, found, 1)
             elif card.tmdb_id:
                 # A TMDB provider plays anime too; it needs the TMDB id that a
                 # MAL-keyed title may not have, so ask TMDB for one.
@@ -3343,22 +3362,21 @@ class MediaPage(QWidget):
         self._refresh_next_episode()
 
     def _play_forced_anime(self, card: Card, route, api_embed: str = "") -> None:
-        """Play a MAL-verified anime on ani.pm, unless another provider is picked.
+        """Play a MAL-verified anime on ani.pm first, whatever is saved.
 
-        ani.pm is the default for verified anime; the provider menu is never
-        switched off, and choosing another anime provider plays this title
-        there instead, on that provider's own route.  A missing AniList id is
-        still an error, not a reason to search for the title elsewhere - and
-        the MAL id is never handed to ani.pm in its place.
+        ani.pm is the first provider for verified anime; the saved anime
+        preference never preempts it, it only decides what a manual switch
+        offers first.  The provider menu is never switched off, and picking
+        another anime provider replays this title there for the current
+        session only (see :meth:`_switch_verified_session`).  A missing AniList
+        id is still an error, not a reason to search for the title elsewhere -
+        and the MAL id is never handed to ani.pm in its place.
 
         ``api_embed`` is the embed URL ani.pm's API returned for this exact
         episode and track, when one is available.  A hard track has no other
         route: without its embed it raises and is reported, never swapped for
         Sub or Dub.
         """
-        if self._anime_provider_choice() != streaming.ANI_PROVIDER:
-            self._play_anime_provider(card, self._anime_provider_choice())
-            return
         if route.anilist_id <= 0:
             self._note_error(route.error)
             return
@@ -3373,6 +3391,9 @@ class MediaPage(QWidget):
         self._record_history(card)
         self._playing_episode = None
         self._playing_card = None
+        # What is playing, so a manual provider pick replays exactly this
+        # title without a new identity lookup or a title search.
+        self._verified_context = (card, route, api_embed)
         self._begin_forced_anime_session()
         try:
             self.play_embedded(url, card.title)
@@ -3414,17 +3435,40 @@ class MediaPage(QWidget):
         self._refresh_next_episode()
 
     def _begin_forced_anime_session(self) -> None:
-        """Note that ani.pm is playing; the provider menu stays usable.
+        """Note that a verified anime is playing; the provider menu stays usable.
 
         The menu used to be switched off here.  It is not any more: ani.pm is
-        the default for verified anime, not the only provider the owner may
+        the first provider for a verified anime, not the only one the owner may
         use, so picking another one has to work during playback too.
         """
         self._forced_anime_playback = True
 
+    def _switch_verified_session(self, key: str) -> bool:
+        """Play the verified anime on screen on ``key``: this session only.
+
+        The saved ``anime_streaming_provider`` is never rewritten here, and the
+        title already playing is the one replayed, with the AniList entry the
+        identity resolved, so a switch needs no new lookup and no title search.
+        ``False`` means no verified anime is playing, so the pick is a normal
+        preference change.
+        """
+        context = getattr(self, "_verified_context", None)
+        if context is None:
+            return False
+        card, route, api_embed = context
+        if key == streaming.ANI_PROVIDER:
+            self._play_forced_anime(card, route, api_embed)
+            return True
+        self._play_anime_provider(
+            card, key, anilist_id=route.anilist_id,
+            keep_verified_session=True,
+        )
+        return True
+
     def _end_forced_anime_session(self) -> None:
-        """Forget the ani.pm playback, for the next-request bookkeeping."""
+        """Forget the verified-anime playback, for the next-request bookkeeping."""
         self._forced_anime_playback = False
+        self._verified_context = None
 
     def _record_history(self, card: Card) -> None:
         if self.settings is None or card.key.startswith("anime:"):

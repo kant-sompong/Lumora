@@ -58,7 +58,8 @@ REASON_TEXT: dict[str, str] = {
 UNRESOLVED = (
     "“{title}” is verified anime on MyAnimeList, but its AniList entry could "
     "not be resolved (missing or ambiguous), so ani.pm cannot play it. "
-    "Verified anime is not played on another provider."
+    "Pick another provider from the menu to watch it there; Lumora will not "
+    "switch on its own."
 )
 
 

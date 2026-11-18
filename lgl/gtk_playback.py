@@ -12,9 +12,10 @@ both take the frontend's settings object so the MAL client id can be loaded.
 
 The rule, identical for every Watch entry point:
 
-* **verified** anime plays on ani.pm only - not the provider selected for
-  movies and TV, and not a saved anime-provider preference.  The AniList id is
-  the identity's ``playable_anilist_id``, never a MAL id, and a verified title
+* **verified** anime plays on ani.pm first - not the provider selected for
+  movies and TV, and not a saved anime-provider preference, which only orders
+  the chain kept behind ani.pm for a manual switch.  The AniList id is the
+  identity's ``playable_anilist_id``, never a MAL id, and a verified title
   whose AniList entry is missing or ambiguous is an error (:data:`UNRESOLVED` /
   :data:`AMBIGUOUS`), never a silent fall back to another provider;
 * an **unverified** title - including one whose lookup was unavailable, had no
@@ -57,13 +58,13 @@ MODE_ERROR = "error"
 #: anime is never quietly handed to another provider.
 UNRESOLVED = (
     "This title is confirmed anime, but its AniList entry could not be "
-    "resolved, so ani.pm cannot play it. No other provider is used for "
-    "verified anime."
+    "resolved, so ani.pm cannot play it. Pick another provider yourself to "
+    "watch it there; Lumora will not switch on its own."
 )
 AMBIGUOUS = (
     "This title is confirmed anime, but it matches more than one AniList "
-    "entry, so ani.pm cannot choose one safely. No other provider is used "
-    "for verified anime."
+    "entry, so ani.pm cannot choose one safely. Pick another provider "
+    "yourself to watch it there; Lumora will not switch on its own."
 )
 
 

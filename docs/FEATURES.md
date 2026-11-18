@@ -54,7 +54,10 @@ Browse → Download → Library → Play
   Search page combines TMDB and MyAnimeList rows, while the GTK Search page
   queries TMDB only
 - ani.pm is a player, not a catalogue: a title is verified against
-  MyAnimeList first, and only then does verified anime play on ani.pm
+  MyAnimeList first, and verified anime then starts on ani.pm whatever anime
+  provider is saved; the header menu or the player's Try another provider
+  button switches it for the current playback only, so the saved preference
+  is never overwritten
 - Episode selection with a season picker and episode rows showing episode
   numbers, titles and air dates
 - Provider selection in the Media bar, saved per library and switched
