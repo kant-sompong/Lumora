@@ -69,6 +69,40 @@ Browse → Download → Library → Play
 - Trailer lookup and preview where a trailer is available and the platform's
   embedded browser supports it
 
+### Media tabs
+
+Opening a title in the GTK Media page keeps it in a browser-style tab strip
+under the header, on both Movies & TV and anime pages:
+
+- One tab per title: opening a title that is already open selects its tab
+  instead of building a second page
+- Each tab remembers its own details page, seasons, scroll position and the
+  season and episode it was on, including Next episode
+- Switching tabs pauses the player: the tab that was playing keeps its stream,
+  provider and last known position, and comes back as a paused panel with
+  **Resume** and a note of where it stopped. Nothing starts playing again on
+  its own
+- Closing the active tab stops its playback and selects a neighbouring tab;
+  closing an inactive tab leaves the open page alone
+- Leaving Media (another section, or Back) stops playback and saves the tab's
+  place, so coming back shows the paused panel rather than an empty player
+- A MAL-verified anime keeps its session with its tab: the provider badge, the
+  anime-only provider menu and the AniList episode come back with the tab, and
+  switching to a tab without a verified anime clears that session instead of
+  carrying it over
+- A provider picked while a verified anime plays switches that play only; the
+  saved anime provider preference is never rewritten by tab switching or by a
+  session-scoped pick
+- The open player's position is sampled from the page and ignored when it
+  arrives from a view that has since been switched away, closed or torn down,
+  so a late answer cannot overwrite the active tab's position
+
+Tabs are session-only: they live until the app closes and are not written to
+disk. Playback position is the last position the page reported, which depends
+on the provider's player exposing a readable video element, and a resumed
+stream starts from that hint only where the provider honours it. Media tabs
+are a GTK feature; the Qt frontend keeps its own tab behaviour.
+
 ### Media home and feed
 
 The GTK media home includes a cinematic hero and a set of poster shelves:

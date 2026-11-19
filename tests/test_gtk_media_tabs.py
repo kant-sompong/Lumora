@@ -19,7 +19,7 @@ try:
 except (ValueError, ImportError):  # pragma: no cover - GTK 3 typelib missing
     pytest.skip("GTK 3 is not installed", allow_module_level=True)
 
-from lgl import movies_ui  # noqa: E402
+from lgl import movies_ui, streaming  # noqa: E402
 from lgl.tmdb import MediaItem  # noqa: E402
 
 
@@ -488,6 +488,172 @@ def test_switching_tabs_carries_a_verified_anime_session(window):
 
     assert window._forced_playback == session
     assert refreshed
+
+
+def test_switching_to_a_tab_without_a_session_clears_the_verified_context(window):
+    """R1: ``_forced_playback`` follows the tab, so no session outlives it."""
+    open_title(window, movie(1, "Frieren", "tv"))
+    session = {
+        "kind": "tmdb",
+        "item": window._current_item,
+        "season": 1,
+        "episode": None,
+        "route": object(),
+        "provider": "ani",
+        "number": 5,
+    }
+    window._forced_playback = dict(session)
+    open_title(window, movie(2, "Another", "tv"))
+    assert tab(window, "tv:1").payload["verified_playback"]["number"] == 5
+
+    window._show_tab(tab(window, "tv:1").tab_id)
+    pump(0.02)
+    assert window._forced_playback == session
+    assert window._current_provider() == "ani"
+    assert "ani" in window._provider_choices()
+
+    window._show_tab(tab(window, "tv:2").tab_id)
+    pump(0.02)
+    assert window._forced_playback is None, "the left tab's session stayed active"
+    # The badge and menu now name the tab in front, not the one just left.
+    assert window._current_provider() == window._streaming_provider()
+    assert tuple(window._provider_choices()) == tuple(streaming.PROVIDERS)
+    label = movies_ui.streaming.LABELS.get(window._streaming_provider())
+    assert window._provider_label.get_text() == label
+
+
+def test_a_session_belongs_only_to_the_tab_that_plays_it(window):
+    """R1: another title's session is never written into the active tab."""
+    open_title(window, movie(1, "One"))
+    window._forced_playback = {
+        "kind": "tmdb",
+        "item": movie(99, "Somewhere Else"),
+        "season": 1,
+        "episode": None,
+        "route": object(),
+        "provider": "ani",
+    }
+
+    window._capture_active_tab()
+
+    assert "verified_playback" not in tab(window, "movie:1").payload
+
+
+def test_a_cleared_session_is_not_resurrected_by_a_later_switch(window):
+    """R1: ending a session must clear the tab's saved copy too."""
+    open_title(window, movie(1, "Frieren", "tv"))
+    window._forced_playback = {
+        "kind": "tmdb",
+        "item": window._current_item,
+        "season": 1,
+        "episode": None,
+        "route": object(),
+        "provider": "ani",
+    }
+    open_title(window, movie(2, "Another", "tv"))
+    assert "verified_playback" in tab(window, "tv:1").payload
+
+    # Back to the anime tab; its session comes with it.
+    window._show_tab(tab(window, "tv:1").tab_id)
+    pump(0.02)
+    assert window._forced_playback is not None
+
+    # The session ends (for example an unverified play), then the tab is left:
+    # the saved copy must go with it, not come back on the next return.
+    window._forced_playback = None
+    window._show_tab(tab(window, "tv:2").tab_id)
+    pump(0.02)
+    assert "verified_playback" not in tab(window, "tv:1").payload
+
+    window._show_tab(tab(window, "tv:1").tab_id)
+    pump(0.02)
+    assert window._forced_playback is None
+
+
+class PositionView:
+    """A stand-in WebKit view: it answers only when the test says so."""
+
+    def __init__(self, seconds: float = 0.0) -> None:
+        self.seconds = seconds
+        self.questions: list = []
+
+    def run_javascript(self, _script, _cancellable, callback, _data) -> None:
+        self.questions.append(callback)
+
+    def run_javascript_finish(self, result):
+        if isinstance(result, Exception):
+            raise result
+        return self
+
+    def get_js_value(self):
+        return self
+
+    def to_double(self) -> float:
+        return self.seconds
+
+    def answer(self, index: int = -1) -> None:
+        self.questions[index](self, None)
+
+
+def test_a_position_answer_from_a_closed_tab_is_ignored(window):
+    """R2: a released view's answer cannot overwrite the saved position."""
+    open_title(window, movie(1, "One"))
+    open_title(window, movie(2, "Two"))
+    window._stack.set_visible_child_name("player")
+    window._webview = view = PositionView(754.0)
+    window._playback_url = "https://provider.test/2"
+    window._playback_key = "movie:2"
+    window._playback_position = 754.0
+    window._request_position()
+
+    window._show_tab(tab(window, "movie:1").tab_id)
+    pump(0.02)
+    assert window._webview is None
+
+    view.answer()
+    assert window._playback_position == pytest.approx(754.0)
+    assert tab(window, "movie:2").position == pytest.approx(754.0)
+
+
+def test_a_position_answer_from_a_previous_view_is_ignored(window):
+    """R2: only the view in the player may report a position."""
+    window._webview = old = PositionView(754.0)
+    window._request_position()
+
+    window._webview = new = PositionView(100.0)
+    window._request_position()
+
+    old.answer()
+    assert window._playback_position == 0.0
+
+    new.answer()
+    assert window._playback_position == pytest.approx(100.0)
+
+
+def test_a_superseded_position_answer_is_ignored(window):
+    """R2: an older question cannot overwrite a newer answer."""
+    window._webview = view = PositionView(10.0)
+    window._request_position()
+    view.seconds = 20.0
+    window._request_position()
+
+    view.answer(0)
+    assert window._playback_position == 0.0
+
+    view.answer(1)
+    assert window._playback_position == pytest.approx(20.0)
+
+
+def test_a_position_answer_that_fails_is_ignored(window):
+    """R2: a torn-down engine's error is not a position."""
+    window._webview = view = PositionView(90.0)
+    window._request_position()
+
+    view.questions[-1](view, RuntimeError("the view was released"))
+    assert window._playback_position == 0.0
+
+    view.answer(0)
+    assert window._playback_position == pytest.approx(90.0)
 
 
 @pytest.mark.skipif(

@@ -1626,6 +1626,9 @@ class MoviesWindow(Gtk.Box):
         #: outside a tab can never be saved into one.
         self._playback_key = ""
         self._position_source = 0
+        #: Newest position question asked of a web view.  An answer carrying an
+        #: older tag came from a view that is already gone, so it is dropped.
+        self._position_token = 0
         #: Season and scroll to reapply once a restored page has its data.
         self._restore_season = None
         self._restore_scroll = None
@@ -1952,6 +1955,8 @@ class MoviesWindow(Gtk.Box):
 
     def stop_playback(self) -> None:
         self._stop_position_sampling()
+        # Any answer still owed by the view being released is now stale.
+        self._position_token = getattr(self, "_position_token", 0) + 1
         if getattr(self, "_player_fullscreen", False):
             self._set_player_fullscreen(False)
         view = getattr(self, "_webview", None)
@@ -2209,9 +2214,17 @@ class MoviesWindow(Gtk.Box):
         if getattr(self, "_current_anime_details", None) is not None:
             payload["anime_details"] = self._current_anime_details
         # A verified anime keeps its provider session with its tab, so a switch
-        # away and back keeps the AniList episode and the provider badge.
-        if getattr(self, "_forced_playback", None):
-            payload["verified_playback"] = dict(self._forced_playback)
+        # away and back keeps the AniList episode and the provider badge.  The
+        # session is only this tab's when it plays this tab's title: a session
+        # that belongs elsewhere is never written here.
+        session = getattr(self, "_forced_playback", None)
+        owner = self._media_key(session.get("item")) if session else ""
+        if session and (not owner or owner == tab.key):
+            payload["verified_playback"] = dict(session)
+        else:
+            # A session that ended must not be left in the tab's saved state,
+            # or a later switch would resurrect a provider it no longer uses.
+            payload.pop("verified_playback", None)
         if playing:
             # A paused tab has no web view, so its last known position is its
             # saved one; asking the page would only lose it.
@@ -2258,14 +2271,15 @@ class MoviesWindow(Gtk.Box):
             self._restoring_tab = False
         # A verified anime comes back as it left: same session, provider and
         # AniList episode, so the badge, the session-scoped provider menu and a
-        # provider switch all agree with what was playing.
+        # provider switch all agree with what was playing.  A tab without one
+        # clears whatever the tab that was just left was playing, so no other
+        # tab's session follows it here.
         state = getattr(tab, "payload", {}) or {}
         verified = state.get("verified_playback")
-        if verified:
-            self._forced_playback = dict(verified)
-            refresh = getattr(self, "_refresh_provider_button", None)
-            if callable(refresh):
-                refresh()
+        self._forced_playback = dict(verified) if verified else None
+        refresh = getattr(self, "_refresh_provider_button", None)
+        if callable(refresh):
+            refresh()
         self._render_tabs()
 
     def _restore_scroll_now(self) -> bool:
@@ -2369,16 +2383,34 @@ class MoviesWindow(Gtk.Box):
         runner = getattr(view, "run_javascript", None)
         if not callable(runner):
             return
+        # Every question is tagged, so an answer can be matched to the view and
+        # the request it belongs to before it is allowed to move the position.
+        self._position_token = getattr(self, "_position_token", 0) + 1
+        token = self._position_token
+
+        def answer(answered, result, _data=None) -> None:
+            self._position_read(answered, result, _data, token=token)
+
         try:
-            runner(self.POSITION_SCRIPT, None, self._position_read, None)
+            runner(self.POSITION_SCRIPT, None, answer, None)
         except Exception:  # noqa: BLE001 - a page that is still loading
             return
 
-    def _position_read(self, view, result, _data=None) -> None:
+    def _position_read(self, view, result, _data=None, token=None) -> None:
+        # A callback from a view that was replaced, released or torn down, or
+        # from a question a newer one has superseded, is not this tab's news.
+        # WebKitGTK may still deliver it after a switch or a close.
+        if view is not getattr(self, "_webview", None):
+            return
+        if token is not None and token != getattr(self, "_position_token", 0):
+            return
         try:
             answer = view.run_javascript_finish(result)
             seconds = float(answer.get_js_value().to_double())
         except Exception:  # noqa: BLE001 - an engine without an answer
+            return
+        if view is not getattr(self, "_webview", None):
+            # ``run_javascript_finish`` may pump the loop and let a switch in.
             return
         if seconds == seconds and seconds >= 0:
             self._playback_position = seconds
