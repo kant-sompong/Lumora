@@ -818,3 +818,148 @@ def test_provider_switch_after_a_tab_round_trip_keeps_the_mapped_episode(window)
 
     assert calls == ["toflix"]
     assert window._forced_playback["number"] == 5
+
+
+def test_home_offers_its_own_providers_not_a_tabs_saved_anime_session(window):
+    """N1: a tab's verified session is not the Home page's provider section."""
+    from lgl import anipm
+
+    window._open_anime_details(anipm.AniTitle(anilist_id=7, title="Frieren"))
+    pump(0.02)
+    anime = window._tabs.active
+    window._forced_playback = verified_session(window)
+
+    window._activate_nav("home")
+    pump(0.02)
+
+    assert window._stack.get_visible_child_name() == "home"
+    assert window._provider_section() == "movies"
+    assert tuple(window._provider_choices()) == tuple(streaming.PROVIDERS)
+    assert window._current_provider() == window._streaming_provider()
+    assert window._provider_label.get_text() == streaming.LABELS.get(
+        window._streaming_provider()
+    )
+
+    # A pick here is the plain movie/TV preference; the anime one is untouched.
+    window._choose_provider("toflix")
+    assert window._settings.get("streaming_provider") == "toflix"
+    assert not window._settings.get("anime_streaming_provider", "")
+    assert window._provider_label.get_text() == streaming.LABELS.get("toflix")
+    assert window._forced_playback is not None, "the tab's session was rewritten"
+
+    # The tab that owns the session still offers, and names, its own providers.
+    window._show_tab(anime.tab_id)
+    pump(0.02)
+    assert window._stack.get_visible_child_name() == "details"
+    assert window._provider_section() == "anime"
+    assert window._current_provider() == "ani"
+    assert not window._settings.get("anime_streaming_provider", "")
+
+
+class DeferredThread:
+    """A route worker the test starts by hand, so the race is deterministic."""
+
+    last = None
+
+    def __init__(self, target=None, daemon=None, name=None):
+        self.target = target
+        DeferredThread.last = self
+
+    def start(self):
+        return None
+
+
+def start_route(window, item, monkeypatch):
+    """Ask for a play, but leave its route unresolved until the test says so."""
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(
+        movies_ui, "threading", SimpleNamespace(Thread=DeferredThread)
+    )
+    window._play_routed(item, None, None)
+    return DeferredThread.last
+
+
+def finish_route(thread, route, monkeypatch) -> None:
+    monkeypatch.setattr(
+        movies_ui.gtk_playback, "decide_playback", lambda *_a, **_k: route
+    )
+    thread.target()
+    pump(0.05)
+
+
+def test_a_route_resolved_after_a_tab_switch_does_not_end_the_new_tabs_session(
+    window, monkeypatch
+):
+    """N2: a stale route cannot clear the verified session in front."""
+    from types import SimpleNamespace
+
+    open_title(window, movie(1, "Frieren", "tv"))
+    thread = start_route(window, window._current_item, monkeypatch)
+
+    open_title(window, movie(2, "Another", "tv"))
+    window._forced_playback = verified_session(window)
+    window._capture_active_tab()
+    assert "verified_playback" in tab(window, "tv:2").payload
+
+    finish_route(
+        thread,
+        SimpleNamespace(
+            mode=movies_ui.gtk_playback.MODE_ERROR, message="unresolved"
+        ),
+        monkeypatch,
+    )
+
+    assert window._forced_playback is not None
+    assert "verified_playback" in tab(window, "tv:2").payload
+    assert window._current_item.title == "Another"
+    assert window._stack.get_visible_child_name() == "details"
+
+
+def test_a_route_resolved_after_a_tab_switch_does_not_play_in_the_new_tab(
+    window, monkeypatch
+):
+    """N2: a stale normal route does not start playback over another tab."""
+    from types import SimpleNamespace
+
+    open_title(window, movie(1, "One"))
+    thread = start_route(window, window._current_item, monkeypatch)
+
+    open_title(window, movie(2, "Two"))
+    played: list = []
+    window._play_with_providers = lambda *a, **k: played.append(a)
+
+    finish_route(
+        thread, SimpleNamespace(mode=movies_ui.gtk_playback.MODE_NORMAL), monkeypatch
+    )
+
+    assert played == []
+    assert window._current_item.title == "Two"
+    assert window._stack.get_visible_child_name() == "details"
+
+
+def test_closing_a_tab_repaints_the_provider_badge(window):
+    """N3: a close that restores no page still repaints the badge."""
+    open_title(window, movie(1, "One"))
+    open_title(window, movie(2, "Two"))
+    window._activate_nav("home")
+    pump(0.02)
+
+    real = window._refresh_provider_button
+    draws: list[bool] = []
+
+    def spy() -> None:
+        draws.append(True)
+        real()
+
+    window._refresh_provider_button = spy
+    window._close_tab(tab(window, "movie:1").tab_id)
+    pump(0.02)
+
+    assert draws, "the badge was not repainted after a background close"
+    assert window._tabs.active.key == "movie:2"
+    assert window._stack.get_visible_child_name() == "home"
+    assert window._provider_section() == "movies"
+    assert window._provider_label.get_text() == streaming.LABELS.get(
+        window._streaming_provider()
+    )

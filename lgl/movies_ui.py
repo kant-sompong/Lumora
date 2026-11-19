@@ -1639,6 +1639,9 @@ class MoviesWindow(Gtk.Box):
         self._season_cache: dict[int, Any] = {}
         #: Newest playback / anime-page routing request; older workers are stale.
         self._playback_token = 0
+        #: The tab in front when that request was made, so a route that
+        #: resolves after a tab switch cannot play into the new tab.
+        self._playback_tab_id: str | None = None
         self._anime_route_token = 0
         #: The title line of the player, where Next episode is added.
         self._player_header: Any | None = None
@@ -1807,24 +1810,28 @@ class MoviesWindow(Gtk.Box):
     def _provider_section(self) -> str:
         """Whether the header button offers anime or movie/TV providers.
 
-        A MAL-verified anime session decides this, not the tab it was opened
-        from: anime opened from Movies still offers anime providers only.  The
-        active tab's own title decides it next, because a tab keeps its own
-        origin while the rail may still name another page; the rail is only a
-        fallback for a page that is not a tab (browse, search and so on).
+        The page in front decides.  A tab's own title decides while that tab's
+        details or player is showing, because a tab keeps its own origin while
+        the rail may still name another page -- and a MAL-verified anime
+        session is that tab's, so anime opened from Movies still offers anime
+        providers only.  Home, Browse and Search are nobody's tab: the rail's
+        own section decides them, and a background tab's session is not
+        allowed to put its anime providers on the header there.  The rail is
+        also the fallback for any other page that is not a tab.
         """
-        if getattr(self, "_forced_playback", None):
-            return "anime"
-        tab = self._tabs.active
-        if tab is not None:
-            # A paused verified anime keeps its session, and so its menu.
-            if self._session_for_tab(tab) is not None:
+        name = self._stack.get_visible_child_name()
+        if name in ("details", "player"):
+            if getattr(self, "_forced_playback", None):
                 return "anime"
-            name = self._stack.get_visible_child_name()
-            item = tab.payload.get("item")
-            if name in ("details", "player") and item is not None:
-                is_anime = int(getattr(item, "anilist_id", 0) or 0) > 0
-                return "anime" if is_anime else "movies"
+            tab = self._tabs.active
+            if tab is not None:
+                # A paused verified anime keeps its session, and so its menu.
+                if self._session_for_tab(tab) is not None:
+                    return "anime"
+                item = tab.payload.get("item")
+                if item is not None:
+                    is_anime = int(getattr(item, "anilist_id", 0) or 0) > 0
+                    return "anime" if is_anime else "movies"
         return "anime" if self._active_section in ("anime", "gems") else "movies"
 
     def _section_providers(self) -> tuple[str, ...]:
@@ -1844,11 +1851,17 @@ class MoviesWindow(Gtk.Box):
         return self._section_providers()
 
     def _current_provider(self) -> str:
-        """The provider playing now: a verified session names its own."""
+        """The provider playing now: a verified session names its own.
+
+        Only while that session's own page is in front: on Home or Browse the
+        header names the provider the page will play with, not the session a
+        background tab still holds.
+        """
+        section = self._provider_section()
         playing = getattr(self, "_forced_playback", None)
-        if playing:
+        if playing and section == "anime":
             return playing.get("provider") or streaming.ANI_PROVIDER
-        if self._provider_section() == "anime":
+        if section == "anime":
             return self._anime_provider()
         return self._streaming_provider()
 
@@ -2159,8 +2172,13 @@ class MoviesWindow(Gtk.Box):
                 self._restore_tab(new_active)
             else:
                 self._render_tabs()
+                # No neighbour page is restored, but the closed tab may have
+                # owned the session the badge was naming: repaint it for the
+                # page that is actually in front (Home, Browse, Search).
+                self._refresh_provider_button()
             return
         self._render_tabs()
+        self._refresh_provider_button()
         # The last tab closed: the normal Media page is the sensible default.
         if self._stack.get_visible_child_name() in ("details", "player"):
             self._current_item = None
@@ -5868,6 +5886,7 @@ class MoviesWindow(Gtk.Box):
         self._playback_token += 1
         token = self._playback_token
         self._playback_key = self._media_key(item)
+        self._playback_tab_id = self._tabs.active_id
 
         def work() -> None:
             route = gtk_playback.decide_playback(
@@ -5890,8 +5909,19 @@ class MoviesWindow(Gtk.Box):
         ).start()
 
     def _apply_playback_route(self, token, item, season, episode, route) -> bool:
-        """Play the route the shared identity API chose for this title."""
+        """Play the route the shared identity API chose for this title.
+
+        A route belongs to the title and the tab that asked for it.  If the
+        user switched, closed or replaced that tab while it was resolving, the
+        page now in front never asked for this play: it is dropped here, so it
+        can neither start playing in another tab nor end that tab's verified
+        session, provider or episode.
+        """
         if token != self._playback_token:
+            return False
+        if self._tabs.active_id != self._playback_tab_id:
+            return False
+        if self._media_key(item) != self._playback_key:
             return False
         mode = getattr(route, "mode", gtk_playback.MODE_NORMAL)
         if mode == gtk_playback.MODE_ERROR:

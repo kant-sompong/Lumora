@@ -96,12 +96,17 @@ under the header, on both Movies & TV and anime pages:
   **Resume** brings the badge, the anime-only provider menu and the mapped
   AniList episode back. Only a play that replaces the session, a failed play,
   or closing the tab that owns it ends it, so it can never be resurrected later
-- The provider badge and menu describe the tab in front, not the rail page it
-  was opened from: an anime tab keeps anime providers while another Media page
-  is lit, and a movie/TV tab offers movie/TV providers after an anime tab
+- The provider badge and menu describe the page in front: an open title's
+  details or player offers that tab's own providers, so an anime tab keeps
+  anime providers even while the rail says Home, and a movie/TV tab offers
+  movie/TV providers after an anime tab. Home, Browse and Search use their own
+  section, so a background tab's session never puts anime providers there, and
+  a provider picked on those pages is the plain movie/TV preference
 - A provider picked while a verified anime plays switches that play only; the
   saved anime provider preference is never rewritten by tab switching or by a
   session-scoped pick
+- A play whose route resolves after the tab in front changed is dropped: it can
+  neither start in another tab nor end that tab's session, provider or episode
 - The open player's position is sampled from the page and ignored when it
   arrives from a view that has since been switched away, closed or torn down,
   so a late answer cannot overwrite the active tab's position
