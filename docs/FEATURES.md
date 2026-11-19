@@ -88,8 +88,17 @@ under the header, on both Movies & TV and anime pages:
   place, so coming back shows the paused panel rather than an empty player
 - A MAL-verified anime keeps its session with its tab: the provider badge, the
   anime-only provider menu and the AniList episode come back with the tab, and
-  switching to a tab without a verified anime clears that session instead of
-  carrying it over
+  switching to a tab without a verified anime clears the session in front
+  instead of carrying it over
+- That session survives navigation as long as it genuinely lives: Back to
+  details, opening another title in another tab, navigating the Media pages or
+  leaving Media keep it saved with its tab, and restoring the tab or pressing
+  **Resume** brings the badge, the anime-only provider menu and the mapped
+  AniList episode back. Only a play that replaces the session, a failed play,
+  or closing the tab that owns it ends it, so it can never be resurrected later
+- The provider badge and menu describe the tab in front, not the rail page it
+  was opened from: an anime tab keeps anime providers while another Media page
+  is lit, and a movie/TV tab offers movie/TV providers after an anime tab
 - A provider picked while a verified anime plays switches that play only; the
   saved anime provider preference is never rewritten by tab switching or by a
   session-scoped pick

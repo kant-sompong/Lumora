@@ -115,6 +115,19 @@ def open_title(window, item) -> None:
     pump(0.02)
 
 
+def verified_session(window, provider: str = "ani") -> dict:
+    """A verified anime session as :meth:`_play_forced_ani` builds it."""
+    return {
+        "kind": "tmdb",
+        "item": window._current_item,
+        "season": 1,
+        "episode": None,
+        "route": object(),
+        "provider": provider,
+        "number": 5,
+    }
+
+
 def test_opening_two_titles_creates_two_tabs(window):
     open_title(window, movie(1, "Interstellar"))
     open_title(window, movie(2, "Breaking Bad", "tv"))
@@ -540,16 +553,9 @@ def test_a_session_belongs_only_to_the_tab_that_plays_it(window):
 
 
 def test_a_cleared_session_is_not_resurrected_by_a_later_switch(window):
-    """R1: ending a session must clear the tab's saved copy too."""
+    """F1: the one genuine teardown clears the tab's saved copy too."""
     open_title(window, movie(1, "Frieren", "tv"))
-    window._forced_playback = {
-        "kind": "tmdb",
-        "item": window._current_item,
-        "season": 1,
-        "episode": None,
-        "route": object(),
-        "provider": "ani",
-    }
+    window._forced_playback = verified_session(window)
     open_title(window, movie(2, "Another", "tv"))
     assert "verified_playback" in tab(window, "tv:1").payload
 
@@ -558,9 +564,11 @@ def test_a_cleared_session_is_not_resurrected_by_a_later_switch(window):
     pump(0.02)
     assert window._forced_playback is not None
 
-    # The session ends (for example an unverified play), then the tab is left:
-    # the saved copy must go with it, not come back on the next return.
-    window._forced_playback = None
+    # The session genuinely ends (for example an unverified play replaces it),
+    # so the tab's saved copy goes with it and cannot come back on a return.
+    window._end_verified_session()
+    assert window._forced_playback is None
+    assert "verified_playback" not in tab(window, "tv:1").payload
     window._show_tab(tab(window, "tv:2").tab_id)
     pump(0.02)
     assert "verified_playback" not in tab(window, "tv:1").payload
@@ -568,6 +576,131 @@ def test_a_cleared_session_is_not_resurrected_by_a_later_switch(window):
     window._show_tab(tab(window, "tv:1").tab_id)
     pump(0.02)
     assert window._forced_playback is None
+
+
+def test_capturing_a_tab_again_keeps_its_verified_session(window):
+    """F1: a player teardown is not the end of a tab's verified session."""
+    open_title(window, movie(1, "Frieren", "tv"))
+    window._forced_playback = verified_session(window)
+    window._stack.set_visible_child_name("player")
+    window._capture_active_tab()
+    assert tab(window, "tv:1").payload["verified_playback"]["number"] == 5
+
+    # Back to details releases only the live context, not the session.
+    window._stack.set_visible_child_name("details")
+    assert window._forced_playback is None
+    window._capture_active_tab()
+
+    saved = tab(window, "tv:1").payload["verified_playback"]
+    assert saved["provider"] == "ani" and saved["number"] == 5
+    # The badge and menu still offer the anime providers the tab's session
+    # uses; the saved anime preference itself is unchanged.
+    assert window._provider_section() == "anime"
+    assert "ani" in window._provider_choices()
+    assert window._current_provider() == window._anime_provider()
+
+
+def test_back_then_another_title_keeps_the_anime_session(window):
+    """F1: Back, then opening another title, leaves the anime tab intact."""
+    open_title(window, movie(1, "Frieren", "tv"))
+    window._forced_playback = verified_session(window)
+    window._playback_url = "https://provider.test/1"
+    window._playback_provider = "ani"
+    window._playback_key = "tv:1"
+    window._stack.set_visible_child_name("player")
+    window._back_target = "details"
+
+    window._navigate_back()
+    pump(0.02)
+    assert window._stack.get_visible_child_name() == "details"
+    assert window._forced_playback is None
+
+    open_title(window, movie(2, "Another", "tv"))
+    assert tab(window, "tv:1").payload["verified_playback"]["provider"] == "ani"
+    # The new tab is in front; the anime tab's session is saved with it only.
+    assert window._forced_playback is None
+
+    window._show_tab(tab(window, "tv:1").tab_id)
+    pump(0.02)
+    assert window._forced_playback["provider"] == "ani"
+    assert window._current_provider() == "ani"
+    assert "ani" in window._provider_choices()
+
+
+def test_leaving_media_and_resuming_keeps_the_anime_session(window):
+    """F1: leaving Media and pressing Resume re-arms the verified session."""
+    open_title(window, movie(1, "Frieren", "tv"))
+    open_title(window, movie(2, "Another", "tv"))
+    window._show_tab(tab(window, "tv:1").tab_id)
+    pump(0.02)
+    window._forced_playback = verified_session(window)
+    window._playback_url = "https://provider.test/1"
+    window._playback_provider = "ani"
+    window._playback_key = "tv:1"
+    window._playback_position = 300.0
+    window._stack.set_visible_child_name("player")
+
+    window.leave_view()
+    pump(0.02)
+
+    assert window._forced_playback["provider"] == "ani"
+    assert window._current_provider() == "ani"
+
+    plays: list[str] = []
+    window._open_player = lambda url, title, **kwargs: plays.append(url)
+    resume = [b for b in buttons(window._player) if b.get_label() == "Resume"][0]
+    resume.clicked()
+
+    assert plays == ["https://provider.test/1"]
+    assert window._forced_playback["number"] == 5
+
+    window._show_tab(tab(window, "tv:2").tab_id)
+    pump(0.02)
+    assert window._forced_playback is None
+
+    window._show_tab(tab(window, "tv:1").tab_id)
+    pump(0.02)
+    assert window._forced_playback["provider"] == "ani"
+
+
+def test_closing_the_last_tab_clears_the_verified_session(window):
+    """F2: with no tab open, no verified session or anime menu may stay."""
+    open_title(window, movie(1, "Frieren", "tv"))
+    window._forced_playback = verified_session(window)
+    assert window._current_provider() == "ani"
+
+    window._close_tab(window._tabs.active_id)
+    pump(0.02)
+
+    assert window._forced_playback is None
+    assert window._current_provider() == window._streaming_provider()
+    assert tuple(window._provider_choices()) == tuple(streaming.PROVIDERS)
+    assert window._provider_label.get_text() == streaming.LABELS.get(
+        window._streaming_provider()
+    )
+
+
+def test_provider_badge_follows_the_tab_not_the_rail(window):
+    """F3: an anime tab keeps anime providers while the rail says Home."""
+    from lgl import anipm
+
+    window._open_anime_details(anipm.AniTitle(anilist_id=7, title="Frieren"))
+    pump(0.02)
+    anime = window._tabs.active
+    window._activate_nav("home")
+    pump(0.02)
+    open_title(window, movie(2, "Dune"))
+    assert window._active_section == "home"
+
+    window._show_tab(anime.tab_id)
+    pump(0.02)
+
+    assert window._active_section == "home", "the rail is not the section truth"
+    assert window._provider_section() == "anime"
+    assert "ani" in window._provider_choices()
+    assert window._provider_label.get_text() == streaming.LABELS.get(
+        window._current_provider()
+    )
 
 
 class PositionView:
