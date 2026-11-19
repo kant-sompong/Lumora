@@ -281,6 +281,23 @@ def test_tabs_stay_visible_when_navigating_the_media_pages(window):
     assert window._stack.get_visible_child_name() == "home"
 
 
+def test_the_tab_strip_actually_takes_space_on_screen(window):
+    """The open titles must be laid out, not merely marked visible.
+
+    The strip is no-show-all, so the window's own show_all() never reaches it.
+    Showing the bar alone leaves its scroller hidden and the bar allocates a
+    single pixel, which is invisible however the ``visible`` flag reads.
+    """
+    open_title(window, movie(1, "Interstellar"))
+    open_title(window, movie(2, "Breaking Bad", "tv"))
+    pump(0.1)
+
+    assert window._tab_bar.get_mapped() is True
+    assert window._tab_scroller.get_mapped() is True
+    assert window._tab_bar.get_allocated_height() >= 40
+    assert all(child.get_mapped() for child in window._tab_row.get_children())
+
+
 def test_reopening_an_open_tv_tab_restores_its_session(window):
     open_title(window, movie(2, "Breaking Bad", "tv"))
     open_title(window, movie(1, "One"))

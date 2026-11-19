@@ -2053,6 +2053,7 @@ class MoviesWindow(Gtk.Box):
         self._tab_row.get_style_context().add_class("movie-tabrow")
         scroller.add(self._tab_row)
         bar.pack_start(scroller, True, True, 0)
+        self._tab_scroller = scroller
         bar.set_no_show_all(True)
         bar.hide()
         return bar
@@ -2088,8 +2089,15 @@ class MoviesWindow(Gtk.Box):
             self._tab_row.pack_start(
                 self._build_tab(tab, tab.tab_id == active), False, False, 0
             )
-        self._tab_row.show_all()
-        self._tab_bar.set_visible(bool(tabs))
+        if tabs:
+            # The bar is no-show-all, so the window's show_all() never reached
+            # it and neither did the scroller inside it.  Showing only the bar
+            # leaves that scroller hidden, and the whole strip allocates no
+            # height: show the subtree from the scroller down, then the bar.
+            self._tab_scroller.show_all()
+            self._tab_bar.show()
+        else:
+            self._tab_bar.hide()
 
     def _build_tab(self, tab, active: bool) -> Gtk.Widget:
         box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
