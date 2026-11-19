@@ -828,11 +828,14 @@ def test_home_offers_its_own_providers_not_a_tabs_saved_anime_session(window):
     pump(0.02)
     anime = window._tabs.active
     window._forced_playback = verified_session(window)
+    window._capture_active_tab()  # the session is saved with its own tab
+    window._forced_playback = None  # its live context is gone
 
     window._activate_nav("home")
     pump(0.02)
 
     assert window._stack.get_visible_child_name() == "home"
+    assert anime.payload["verified_playback"]["provider"] == "ani"
     assert window._provider_section() == "movies"
     assert tuple(window._provider_choices()) == tuple(streaming.PROVIDERS)
     assert window._current_provider() == window._streaming_provider()
@@ -845,7 +848,10 @@ def test_home_offers_its_own_providers_not_a_tabs_saved_anime_session(window):
     assert window._settings.get("streaming_provider") == "toflix"
     assert not window._settings.get("anime_streaming_provider", "")
     assert window._provider_label.get_text() == streaming.LABELS.get("toflix")
-    assert window._forced_playback is not None, "the tab's session was rewritten"
+    assert window._forced_playback is None, "a page pick armed the anime session"
+    assert anime.payload["verified_playback"]["provider"] == "ani", (
+        "a page pick rewrote the tab's session"
+    )
 
     # The tab that owns the session still offers, and names, its own providers.
     window._show_tab(anime.tab_id)

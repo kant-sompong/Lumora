@@ -1810,20 +1810,22 @@ class MoviesWindow(Gtk.Box):
     def _provider_section(self) -> str:
         """Whether the header button offers anime or movie/TV providers.
 
-        The page in front decides.  A tab's own title decides while that tab's
-        details or player is showing, because a tab keeps its own origin while
-        the rail may still name another page -- and a MAL-verified anime
-        session is that tab's, so anime opened from Movies still offers anime
-        providers only.  Home, Browse and Search are nobody's tab: the rail's
-        own section decides them, and a background tab's session is not
-        allowed to put its anime providers on the header there.  The rail is
-        also the fallback for any other page that is not a tab.
+        A tab's own title decides while that tab's details or player is
+        showing, because a tab keeps its own origin while the rail may still
+        name another page -- and a MAL-verified anime session is that tab's,
+        so anime opened from Movies still offers anime providers only.  Home,
+        Browse and Search are the rail's pages, not anybody's tab: a
+        background tab's saved session must not put its anime providers on the
+        header there, and a pick made there is a plain preference change.  A
+        play no tab owns has no page boundary of its own, so its live session
+        decides wherever it is shown; the rail is the fallback for every other
+        page that is not a tab.
         """
         name = self._stack.get_visible_child_name()
-        if name in ("details", "player"):
+        tab = self._tabs.active
+        if tab is None or name in ("details", "player"):
             if getattr(self, "_forced_playback", None):
                 return "anime"
-            tab = self._tabs.active
             if tab is not None:
                 # A paused verified anime keeps its session, and so its menu.
                 if self._session_for_tab(tab) is not None:
@@ -1853,9 +1855,9 @@ class MoviesWindow(Gtk.Box):
     def _current_provider(self) -> str:
         """The provider playing now: a verified session names its own.
 
-        Only while that session's own page is in front: on Home or Browse the
-        header names the provider the page will play with, not the session a
-        background tab still holds.
+        Only while that session is in front: on Home or Browse the header names
+        the provider the page will play with, not the session a background tab
+        still holds.
         """
         section = self._provider_section()
         playing = getattr(self, "_forced_playback", None)
