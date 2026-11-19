@@ -1626,6 +1626,9 @@ class MoviesWindow(Gtk.Box):
         #: outside a tab can never be saved into one.
         self._playback_key = ""
         self._position_source = 0
+        #: Newest position question asked of a web view.  An answer carrying an
+        #: older tag came from a view that is already gone, so it is dropped.
+        self._position_token = 0
         #: Season and scroll to reapply once a restored page has its data.
         self._restore_season = None
         self._restore_scroll = None
@@ -1636,6 +1639,9 @@ class MoviesWindow(Gtk.Box):
         self._season_cache: dict[int, Any] = {}
         #: Newest playback / anime-page routing request; older workers are stale.
         self._playback_token = 0
+        #: The tab in front when that request was made, so a route that
+        #: resolves after a tab switch cannot play into the new tab.
+        self._playback_tab_id: str | None = None
         self._anime_route_token = 0
         #: The title line of the player, where Next episode is added.
         self._player_header: Any | None = None
@@ -1804,11 +1810,30 @@ class MoviesWindow(Gtk.Box):
     def _provider_section(self) -> str:
         """Whether the header button offers anime or movie/TV providers.
 
-        A MAL-verified anime session decides this, not the tab it was opened
-        from: anime opened from Movies still offers anime providers only.
+        A tab's own title decides while that tab's details or player is
+        showing, because a tab keeps its own origin while the rail may still
+        name another page -- and a MAL-verified anime session is that tab's,
+        so anime opened from Movies still offers anime providers only.  Home,
+        Browse and Search are the rail's pages, not anybody's tab: a
+        background tab's saved session must not put its anime providers on the
+        header there, and a pick made there is a plain preference change.  A
+        play no tab owns has no page boundary of its own, so its live session
+        decides wherever it is shown; the rail is the fallback for every other
+        page that is not a tab.
         """
-        if getattr(self, "_forced_playback", None):
-            return "anime"
+        name = self._stack.get_visible_child_name()
+        tab = self._tabs.active
+        if tab is None or name in ("details", "player"):
+            if getattr(self, "_forced_playback", None):
+                return "anime"
+            if tab is not None:
+                # A paused verified anime keeps its session, and so its menu.
+                if self._session_for_tab(tab) is not None:
+                    return "anime"
+                item = tab.payload.get("item")
+                if item is not None:
+                    is_anime = int(getattr(item, "anilist_id", 0) or 0) > 0
+                    return "anime" if is_anime else "movies"
         return "anime" if self._active_section in ("anime", "gems") else "movies"
 
     def _section_providers(self) -> tuple[str, ...]:
@@ -1828,11 +1853,17 @@ class MoviesWindow(Gtk.Box):
         return self._section_providers()
 
     def _current_provider(self) -> str:
-        """The provider playing now: a verified session names its own."""
+        """The provider playing now: a verified session names its own.
+
+        Only while that session is in front: on Home or Browse the header names
+        the provider the page will play with, not the session a background tab
+        still holds.
+        """
+        section = self._provider_section()
         playing = getattr(self, "_forced_playback", None)
-        if playing:
+        if playing and section == "anime":
             return playing.get("provider") or streaming.ANI_PROVIDER
-        if self._provider_section() == "anime":
+        if section == "anime":
             return self._anime_provider()
         return self._streaming_provider()
 
@@ -1952,6 +1983,8 @@ class MoviesWindow(Gtk.Box):
 
     def stop_playback(self) -> None:
         self._stop_position_sampling()
+        # Any answer still owed by the view being released is now stale.
+        self._position_token = getattr(self, "_position_token", 0) + 1
         if getattr(self, "_player_fullscreen", False):
             self._set_player_fullscreen(False)
         view = getattr(self, "_webview", None)
@@ -1966,6 +1999,9 @@ class MoviesWindow(Gtk.Box):
                 pass
             self._webview = None
         self._player_frame = None
+        # Only the live context is released here: navigation and player
+        # teardown are not the end of a verified session, so the tab's saved
+        # copy stays until :meth:`_end_verified_session` says it is over.
         self._forced_playback = None
         for child in list(self._player.get_children()):
             try:
@@ -2120,6 +2156,16 @@ class MoviesWindow(Gtk.Box):
         # the app is showing: a hidden Movies & TV just forgets the tab.  This
         # is Qt's ``was_visible`` rule, kept the same on both frontends.
         was_visible = bool(self.get_mapped())
+        closing = self._tabs.find(tab_id)
+        session = getattr(self, "_forced_playback", None)
+        if (
+            closing is not None
+            and session
+            and self._media_key(session.get("item")) == closing.key
+        ):
+            # Closing the tab that owns the session ends it; a neighbour must
+            # not inherit a session of a title that is no longer open.
+            self._end_verified_session(closing.key)
         if was_active and self._stack.get_visible_child_name() == "player":
             self.stop_playback()
         new_active = self._tabs.close(tab_id)
@@ -2128,8 +2174,13 @@ class MoviesWindow(Gtk.Box):
                 self._restore_tab(new_active)
             else:
                 self._render_tabs()
+                # No neighbour page is restored, but the closed tab may have
+                # owned the session the badge was naming: repaint it for the
+                # page that is actually in front (Home, Browse, Search).
+                self._refresh_provider_button()
             return
         self._render_tabs()
+        self._refresh_provider_button()
         # The last tab closed: the normal Media page is the sensible default.
         if self._stack.get_visible_child_name() in ("details", "player"):
             self._current_item = None
@@ -2172,6 +2223,9 @@ class MoviesWindow(Gtk.Box):
         payload = dict(tab.payload)
         payload["item"] = item
         self._tabs.update(tab.tab_id, payload=payload)
+        # The new tab is what is in front now: the session that was live for
+        # the tab just left is saved with it, so the badge follows the new tab.
+        self._forced_playback = self._session_for_tab(tab)
         self._render_tabs()
         return False
 
@@ -2209,9 +2263,16 @@ class MoviesWindow(Gtk.Box):
         if getattr(self, "_current_anime_details", None) is not None:
             payload["anime_details"] = self._current_anime_details
         # A verified anime keeps its provider session with its tab, so a switch
-        # away and back keeps the AniList episode and the provider badge.
-        if getattr(self, "_forced_playback", None):
-            payload["verified_playback"] = dict(self._forced_playback)
+        # away and back keeps the AniList episode and the provider badge.  The
+        # session is only this tab's when it plays this tab's title: a session
+        # that belongs elsewhere is never written here.  No live session is
+        # not an ending either -- Back to details and player teardown release
+        # only the live context -- so the tab's saved copy stays untouched
+        # until :meth:`_end_verified_session` ends it.
+        session = getattr(self, "_forced_playback", None)
+        owner = self._media_key(session.get("item")) if session else ""
+        if session and (not owner or owner == tab.key):
+            payload["verified_playback"] = dict(session)
         if playing:
             # A paused tab has no web view, so its last known position is its
             # saved one; asking the page would only lose it.
@@ -2233,6 +2294,51 @@ class MoviesWindow(Gtk.Box):
             provider=self._playback_provider if playing else "",
             payload=payload,
         )
+
+    def _session_for_tab(self, tab) -> dict | None:
+        """The verified session saved with ``tab``, when it is that tab's own."""
+        state = getattr(tab, "payload", None) or {}
+        saved = state.get("verified_playback")
+        if not isinstance(saved, dict):
+            return None
+        owner = self._media_key(saved.get("item"))
+        if owner and owner != tab.key:
+            return None
+        return dict(saved)
+
+    def _end_verified_session(self, owner: str = "") -> None:
+        """A verified session really ended: forget it here and in its tab.
+
+        Navigation and player teardown release only the live context, because
+        the tab may come back.  This is the one teardown for a session that is
+        over, so neither the provider badge nor a later tab switch can bring
+        it back.  ``owner`` names the tab a closing session belonged to; with
+        none, the live session's own tab is cleared, or the active tab when
+        nothing is live any more.
+        """
+        session = getattr(self, "_forced_playback", None)
+        keys: set[str] = set()
+        if owner:
+            keys.add(owner)
+        elif session:
+            keys.add(self._media_key(session.get("item")))
+        else:
+            active = self._tabs.active
+            if active is not None:
+                keys.add(active.key)
+        self._forced_playback = None
+        for key in keys:
+            if not key:
+                continue
+            tab = self._tabs.find(key)
+            if tab is None:
+                continue
+            payload = dict(tab.payload)
+            if payload.pop("verified_playback", None) is not None:
+                self._tabs.update(tab.tab_id, payload=payload)
+        refresh = getattr(self, "_refresh_provider_button", None)
+        if callable(refresh):
+            refresh()
 
     def _restore_tab(self, tab) -> None:
         """Rebuild a tab's page from what it saved, without autoplay."""
@@ -2258,14 +2364,13 @@ class MoviesWindow(Gtk.Box):
             self._restoring_tab = False
         # A verified anime comes back as it left: same session, provider and
         # AniList episode, so the badge, the session-scoped provider menu and a
-        # provider switch all agree with what was playing.
-        state = getattr(tab, "payload", {}) or {}
-        verified = state.get("verified_playback")
-        if verified:
-            self._forced_playback = dict(verified)
-            refresh = getattr(self, "_refresh_provider_button", None)
-            if callable(refresh):
-                refresh()
+        # provider switch all agree with what was playing.  A tab without one
+        # clears whatever the tab that was just left was playing, so no other
+        # tab's session follows it here.
+        self._forced_playback = self._session_for_tab(tab)
+        refresh = getattr(self, "_refresh_provider_button", None)
+        if callable(refresh):
+            refresh()
         self._render_tabs()
 
     def _restore_scroll_now(self) -> bool:
@@ -2283,6 +2388,9 @@ class MoviesWindow(Gtk.Box):
         self._playback_provider = tab.provider
         self._playback_position = float(tab.position or 0.0)
         self._playback_key = tab.key
+        # The paused panel stands for the tab's verified session too, so its
+        # badge and session-scoped menu are right until Resume re-arms it.
+        self._forced_playback = self._session_for_tab(tab)
         for child in list(self._player.get_children()):
             self._player.remove(child)
             child.destroy()
@@ -2335,10 +2443,17 @@ class MoviesWindow(Gtk.Box):
         if not tab.url:
             return
         self._playback_key = tab.key
+        # Resume re-arms the session this tab saved, so the provider badge,
+        # the session-only provider menu and the AniList episode all agree
+        # with the stream that is about to play again.
+        self._forced_playback = self._session_for_tab(tab)
         self._open_player(
             tab.url, tab.title or self._playback_title,
             provider=tab.provider or None, start=tab.position,
         )
+        refresh = getattr(self, "_refresh_provider_button", None)
+        if callable(refresh):
+            refresh()
 
     # position sampling -----------------------------------------------------
     def _start_position_sampling(self) -> None:
@@ -2369,16 +2484,34 @@ class MoviesWindow(Gtk.Box):
         runner = getattr(view, "run_javascript", None)
         if not callable(runner):
             return
+        # Every question is tagged, so an answer can be matched to the view and
+        # the request it belongs to before it is allowed to move the position.
+        self._position_token = getattr(self, "_position_token", 0) + 1
+        token = self._position_token
+
+        def answer(answered, result, _data=None) -> None:
+            self._position_read(answered, result, _data, token=token)
+
         try:
-            runner(self.POSITION_SCRIPT, None, self._position_read, None)
+            runner(self.POSITION_SCRIPT, None, answer, None)
         except Exception:  # noqa: BLE001 - a page that is still loading
             return
 
-    def _position_read(self, view, result, _data=None) -> None:
+    def _position_read(self, view, result, _data=None, token=None) -> None:
+        # A callback from a view that was replaced, released or torn down, or
+        # from a question a newer one has superseded, is not this tab's news.
+        # WebKitGTK may still deliver it after a switch or a close.
+        if view is not getattr(self, "_webview", None):
+            return
+        if token is not None and token != getattr(self, "_position_token", 0):
+            return
         try:
             answer = view.run_javascript_finish(result)
             seconds = float(answer.get_js_value().to_double())
         except Exception:  # noqa: BLE001 - an engine without an answer
+            return
+        if view is not getattr(self, "_webview", None):
+            # ``run_javascript_finish`` may pump the loop and let a switch in.
             return
         if seconds == seconds and seconds >= 0:
             self._playback_position = seconds
@@ -2492,6 +2625,10 @@ class MoviesWindow(Gtk.Box):
         if name != "player":
             self.stop_playback()
         self._update_back()
+        # The page in front decides which providers the badge offers.
+        refresh = getattr(self, "_refresh_provider_button", None)
+        if callable(refresh):
+            refresh()
 
     def _streaming_provider(self) -> str:
         try:
@@ -4407,8 +4544,7 @@ class MoviesWindow(Gtk.Box):
             )
             # This play failed: whatever verified anime was playing before it
             # must not stay behind as the active session.
-            self._forced_playback = None
-            self._refresh_provider_button()
+            self._end_verified_session()
             self._anime_status.set_text(message)
             self._open_player_message(title, message)
             return
@@ -4423,8 +4559,9 @@ class MoviesWindow(Gtk.Box):
                 ),
             )
         except (streaming.EmbedUrlError, ValueError) as error:
-            self._forced_playback = None
-            self._refresh_provider_button()
+            # ani.pm could not build this play, so the session it replaced is
+            # over; it must not come back on a later tab switch.
+            self._end_verified_session()
             self._anime_status.set_text(str(error))
             # ani.pm could not build this play: say so, and leave another
             # provider to an explicit click rather than switching on its own.
@@ -4511,8 +4648,8 @@ class MoviesWindow(Gtk.Box):
 
     def _watch_anime_unverified(self, item, title, number, language) -> None:
         """An unverified anime page keeps the selected normal provider."""
-        self._forced_playback = None
-        self._refresh_provider_button()
+        # This play is not a verified session, so any earlier one is over.
+        self._end_verified_session()
         provider = self._streaming_provider()
         label = streaming.LABELS.get(provider, provider)
         self._anime_status.set_text(
@@ -5751,6 +5888,7 @@ class MoviesWindow(Gtk.Box):
         self._playback_token += 1
         token = self._playback_token
         self._playback_key = self._media_key(item)
+        self._playback_tab_id = self._tabs.active_id
 
         def work() -> None:
             route = gtk_playback.decide_playback(
@@ -5773,14 +5911,24 @@ class MoviesWindow(Gtk.Box):
         ).start()
 
     def _apply_playback_route(self, token, item, season, episode, route) -> bool:
-        """Play the route the shared identity API chose for this title."""
+        """Play the route the shared identity API chose for this title.
+
+        A route belongs to the title and the tab that asked for it.  If the
+        user switched, closed or replaced that tab while it was resolving, the
+        page now in front never asked for this play: it is dropped here, so it
+        can neither start playing in another tab nor end that tab's verified
+        session, provider or episode.
+        """
         if token != self._playback_token:
+            return False
+        if self._tabs.active_id != self._playback_tab_id:
+            return False
+        if self._media_key(item) != self._playback_key:
             return False
         mode = getattr(route, "mode", gtk_playback.MODE_NORMAL)
         if mode == gtk_playback.MODE_ERROR:
             # An unresolved title ends any earlier verified session too.
-            self._forced_playback = None
-            self._refresh_provider_button()
+            self._end_verified_session()
             self._open_player_message(
                 self._playback_label(item, season, episode),
                 str(getattr(route, "message", "") or gtk_playback.UNRESOLVED),
@@ -5919,8 +6067,7 @@ class MoviesWindow(Gtk.Box):
         except (streaming.EmbedUrlError, ValueError) as error:
             # This play failed: a previous anime's verified session must not
             # stay active behind the error screen.
-            self._forced_playback = None
-            self._refresh_provider_button()
+            self._end_verified_session()
             # Never a silent fall back to another provider: say ani.pm could
             # not build the play, and leave the rest to an explicit choice.
             self._open_player_message(
@@ -5963,7 +6110,9 @@ class MoviesWindow(Gtk.Box):
         the session switching to another provider, not a new title.
         """
         if not keep_session:
-            self._forced_playback = None
+            # A new title's normal provider play is not a verified session, so
+            # the one it replaces is over, not merely paused.
+            self._end_verified_session()
         self._record_playback(item.key, item.title, item.poster_url, item.year)
         if season is not None and episode is not None:
             self._playing_episode = (int(season), int(episode.number))
@@ -6492,7 +6641,7 @@ class MoviesWindow(Gtk.Box):
         """
         # Nothing verified is playing any more: a failed attempt must not
         # leave the previous anime's session active behind the error screen.
-        self._forced_playback = None
+        self._end_verified_session()
         self._playing_episode = None
         current = self._stack.get_visible_child_name()
         if current not in (None, "player"):
