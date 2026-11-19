@@ -187,6 +187,8 @@ class Captured:
     def __init__(self) -> None:
         self.players: list[dict] = []
         self.messages: list[tuple[str, str]] = []
+        #: The keyword options each message was shown with, e.g. alternatives.
+        self.message_options: list[dict] = []
         self.attempts: list[list[tuple[str, str]]] = []
 
 
@@ -212,9 +214,11 @@ def window(monkeypatch):
     media._open_player = lambda url, title, **kwargs: captured.players.append(
         {"url": url, "title": title, **kwargs}
     )
-    media._open_player_message = lambda title, message: captured.messages.append(
-        (title, message)
-    )
+    def capture_message(title, message, **options):
+        captured.messages.append((title, message))
+        captured.message_options.append(options)
+
+    media._open_player_message = capture_message
     media._play_attempts = lambda attempts, title: captured.attempts.append(attempts)
     media._record_playback = lambda *_a, **_k: None
     media._verify_current_attempt = lambda: None
@@ -269,14 +273,112 @@ def test_the_selected_normal_provider_cannot_change_that(window, monkeypatch):
     assert "vidy" not in captured.players[0]["url"]
 
 
-def test_the_saved_anime_provider_plays_instead_of_ani_pm(window, monkeypatch):
-    """ani.pm is the default, and the owner's own anime pick wins over it."""
+def test_the_saved_anime_provider_never_preempts_ani_pm(window, monkeypatch):
+    """A saved anime pick only orders the chain behind ani.pm."""
     window._settings.set("anime_streaming_provider", "toflix")
     captured = play_movie(window, monkeypatch)
     attempts = captured.players[0]["attempts"]
-    assert attempts[0][0] == "toflix"
-    assert all(provider != "cinesrc" for provider, _url in attempts[:1])
-    assert streaming.ANI_PROVIDER in [provider for provider, _url in attempts]
+    assert attempts[0][0] == streaming.ANI_PROVIDER
+    assert f"/embed/ani/{ANILIST_ID}/" in attempts[0][1]
+    providers = [provider for provider, _url in attempts]
+    assert providers.index("toflix") == 1, "the saved pick is offered next"
+
+
+def test_try_another_provider_switches_away_from_ani_pm_for_this_session(
+    window, monkeypatch
+):
+    captured = play_movie(window, monkeypatch)
+    player = captured.players[0]
+    assert player["provider"] == streaming.ANI_PROVIDER
+    window._playback_attempts = list(player["attempts"])
+    window._playback_index = 0
+    window._playback_title = player["title"]
+
+    window._try_another_provider()
+
+    assert len(captured.players) == 2
+    switched = captured.players[1]
+    assert switched["provider"] == player["attempts"][1][0]
+    assert switched["provider"] != streaming.ANI_PROVIDER
+    assert switched["title"] == player["title"]
+    assert window._settings.get("anime_streaming_provider", "") == ""
+
+
+def test_a_manual_pick_switches_this_play_without_saving_it(window, monkeypatch):
+    window._active_section = "anime"
+    captured = play_movie(window, monkeypatch)
+    assert captured.players[0]["provider"] == streaming.ANI_PROVIDER
+
+    window._choose_provider("toflix")
+
+    assert captured.attempts, "the picked provider never played"
+    assert captured.attempts[-1][0][0] == "toflix"
+    assert window._settings.get("anime_streaming_provider", "") == "", (
+        "a manual switch must not overwrite the saved preference"
+    )
+
+
+def test_switching_back_to_ani_pm_replays_the_same_title(window, monkeypatch):
+    window._active_section = "anime"
+    captured = play_movie(window, monkeypatch)
+    window._choose_provider("toflix")
+    players_before = len(captured.players)
+
+    window._choose_provider(streaming.ANI_PROVIDER)
+
+    assert len(captured.players) == players_before + 1
+    replayed = captured.players[-1]
+    assert replayed["provider"] == streaming.ANI_PROVIDER
+    assert replayed["url"] == captured.players[0]["url"]
+
+
+def test_a_saved_anime_provider_survives_a_manual_switch(window, monkeypatch):
+    window._active_section = "anime"
+    window._settings.set("anime_streaming_provider", "toflix")
+    play_movie(window, monkeypatch)
+
+    window._choose_provider("cinesrc")
+
+    assert window._settings.get("anime_streaming_provider") == "toflix"
+
+
+def test_a_provider_pick_after_leaving_the_player_is_saved(window, monkeypatch):
+    window._active_section = "anime"
+    play_movie(window, monkeypatch)
+
+    window.stop_playback()
+    window._choose_provider("cinesrc")
+
+    assert window._settings.get("anime_streaming_provider") == "cinesrc"
+
+
+def test_an_ani_pm_url_failure_is_an_error_with_an_explicit_choice(
+    window, monkeypatch
+):
+    def broken(*_args, **_kwargs):
+        raise streaming.EmbedUrlError("ani.pm has no route for this entry")
+
+    monkeypatch.setattr(streaming, "ani_url", broken)
+    captured = play_movie(window, monkeypatch)
+
+    assert captured.players == [], "ani.pm's failure played somewhere else"
+    message = captured.messages[0][1]
+    assert "ani.pm could not play this title" in message
+    assert "Pick another provider" in message
+    # Offered, never used automatically: an explicit click plays them.
+    alternatives = captured.message_options[0]["alternatives"]
+    assert alternatives
+    assert all(provider != streaming.ANI_PROVIDER for provider, _url in alternatives)
+
+
+def test_a_resolution_failure_offers_the_other_providers_explicitly(
+    window, monkeypatch
+):
+    captured = play_movie(window, monkeypatch, links={})
+    assert captured.players == []
+    assert captured.message_options[0]["alternatives"], (
+        "the owner was given no provider to try"
+    )
 
 
 def test_a_resolution_failure_is_an_error_and_plays_nothing(window, monkeypatch):
@@ -383,6 +485,33 @@ def test_episode_playback_keeps_tmdb_numbers_and_next_episode(window, monkeypatc
     assert (following[0], following[1].number) == (2, 27)
 
 
+def test_switching_providers_keeps_the_episode_and_the_next_episode(
+    window, monkeypatch
+):
+    StubTmdb.documents = {"/tv/65942": dict(ANIME_DETAILS)}
+    install_core(monkeypatch)
+    monkeypatch.setattr(anime_map, "tmdb_to_anilist", lambda *_a, **_k: None)
+    season_two(window)
+    window._active_section = "anime"
+    window._play_episode(2, Episode(season=1, number=26, title="Each One's Promise"))
+    assert wait_for(lambda: window.captured.players), "the episode never played"
+    assert window.captured.players[0]["provider"] == streaming.ANI_PROVIDER
+    assert window._playing_episode == (2, 26)
+
+    window._choose_provider("toflix")
+
+    assert window.captured.attempts, "the picked provider never played"
+    chain = window.captured.attempts[-1]
+    assert chain[0][0] == "toflix"
+    # The same season and episode, in TMDB numbers, all the way down.
+    assert chain[0][1] == "https://toflix.co/embed/tv/65942/2/26"
+    assert all("65942" in url for _provider, url in chain)
+    assert window._playing_episode == (2, 26)
+    following = window._next_episode()
+    assert following is not None
+    assert (following[0], following[1].number) == (2, 27)
+
+
 def test_a_confident_mapping_offsets_the_played_episode(window, monkeypatch):
     StubTmdb.documents = {"/tv/65942": dict(ANIME_DETAILS)}
     install_core(monkeypatch)
@@ -481,6 +610,141 @@ def test_an_anilist_page_alone_does_not_bypass_mal_verification(window, monkeypa
     window._watch_anime(ani_page())
     assert wait_for(lambda: "TMDB" in window._anime_status.get_text())
     assert window.captured.players == []
+
+
+def test_an_ani_pm_build_failure_offers_another_provider(window, monkeypatch):
+    """A resolved ani.pm play that cannot be built leaves the choice explicit."""
+    install_core(monkeypatch)
+    called: list = []
+    monkeypatch.setattr(
+        window, "_watch_anime_unverified", lambda *args: called.append(args)
+    )
+
+    def broken(*_args, **_kwargs):
+        raise streaming.EmbedUrlError("ani.pm has no route for this entry")
+
+    monkeypatch.setattr(anipm, "playback_url", broken)
+    item = mal_item()
+    window._watch_anime(item)
+    assert wait_for(lambda: window.captured.messages)
+    assert window.captured.players == []
+    options = window.captured.message_options[-1]
+    label, action = options["alternative_action"]
+    assert label == "Try another provider"
+    action()
+    assert called and called[0][0] is item
+
+
+def test_a_verified_movies_session_offers_ani_pm_and_anime_routes(window, monkeypatch):
+    """Opened from Movies, a verified anime still decides the header menu."""
+    window._active_section = "movies"
+    play_movie(window, monkeypatch)
+    assert window._forced_playback
+    offered = window._provider_choices()
+    assert streaming.ANI_PROVIDER in offered
+    assert set(offered) == {streaming.ANI_PROVIDER, *streaming.ANILIST_ANIME_PROVIDERS}
+    assert "cinesrc" not in offered
+    labels = [
+        child.get_label() for child in window._provider_menu.get_children()
+        if isinstance(child, Gtk.RadioMenuItem)
+    ]
+    assert len(labels) == len(offered)
+    assert streaming.LABELS["cinesrc"] not in labels
+    assert window._provider_label.get_text() == streaming.LABELS[streaming.ANI_PROVIDER]
+
+
+def test_a_verified_movies_session_switches_and_restores_the_mapped_episode(
+    window, monkeypatch
+):
+    install_core(monkeypatch)
+    window._active_section = "movies"
+    route = PlayTarget(ANILIST_ID, 12, True, "mapped episode")
+    window._play_forced_ani(movie(), None, None, route)
+    ani_url = window.captured.players[0]["url"]
+    assert f"/embed/ani/{ANILIST_ID}/12/" in ani_url
+    assert window._forced_playback["provider"] == streaming.ANI_PROVIDER
+    assert window._provider_label.get_text() == streaming.LABELS[streaming.ANI_PROVIDER]
+
+    window._choose_provider("toflix")
+    assert window.captured.attempts[-1][0][0] == "toflix"
+    assert window._forced_playback["provider"] == "toflix", (
+        "the header button did not follow the session's actual provider"
+    )
+    assert window._provider_label.get_text() == streaming.LABELS["toflix"]
+    assert window._settings.get("anime_streaming_provider", "") == "", (
+        "a session switch overwrote the saved anime preference"
+    )
+    assert streaming.ANI_PROVIDER in window._provider_choices(), (
+        "ani.pm was no longer offered, so the session could not switch back"
+    )
+
+    window._choose_provider(streaming.ANI_PROVIDER)
+    assert window.captured.players[-1]["url"] == ani_url, (
+        "the mapped AniList episode was lost"
+    )
+    assert window._forced_playback["provider"] == streaming.ANI_PROVIDER
+
+
+def test_a_failed_play_of_another_anime_clears_the_previous_session(
+    window, monkeypatch
+):
+    install_core(monkeypatch)
+    window._active_section = "movies"
+    window._play_forced_ani(
+        movie(), None, None, PlayTarget(ANILIST_ID, 1, True, "first"),
+    )
+    assert window._forced_playback
+
+    def broken(*_args, **_kwargs):
+        raise streaming.EmbedUrlError("no route for this entry")
+
+    monkeypatch.setattr(streaming, "ani_url", broken)
+    window._play_forced_ani(
+        movie(tmdb_id=2, title="Another One"), None, None,
+        PlayTarget(99148, 1, True, "second"),
+    )
+
+    assert window.captured.messages, "the failure was not reported"
+    assert window._forced_playback is None, "anime A's session outlived anime B's failure"
+    assert window._provider_choices() == streaming.PROVIDERS
+    assert window._provider_label.get_text() == streaming.LABELS["cinesrc"]
+
+
+def test_a_movie_provider_preference_changes_independently_of_a_session(
+    window, monkeypatch
+):
+    window._active_section = "movies"
+    play_movie(window, monkeypatch)
+    players = len(window.captured.players)
+
+    window._choose_provider("velarium")
+
+    assert window._settings.get("streaming_provider") == "velarium"
+    assert window._settings.get("anime_streaming_provider", "") == "", (
+        "a movie preference change rewrote the anime preference"
+    )
+    assert len(window.captured.players) == players, (
+        "a movie preference change replayed the anime"
+    )
+    assert window._forced_playback["provider"] == streaming.ANI_PROVIDER
+    assert window._provider_label.get_text() == streaming.LABELS[streaming.ANI_PROVIDER]
+
+
+def test_the_anime_provider_menu_only_offers_anime_routes(window):
+    window._active_section = "anime"
+    window._refresh_provider_button()
+    offered = window._provider_choices()
+    assert streaming.ANI_PROVIDER in offered
+    assert set(offered) == {streaming.ANI_PROVIDER, *streaming.ANILIST_ANIME_PROVIDERS}
+    labels = [
+        child.get_label() for child in window._provider_menu.get_children()
+        if isinstance(child, Gtk.RadioMenuItem)
+    ]
+    assert len(labels) == len(offered)
+    assert streaming.LABELS["cinesrc"] not in labels
+
+    window._active_section = "movies"
+    assert window._provider_choices() == streaming.PROVIDERS
 
 
 def test_a_mal_page_resolution_failure_errors(window, monkeypatch):

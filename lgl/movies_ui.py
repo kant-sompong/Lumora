@@ -1802,21 +1802,54 @@ class MoviesWindow(Gtk.Box):
     # provider picker -------------------------------------------------------
     # provider health -----------------------------------------------------
     def _provider_section(self) -> str:
-        """Whether the header button offers anime or movie/TV providers."""
+        """Whether the header button offers anime or movie/TV providers.
+
+        A MAL-verified anime session decides this, not the tab it was opened
+        from: anime opened from Movies still offers anime providers only.
+        """
+        if getattr(self, "_forced_playback", None):
+            return "anime"
         return "anime" if self._active_section in ("anime", "gems") else "movies"
 
-    def _provider_choices(self) -> tuple[str, ...]:
+    def _section_providers(self) -> tuple[str, ...]:
+        """Providers that can play what the open section shows.
+
+        The anime menu only lists providers with a route for an anime title:
+        ani.pm by AniList id, and the providers that document one.
+        """
         if self._provider_section() == "anime":
-            return tuple(streaming.ANIME_PROVIDERS)
+            return tuple(
+                key for key in streaming.ANIME_PROVIDERS
+                if key == streaming.ANI_PROVIDER or streaming.has_anime_route(key)
+            )
         return tuple(streaming.PROVIDERS)
 
+    def _provider_choices(self) -> tuple[str, ...]:
+        return self._section_providers()
+
     def _current_provider(self) -> str:
+        """The provider playing now: a verified session names its own."""
+        playing = getattr(self, "_forced_playback", None)
+        if playing:
+            return playing.get("provider") or streaming.ANI_PROVIDER
         if self._provider_section() == "anime":
             return self._anime_provider()
         return self._streaming_provider()
 
     def _choose_provider(self, provider: str) -> None:
+        provider = str(provider)
         if self._provider_section() == "anime":
+            if self._switch_forced_provider(provider):
+                # A manual pick during a verified anime switches this play only:
+                # the saved anime preference is not rewritten behind the owner.
+                self._refresh_provider_button()
+                return
+            if getattr(self, "_forced_playback", None):
+                # No anime route, so this is an ordinary movie/TV preference
+                # change made while the verified anime keeps playing.
+                self._set_streaming_provider(provider)
+                self._refresh_provider_button()
+                return
             self._set_anime_provider(provider)
         else:
             self._set_streaming_provider(provider)
@@ -1933,6 +1966,7 @@ class MoviesWindow(Gtk.Box):
                 pass
             self._webview = None
         self._player_frame = None
+        self._forced_playback = None
         for child in list(self._player.get_children()):
             try:
                 self._player.remove(child)
@@ -4329,7 +4363,19 @@ class MoviesWindow(Gtk.Box):
         if mode == gtk_playback.MODE_ERROR:
             message = str(getattr(route, "message", "") or gtk_playback.UNRESOLVED)
             self._anime_status.set_text(message)
-            self._open_player_message(title, message)
+            # No AniList entry was resolved, so no provider URL can be built
+            # for it; the ordinary provider route is only ever entered when
+            # the owner clicks, never on its own.
+            self._open_player_message(
+                title,
+                message,
+                alternative_action=(
+                    "Try another provider",
+                    lambda: self._watch_anime_unverified(
+                        item, title, number, language
+                    ),
+                ),
+            )
             return False
         if mode == gtk_playback.MODE_ANI:
             self._play_ani_verified(item, title, number, language, route)
@@ -4337,12 +4383,16 @@ class MoviesWindow(Gtk.Box):
         self._watch_anime_unverified(item, title, number, language)
         return False
 
-    def _play_ani_verified(self, item, title, number, language, route) -> None:
-        """Play a MAL-verified anime on ani.pm only: one attempt, no fallback.
+    def _play_ani_verified(
+        self, item, title, number, language, route, preferred=None
+    ) -> None:
+        """Play a MAL-verified anime on ani.pm first, the rest behind it.
 
-        The single-entry chain disables both fallbacks: the player's Try
-        another provider button needs more than one attempt, and the automatic
-        load-failure walk has nowhere to go.
+        ani.pm is the first attempt whatever anime provider is saved; the
+        other AniList-keyed providers are kept behind it, so the player's Try
+        another provider button and the automatic load-failure walk both work.
+        ``preferred`` starts the chain on a manually picked provider; the saved
+        preference alone never does.
         """
         played = int(getattr(route, "episode", number) or number)
         track = anipm.language_key(language) or self._ani_playback_language()
@@ -4355,6 +4405,10 @@ class MoviesWindow(Gtk.Box):
                 f"ani.pm does not offer the {label} track for “{title[:60]}” "
                 f"episode {number}. Pick Sub or Dub."
             )
+            # This play failed: whatever verified anime was playing before it
+            # must not stay behind as the active session.
+            self._forced_playback = None
+            self._refresh_provider_button()
             self._anime_status.set_text(message)
             self._open_player_message(title, message)
             return
@@ -4369,8 +4423,21 @@ class MoviesWindow(Gtk.Box):
                 ),
             )
         except (streaming.EmbedUrlError, ValueError) as error:
+            self._forced_playback = None
+            self._refresh_provider_button()
             self._anime_status.set_text(str(error))
-            self._open_player_message(title, str(error))
+            # ani.pm could not build this play: say so, and leave another
+            # provider to an explicit click rather than switching on its own.
+            self._open_player_message(
+                title,
+                str(error),
+                alternative_action=(
+                    "Try another provider",
+                    lambda: self._watch_anime_unverified(
+                        item, title, number, language
+                    ),
+                ),
+            )
             return
         label = anipm.LANGUAGE_LABELS.get(track, track)
         # Watch state, not storage: the episode this title is on, so Watch
@@ -4386,15 +4453,15 @@ class MoviesWindow(Gtk.Box):
         self._anime_status.set_text(
             f"Playing “{title[:60]}” via ani.pm (episode {number})."
         )
-        # ani.pm plays first; the other AniList-keyed providers stay reachable,
-        # and the one the owner picked comes before ani.pm.
-        chosen = self._anime_provider_choice()
-        attempts = [(streaming.ANI_PROVIDER, url)]
-        alternatives = sorted(
+        # ani.pm stays first; the other AniList-keyed providers follow it, the
+        # owner's saved pick only ordering that tail for a manual switch.
+        chosen = preferred or self._anime_provider_choice()
+        ani_attempt = [(streaming.ANI_PROVIDER, url)]
+        others: list[tuple[str, str]] = []
+        for provider in sorted(
             streaming.ANILIST_ANIME_PROVIDERS,
             key=lambda name: name != chosen,
-        )
-        for provider in alternatives:
+        ):
             try:
                 other = streaming.validate_embed_url(
                     provider,
@@ -4406,11 +4473,24 @@ class MoviesWindow(Gtk.Box):
                 )
             except (streaming.EmbedUrlError, ValueError):
                 continue
-            if provider == chosen:
-                attempts.insert(0, (provider, other))
-            else:
-                attempts.append((provider, other))
+            others.append((provider, other))
+        if preferred and preferred != streaming.ANI_PROVIDER:
+            picked = [pair for pair in others if pair[0] == preferred]
+            rest = [pair for pair in others if pair[0] != preferred]
+            attempts = picked + ani_attempt + rest
+        else:
+            attempts = ani_attempt + others
         first_provider, first_url = attempts[0]
+        self._forced_playback = {
+            "kind": "anilist",
+            "item": item,
+            "title": title,
+            "number": number,
+            "language": language,
+            "route": route,
+            "provider": first_provider,
+        }
+        self._refresh_provider_button()
         self._open_player(
             first_url,
             f"{title} · Episode {number} ({label})",
@@ -4431,6 +4511,8 @@ class MoviesWindow(Gtk.Box):
 
     def _watch_anime_unverified(self, item, title, number, language) -> None:
         """An unverified anime page keeps the selected normal provider."""
+        self._forced_playback = None
+        self._refresh_provider_button()
         provider = self._streaming_provider()
         label = streaming.LABELS.get(provider, provider)
         self._anime_status.set_text(
@@ -5696,9 +5778,13 @@ class MoviesWindow(Gtk.Box):
             return False
         mode = getattr(route, "mode", gtk_playback.MODE_NORMAL)
         if mode == gtk_playback.MODE_ERROR:
+            # An unresolved title ends any earlier verified session too.
+            self._forced_playback = None
+            self._refresh_provider_button()
             self._open_player_message(
                 self._playback_label(item, season, episode),
                 str(getattr(route, "message", "") or gtk_playback.UNRESOLVED),
+                alternatives=self._alternative_attempts(item, season, episode),
             )
             return False
         if mode == gtk_playback.MODE_ANI:
@@ -5706,6 +5792,71 @@ class MoviesWindow(Gtk.Box):
             return False
         self._play_with_providers(item, season, episode)
         return False
+
+    def _alternative_attempts(self, item, season, episode) -> list[tuple[str, str]]:
+        """Other providers that can play this title, for an explicit pick.
+
+        ani.pm is never one of them: this is what an error screen or a manual
+        switch offers instead, for the same title and the same episode.
+        """
+        title = self._playback_label(item, season, episode)
+        dub = bool(self._settings.get("anime_dub", False))
+        if season is not None and episode is not None:
+            build = lambda provider: streaming.episode_url(  # noqa: E731
+                provider, item.tmdb_id, int(season), episode.number,
+                title=title, dub=dub,
+            )
+        else:
+            build = lambda provider: streaming.movie_url(  # noqa: E731
+                provider, item.tmdb_id, title=item.title, dub=dub
+            )
+        preferred = self._anime_provider_choice()
+        return [
+            pair for pair in self._provider_attempts(build, preferred=preferred)
+            if pair[0] != streaming.ANI_PROVIDER
+        ]
+
+    def _switch_forced_provider(self, provider: str) -> bool:
+        """Play the verified anime on screen on ``provider``, this session only.
+
+        A verified anime starts on ani.pm whatever is saved.  Picking another
+        provider while it plays switches *this* play: the saved
+        ``anime_streaming_provider`` is left exactly as it was, and the title
+        and season/episode already playing are kept, so Next episode and
+        resume keep their TMDB numbers.  ``False`` means nothing is playing, so
+        the pick is a normal preference change.
+        """
+        playing = getattr(self, "_forced_playback", None)
+        if not playing:
+            return False
+        if provider != streaming.ANI_PROVIDER and not streaming.has_anime_route(
+            provider
+        ):
+            # Not an anime provider: a movie/TV preference change, separate
+            # from the session, so the session keeps playing.
+            return False
+        route = playing["route"]
+        if playing["kind"] == "anilist":
+            self._play_ani_verified(
+                playing["item"], playing["title"], playing["number"],
+                playing.get("language"), route,
+                preferred=None if provider == streaming.ANI_PROVIDER else provider,
+            )
+            return True
+        item = playing["item"]
+        season = playing["season"]
+        episode = playing.get("episode")
+        if provider == streaming.ANI_PROVIDER:
+            self._play_forced_ani(item, season, episode, route)
+            return True
+        playing["provider"] = provider
+        # Still the same verified session, so picking ani.pm goes back to it.
+        self._forced_playback = playing
+        self._play_with_providers(
+            item, season, episode, preferred=provider, keep_session=True,
+        )
+        self._refresh_provider_button()
+        return True
 
     def _playback_label(self, item, season, episode) -> str:
         title = " ".join(str(getattr(item, "title", "") or "").split())
@@ -5733,10 +5884,12 @@ class MoviesWindow(Gtk.Box):
     def _play_forced_ani(self, item, season, episode, route) -> None:
         """Play a verified anime on ani.pm first, with the rest still reachable.
 
-        ani.pm stays the first attempt, and the selected provider chain is kept
-        behind it so the player's Try another provider button and the automatic
-        load-failure walk both work.  Picking another anime provider in the
-        header plays the title there instead.
+        ani.pm is the first attempt for every MAL-verified anime, whatever
+        anime provider is saved; the saved pick only orders the chain kept
+        behind it, so the player's Try another provider button and the
+        automatic load-failure walk both continue from ani.pm.  Switching away
+        from ani.pm is a manual, session-only choice: see
+        :meth:`_switch_forced_provider`.
         """
         title = self._playback_label(item, season, episode)
         dub = bool(self._settings.get("anime_dub", False))
@@ -5750,6 +5903,12 @@ class MoviesWindow(Gtk.Box):
                 provider, item.tmdb_id, title=item.title, dub=dub
             )
         chosen = self._anime_provider_choice()
+        # The saved anime pick only orders the providers offered *behind*
+        # ani.pm; it never takes the first attempt away from a verified anime.
+        others = [
+            pair for pair in self._provider_attempts(build, preferred=chosen)
+            if pair[0] != streaming.ANI_PROVIDER
+        ]
         try:
             url = streaming.ani_url(
                 int(getattr(route, "anilist_id", 0) or 0),
@@ -5758,10 +5917,19 @@ class MoviesWindow(Gtk.Box):
             )
             url = streaming.validate_embed_url(streaming.ANI_PROVIDER, url)
         except (streaming.EmbedUrlError, ValueError) as error:
-            if chosen == streaming.ANI_PROVIDER:
-                self._open_player_message(title, str(error))
-                return
-            url = ""
+            # This play failed: a previous anime's verified session must not
+            # stay active behind the error screen.
+            self._forced_playback = None
+            self._refresh_provider_button()
+            # Never a silent fall back to another provider: say ani.pm could
+            # not build the play, and leave the rest to an explicit choice.
+            self._open_player_message(
+                title,
+                f"ani.pm could not play this title: {error} "
+                "Pick another provider yourself to watch it there.",
+                alternatives=others,
+            )
+            return
         self._record_playback(item.key, item.title, item.poster_url, item.year)
         if season is not None and episode is not None:
             # Bookkeeping stays in TMDB numbers, so Next episode and resume
@@ -5769,29 +5937,33 @@ class MoviesWindow(Gtk.Box):
             self._playing_episode = (int(season), int(episode.number))
         else:
             self._playing_episode = None
-        ani_attempt = [(streaming.ANI_PROVIDER, url)] if url else []
-        others = [
-            pair for pair in self._provider_attempts(build, preferred=chosen)
-            if pair[0] != streaming.ANI_PROVIDER
-        ]
-        if chosen == streaming.ANI_PROVIDER:
-            attempts = ani_attempt + others
-        else:
-            picked = [pair for pair in others if pair[0] == chosen]
-            rest = [pair for pair in others if pair[0] != chosen]
-            attempts = picked + ani_attempt + rest
-        if not attempts:
-            self._open_player_message(
-                title,
-                "No streaming provider could build a playback URL for this "
-                "title. Check Settings → Media.",
-            )
-            return
+        # Remember what plays, so a manual provider pick can replay exactly
+        # this title and episode without touching the saved preference.
+        self._forced_playback = {
+            "kind": "tmdb",
+            "item": item,
+            "season": season,
+            "episode": episode,
+            "route": route,
+            "provider": streaming.ANI_PROVIDER,
+        }
+        self._refresh_provider_button()
+        attempts = [(streaming.ANI_PROVIDER, url)] + others
         provider, first = attempts[0]
         self._open_player(first, title, provider=provider, attempts=attempts)
 
-    def _play_with_providers(self, item, season, episode) -> None:
-        """Today's path: the selected provider chain, for non-anime titles."""
+    def _play_with_providers(
+        self, item, season, episode, preferred=None, keep_session=False
+    ) -> None:
+        """Today's path: the selected provider chain, for non-anime titles.
+
+        ``preferred`` starts the chain somewhere other than the saved provider;
+        a manual provider pick uses it, so the rest of the chain is unchanged.
+        ``keep_session`` keeps the verified-anime context, because this chain is
+        the session switching to another provider, not a new title.
+        """
+        if not keep_session:
+            self._forced_playback = None
         self._record_playback(item.key, item.title, item.poster_url, item.year)
         if season is not None and episode is not None:
             self._playing_episode = (int(season), int(episode.number))
@@ -5801,7 +5973,8 @@ class MoviesWindow(Gtk.Box):
                 lambda provider: streaming.episode_url(
                     provider, item.tmdb_id, int(season), episode.number,
                     title=title, dub=dub,
-                )
+                ),
+                preferred=preferred,
             )
             self._play_attempts(attempts, title)
             return
@@ -5810,7 +5983,8 @@ class MoviesWindow(Gtk.Box):
         attempts = self._provider_attempts(
             lambda provider: streaming.movie_url(
                 provider, item.tmdb_id, title=item.title, dub=dub
-            )
+            ),
+            preferred=preferred,
         )
         self._play_attempts(attempts, item.title)
 
@@ -5882,11 +6056,16 @@ class MoviesWindow(Gtk.Box):
         if index >= len(attempts):
             return False
         provider, url = attempts[index]
-        failed = attempts[index - 1][0]
+        # An error screen starts the chain at -1, where the first alternative
+        # replaces nothing that loaded, so no provider is named as failed.
+        failed = attempts[index - 1][0] if index > 0 else ""
         detail = self._playback_reason
+        tried = (
+            f"{streaming.LABELS.get(failed, failed)} failed, trying "
+            if failed else ""
+        )
         self._playback_reason = (
-            f"{detail}{streaming.LABELS.get(failed, failed)} failed, trying "
-            f"{streaming.LABELS.get(provider, provider)} "
+            f"{detail}{tried}{streaming.LABELS.get(provider, provider)} "
             f"({index + 1} of {len(attempts)}). "
         )
         self._playback_index = index
@@ -6301,8 +6480,19 @@ class MoviesWindow(Gtk.Box):
         else:
             Gtk.show_uri(None, url, Gdk.CURRENT_TIME)
 
-    def _open_player_message(self, title: str, message: str) -> None:
-        """Stay on the watch page and explain why nothing can play."""
+    def _open_player_message(
+        self, title: str, message: str, *, alternatives=None, alternative_action=None
+    ) -> None:
+        """Stay on the watch page and explain why nothing can play.
+
+        ``alternatives`` are the providers the owner may try instead; they are
+        only ever played on an explicit click, never automatically.
+        ``alternative_action`` is a ``(label, callable)`` button for a case with
+        no URL to build, such as a verified title with no AniList entry.
+        """
+        # Nothing verified is playing any more: a failed attempt must not
+        # leave the previous anime's session active behind the error screen.
+        self._forced_playback = None
         self._playing_episode = None
         current = self._stack.get_visible_child_name()
         if current not in (None, "player"):
@@ -6319,10 +6509,34 @@ class MoviesWindow(Gtk.Box):
         label.set_line_wrap(True)
         label.set_max_width_chars(80)
         box.pack_start(label, False, False, 0)
+        if alternatives:
+            self._playback_attempts = [(p, u) for p, u in alternatives]
+            self._playback_title = title
+            self._playback_index = -1
+            self._playback_reason = ""
+            other = Gtk.Button(label="Try another provider")
+            other.get_style_context().add_class("movie-btn-dark")
+            other.set_tooltip_text(
+                "Play this title on another provider instead."
+            )
+            other.connect("clicked", lambda *_a: self._try_another_provider())
+            box.pack_start(other, False, False, 0)
+        if alternative_action is not None:
+            label, action = alternative_action
+            button = Gtk.Button(label=label)
+            button.get_style_context().add_class("movie-btn-dark")
+            button.set_tooltip_text(
+                "Watch this title on the provider you selected."
+            )
+            button.connect("clicked", lambda *_a: action())
+            box.pack_start(button, False, False, 0)
         self._player.pack_start(box, True, True, 0)
         self._player.show_all()
         self._stack.set_visible_child_name("player")
         self._update_back()
+        refresh = getattr(self, "_refresh_provider_button", None)
+        if callable(refresh):
+            refresh()
 
     # -- watchlist ----------------------------------------------------------
 

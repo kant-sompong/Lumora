@@ -37,6 +37,7 @@ from lgl import (  # noqa: E402
 )
 from lgl.qt_widgets import Toast  # noqa: E402
 from lgl.settings import Settings  # noqa: E402
+from lgl.tmdb import Episode  # noqa: E402
 
 ANIME = qt_media.Card(
     key="anime:21", title="One Piece", year="1999", kind="anime", mal_id=21
@@ -391,14 +392,72 @@ def test_a_verified_anime_plays_on_ani_pm(app, monkeypatch, tmp_path):
     assert harness.loaded == ["https://ani.pm/embed/ani/16498/1/sub"]
 
 
-def test_a_saved_anime_provider_plays_instead_of_ani_pm(app, monkeypatch, tmp_path):
-    """ani.pm is the default anime provider; an explicit pick still wins."""
+def test_a_saved_anime_provider_never_preempts_ani_pm(app, monkeypatch, tmp_path):
+    """ani.pm is the first provider whatever anime preference is saved."""
     use_identity(monkeypatch, VERIFIED)
-    harness = Harness(app, {"anime_streaming_provider": "toflix", "streaming_provider": "cinesrc"}, tmp_path)
+    harness = Harness(
+        app,
+        {"anime_streaming_provider": "toflix", "streaming_provider": "cinesrc"},
+        tmp_path,
+    )
     harness.page._play_anime(ANIME)
     settle(app, lambda: harness.loaded or harness.toast_text)
-    assert harness.loaded
-    assert all("toflix" in url for url in harness.loaded)
+    assert harness.loaded == [ANIME_URL]
+    assert harness.settings.get("anime_streaming_provider") == "toflix", (
+        "routing a verified anime must not rewrite the saved preference"
+    )
+
+
+def test_the_provider_menu_switches_a_verified_anime_for_this_session_only(
+    app, monkeypatch, tmp_path
+):
+    use_identity(monkeypatch, VERIFIED)
+    harness = Harness(app, {"anime_streaming_provider": "toflix"}, tmp_path)
+    harness.page._play_anime(ANIME)
+    settle(app, lambda: harness.loaded == [ANIME_URL])
+
+    harness.page._choose_provider("vidy")
+    settle(app, lambda: len(harness.loaded) > 1)
+
+    assert "vidy" in harness.loaded[-1]
+    assert "16498" in harness.loaded[-1], (
+        "the verified AniList entry is kept, not searched for again"
+    )
+    assert harness.settings.get("anime_streaming_provider") == "toflix", (
+        "a session switch must not overwrite the saved preference"
+    )
+
+
+def test_switching_back_to_ani_pm_replays_the_verified_entry(
+    app, monkeypatch, tmp_path
+):
+    use_identity(monkeypatch, VERIFIED)
+    harness = Harness(app, {"anime_streaming_provider": "toflix"}, tmp_path)
+    harness.page._play_anime(ANIME)
+    settle(app, lambda: harness.loaded == [ANIME_URL])
+
+    harness.page._choose_provider("vidy")
+    settle(app, lambda: len(harness.loaded) > 1)
+    harness.page._choose_provider(streaming.ANI_PROVIDER)
+    settle(app, lambda: harness.loaded[-1] == ANIME_URL)
+
+    assert harness.loaded[-1] == ANIME_URL
+    assert harness.settings.get("anime_streaming_provider") == "toflix"
+
+
+def test_a_provider_pick_after_leaving_the_player_is_saved(
+    app, monkeypatch, tmp_path
+):
+    use_identity(monkeypatch, VERIFIED)
+    harness = Harness(app, tmp_path=tmp_path)
+    harness.page._play_anime(ANIME)
+    settle(app, lambda: harness.loaded == [ANIME_URL])
+
+    harness.page._leave_player()
+    harness.page._section = "anime"
+    harness.page._choose_provider("toflix")
+
+    assert harness.settings.get("anime_streaming_provider") == "toflix"
 
 
 def test_the_selected_provider_does_not_affect_verified_anime(app, monkeypatch, tmp_path):
@@ -421,17 +480,18 @@ def test_a_verified_anime_never_gets_the_mal_route(app, monkeypatch, tmp_path):
 
 
 def test_the_provider_can_be_changed_while_verified_anime_plays(app, monkeypatch, tmp_path):
-    """ani.pm is the default for verified anime, not a lock on the menu."""
+    """ani.pm is the first provider for verified anime, not a lock on the menu."""
     use_identity(monkeypatch, VERIFIED)
     harness = Harness(app, {"anime_streaming_provider": "toflix"}, tmp_path)
     harness.page._play_anime(ANIME)
     settle(app, lambda: harness.loaded or harness.toast_text)
     assert harness.page.provider_button.isEnabled() is True
 
-    harness.page._choose_provider("cinesrc")
+    harness.page._choose_provider("vidy")
     pump(app)
     assert harness.page.provider_button.isEnabled() is True
     assert harness.toast_text == ""
+    assert "vidy" in harness.loaded[-1], "the switch never replayed the title"
 
 
 def test_leaving_the_player_gives_the_provider_menu_back(app, monkeypatch, tmp_path):
@@ -625,17 +685,31 @@ def test_a_player_that_cannot_open_does_not_strand_the_lock(app, monkeypatch, tm
     assert "could not be opened" in harness.toast_text
 
 
-def test_the_anilist_match_plays_on_the_saved_anime_provider(app, monkeypatch, tmp_path):
-    """The anime provider the owner picked also keeps the resolved match."""
+def test_a_verified_anilist_match_starts_on_ani_pm_whatever_is_saved(
+    app, monkeypatch, tmp_path
+):
+    """A MAL-verified search match is a verified anime like any other."""
     use_identity(monkeypatch, VERIFIED)
     harness = Harness(app, {"anime_streaming_provider": "toflix"}, tmp_path)
     harness.page._detail_card = ANIME
     harness.page._anilist_match = ("One Piece", 999)
     harness.page._play_anilist_match()
     settle(app, lambda: harness.loaded or harness.toast_text)
-    assert harness.loaded
-    assert "toflix" in harness.loaded[-1]
-    assert all("ani.pm/embed/ani/999" not in url for url in harness.loaded)
+    assert harness.loaded == [ANIME_URL]
+    assert harness.settings.get("anime_streaming_provider") == "toflix"
+
+    # A pick is session-only, and picking ani.pm goes back to the match.
+    harness.page._choose_provider("toflix")
+    pump(app)
+    assert len(harness.loaded) == 2
+    assert harness.loaded[-1] == "https://toflix.co/embed/anime/16498/1", (
+        "a switch must play the verified AniList entry, not the search's id"
+    )
+    assert harness.settings.get("anime_streaming_provider") == "toflix"
+
+    harness.page._choose_provider(streaming.ANI_PROVIDER)
+    pump(app)
+    assert harness.loaded[-1] == ANIME_URL
 
 
 def test_an_unverified_anilist_match_still_plays_the_match(app, monkeypatch, tmp_path):
@@ -884,7 +958,7 @@ def test_ordinary_sub_and_dub_keep_the_constructed_route(
 
 
 @pytest.mark.parametrize("entry", ("_play_detail", "_play_current"))
-def test_the_watch_buttons_use_the_saved_anime_provider(app, monkeypatch, tmp_path, entry):
+def test_the_watch_buttons_play_ani_pm_whatever_is_saved(app, monkeypatch, tmp_path, entry):
     """Detail page and home hero both go through _play_card -> _play_anime."""
     use_identity(monkeypatch, VERIFIED)
     harness = Harness(
@@ -895,8 +969,8 @@ def test_the_watch_buttons_use_the_saved_anime_provider(app, monkeypatch, tmp_pa
     harness.page._hero_card = ANIME
     getattr(harness.page, entry)()
     settle(app, lambda: harness.loaded or harness.toast_text)
-    assert harness.loaded
-    assert all("toflix" in url for url in harness.loaded)
+    assert harness.loaded == [ANIME_URL]
+    assert harness.settings.get("anime_streaming_provider") == "toflix"
     assert harness.page.provider_button.isEnabled() is True
 
 
@@ -917,6 +991,162 @@ def test_a_mal_verified_anime_plays_ani_pm_without_a_tmdb_client(app, monkeypatc
             break
     assert harness.loaded == ["https://ani.pm/embed/ani/16498/1/sub"]
     assert all("cinesrc" not in url for url in harness.loaded)
+
+
+def test_a_verified_tmdb_card_starts_on_ani_pm_with_its_mapped_episode(
+    app, monkeypatch, tmp_path
+):
+    """A TMDB catalogue card is the same verified session, with its episode."""
+    use_identity(monkeypatch, VERIFIED)
+    monkeypatch.setattr(
+        anime_map, "tmdb_to_anilist",
+        lambda *_a, **_k: anime_map.PlayTarget(
+            anilist_id=16498, episode=12, confident=True,
+        ),
+    )
+    harness = Harness(app, {"anime_streaming_provider": "vidy"}, tmp_path)
+    episode = Episode(season=2, number=5, title="The Wolf and the Lion")
+    harness.page._play_tmdb(TV, 2, episode)
+    settle(app, lambda: harness.loaded or harness.toast_text)
+    assert harness.loaded == ["https://ani.pm/embed/ani/16498/12/sub"], (
+        "the saved anime provider preempted ani.pm, or the mapped episode was lost"
+    )
+    assert harness.page._playing_episode == (2, 5)
+
+    # A manual pick is session-only, and plays the same season and episode.
+    harness.page._choose_provider("toflix")
+    pump(app)
+    assert len(harness.loaded) == 2
+    assert "toflix" in harness.loaded[-1]
+    assert "/1399/2/5" in harness.loaded[-1]
+    assert harness.settings.get("anime_streaming_provider") == "vidy", (
+        "a manual switch overwrote the saved preference"
+    )
+
+    # Switching back restores the anime and its mapped episode.
+    harness.page._choose_provider(streaming.ANI_PROVIDER)
+    pump(app)
+    assert harness.loaded[-1] == "https://ani.pm/embed/ani/16498/12/sub"
+    assert harness.page._playing_episode == (2, 5)
+
+
+def test_a_verified_movies_session_offers_ani_pm_and_only_anime_providers(
+    app, monkeypatch, tmp_path
+):
+    """Opened from Movies, a verified anime still decides the provider menu."""
+    use_identity(monkeypatch, VERIFIED)
+    monkeypatch.setattr(
+        anime_map, "tmdb_to_anilist",
+        lambda *_a, **_k: anime_map.PlayTarget(
+            anilist_id=16498, episode=12, confident=True,
+        ),
+    )
+    harness = Harness(app, {"anime_streaming_provider": "vidy"}, tmp_path)
+    harness.page._section = "movies"
+    harness.page._play_tmdb(TV, 2, Episode(season=2, number=5, title="The Wolf and the Lion"))
+    settle(app, lambda: harness.loaded)
+    assert harness.loaded == ["https://ani.pm/embed/ani/16498/12/sub"]
+
+    offered = harness.page._menu_providers()
+    assert streaming.ANI_PROVIDER in offered
+    assert set(offered) == {streaming.ANI_PROVIDER, *streaming.ANILIST_ANIME_PROVIDERS}
+    assert "cinesrc" not in offered, "the Movies menu did not follow the session"
+
+    menu = harness.page._provider_menu()
+    texts = [action.text() for action in menu.actions()]
+    assert any(text.startswith(streaming.LABELS[streaming.ANI_PROVIDER]) for text in texts)
+    assert not any(text.startswith(streaming.LABELS["cinesrc"]) for text in texts)
+
+
+def test_a_verified_movies_session_switches_from_the_menu_and_back(
+    app, monkeypatch, tmp_path
+):
+    """ani.pm → ToFlix → ani.pm from the real menu, mapped episode restored."""
+    use_identity(monkeypatch, VERIFIED)
+    monkeypatch.setattr(
+        anime_map, "tmdb_to_anilist",
+        lambda *_a, **_k: anime_map.PlayTarget(
+            anilist_id=16498, episode=12, confident=True,
+        ),
+    )
+    harness = Harness(app, {"anime_streaming_provider": "vidy"}, tmp_path)
+    harness.page._section = "movies"
+    harness.page._play_tmdb(TV, 2, Episode(season=2, number=5, title="The Wolf and the Lion"))
+    settle(app, lambda: harness.loaded)
+    ani_url = "https://ani.pm/embed/ani/16498/12/sub"
+    assert harness.loaded == [ani_url]
+    assert harness.page._active_provider() == streaming.ANI_PROVIDER
+    assert harness.page.provider_button.text().startswith(
+        streaming.LABELS[streaming.ANI_PROVIDER]
+    )
+
+    def pick(key: str) -> None:
+        menu = harness.page._provider_menu()
+        action = next(
+            item for item in menu.actions()
+            if item.text().startswith(streaming.LABELS[key])
+        )
+        action.trigger()
+        pump(app)
+
+    pick("toflix")
+    assert harness.loaded[-1] == "https://toflix.co/embed/tv/1399/2/5"
+    assert harness.page._active_provider() == "toflix", (
+        "the badge did not follow the session's actual provider"
+    )
+    assert harness.page.provider_button.text().startswith(
+        streaming.LABELS["toflix"]
+    )
+    assert harness.settings.get("anime_streaming_provider") == "vidy", (
+        "a session switch overwrote the saved anime preference"
+    )
+    assert streaming.ANI_PROVIDER in harness.page._menu_providers(), (
+        "ani.pm was no longer offered, so the session could not switch back"
+    )
+
+    pick(streaming.ANI_PROVIDER)
+    assert harness.loaded[-1] == ani_url, "the mapped AniList episode was lost"
+    assert harness.page._active_provider() == streaming.ANI_PROVIDER
+    assert harness.page._playing_episode == (2, 5)
+
+
+def test_an_ordinary_movies_menu_is_unchanged_without_a_verified_session(
+    app, tmp_path
+):
+    harness = Harness(app, {}, tmp_path)
+    harness.page._section = "movies"
+    assert harness.page._menu_providers() == streaming.PROVIDERS
+    assert "cinesrc" in harness.page._menu_providers()
+
+
+def test_a_movie_provider_preference_changes_independently_of_a_session(
+    app, monkeypatch, tmp_path
+):
+    """A pick with no anime route is a movie preference, not a session switch."""
+    use_identity(monkeypatch, VERIFIED)
+    monkeypatch.setattr(
+        anime_map, "tmdb_to_anilist",
+        lambda *_a, **_k: anime_map.PlayTarget(
+            anilist_id=16498, episode=12, confident=True,
+        ),
+    )
+    harness = Harness(
+        app,
+        {"streaming_provider": "cinesrc", "anime_streaming_provider": "vidy"},
+        tmp_path,
+    )
+    harness.page._section = "movies"
+    harness.page._play_tmdb(TV, 2, Episode(season=2, number=5, title="The Wolf and the Lion"))
+    settle(app, lambda: harness.loaded)
+    loaded = list(harness.loaded)
+
+    harness.page._choose_provider("velarium")
+    pump(app)
+
+    assert harness.settings.get("streaming_provider") == "velarium"
+    assert harness.settings.get("anime_streaming_provider") == "vidy"
+    assert harness.loaded == loaded, "a movie preference change replayed the anime"
+    assert harness.page._active_provider() == streaming.ANI_PROVIDER
 
 
 def test_a_missing_mal_client_id_keeps_the_provider_for_a_tmdb_title(app, monkeypatch, tmp_path):
