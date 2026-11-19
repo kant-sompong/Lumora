@@ -17,6 +17,8 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 pytest.importorskip("PySide6.QtWidgets")
 
+from PySide6.QtCore import Qt  # noqa: E402
+from PySide6.QtTest import QTest  # noqa: E402
 from PySide6.QtWidgets import QApplication, QStackedWidget, QWidget  # noqa: E402
 
 from lgl import qt_media, qt_media_tabs  # noqa: E402
@@ -688,3 +690,136 @@ def test_provider_switch_after_a_tab_round_trip_replays_the_anilist_episode(tabs
     assert calls == ["toflix"]
     assert page._verified_context.ani_episode == 5
     assert page._forced_anime_playback is True
+
+
+def _strip_and_player_rects(window, page):
+    bar = window.media_tabs_bar
+    bar_top = bar.mapTo(window, bar.rect().topLeft()).y()
+    player_top = page.player.mapTo(window, page.player.rect().topLeft()).y()
+    return bar, bar_top, player_top
+
+
+def test_the_tab_strip_stays_on_screen_above_a_fullscreen_player(qt_window, app):
+    """The strip is the one piece of chrome a fullscreen player leaves in place.
+
+    Hiding it made the other open titles unreachable, which is the reported
+    bug.  The test checks real widget geometry, not just ``isVisible()``.
+    """
+    window = qt_window
+    window.media.open_card(card("movie:9", "Interstellar"))
+    pump(app)
+    page = window.media_tabs.page_for(window.media_tabs.active_id)
+    page.play_embedded("https://provider.test/watch/9", "Interstellar")
+    pump(app)
+
+    page.player.set_fullscreen(True)
+    pump(app)
+
+    assert window.isFullScreen() is True
+    bar, bar_top, player_top = _strip_and_player_rects(window, page)
+    assert bar.isVisible() is True
+    assert bar.height() >= 36 and bar.width() > 0
+    assert bar_top >= 0
+    # The video starts below the strip, so the two never overlap.
+    assert player_top >= bar_top + bar.height()
+    assert page.player.chrome.isHidden() is True
+    # Every open title is on the strip and can be clicked.
+    assert bar.count() == 1
+    assert bar.buttons()[0].isVisible() is True
+
+
+def test_switching_tabs_in_fullscreen_keeps_fullscreen_and_saved_positions(qt_window, app):
+    window = qt_window
+    window.media.open_card(card("movie:9", "Interstellar"))
+    pump(app)
+    first_id = window.media_tabs.active_id
+    first = window.media_tabs.page_for(first_id)
+    first.play_embedded("https://provider.test/watch/9", "Interstellar")
+    first.player.view.position = 95.0
+    pump(app)
+    window.media.open_card(card("tv:2", "Breaking Bad", "tv"))
+    pump(app)
+    second_id = window.media_tabs.active_id
+    second = window.media_tabs.page_for(second_id)
+    second.play_embedded("https://provider.test/watch/2", "Breaking Bad")
+    pump(app)
+
+    window.media_tabs.activate(first_id)
+    pump(app)
+    first.player.set_fullscreen(True)
+    pump(app)
+    assert window.isFullScreen() is True
+
+    window.media_tabs.activate(second_id)
+    pump(app)
+
+    # Switching tabs does not leave fullscreen, and the strip is still there.
+    assert window.isFullScreen() is True
+    assert window.media_tabs_bar.isVisible() is True
+    assert window.media_tabs_bar.height() >= 36
+    # The tab that was left is suspended with its stream and position saved.
+    left = window.media_tabs.store.find("movie:9")
+    assert left.playing is True
+    assert left.url == "https://provider.test/watch/9"
+    assert left.position == pytest.approx(95.0)
+    assert first.player.is_playing() is False
+    # The tab switched to comes back paused, inside the same fullscreen window.
+    assert second.player.pages.currentWidget() is second.player.paused
+    assert second.player.chrome.isHidden() is True
+
+    # Resume continues in the same fullscreen window.
+    second.player.resume()
+    pump(app)
+    assert second.player.is_playing() is True
+    assert window.isFullScreen() is True
+    assert second.player.chrome.isHidden() is True
+    assert window.media_tabs_bar.isVisible() is True
+
+
+def test_escape_on_a_paused_tab_in_fullscreen_only_leaves_fullscreen(qt_window, app):
+    window = qt_window
+    window.media.open_card(card("movie:9", "Interstellar"))
+    pump(app)
+    first_id = window.media_tabs.active_id
+    first = window.media_tabs.page_for(first_id)
+    first.play_embedded("https://provider.test/watch/9", "Interstellar")
+    pump(app)
+    window.media.open_card(card("tv:2", "Breaking Bad", "tv"))
+    pump(app)
+    second_id = window.media_tabs.active_id
+    second = window.media_tabs.page_for(second_id)
+    second.play_embedded("https://provider.test/watch/2", "Breaking Bad")
+    pump(app)
+    window.media_tabs.activate(first_id)
+    pump(app)
+    first.player.set_fullscreen(True)
+    pump(app)
+    window.media_tabs.activate(second_id)
+    pump(app)
+
+    QTest.keyClick(second.player, Qt.Key_Escape)
+    pump(app)
+
+    assert window.isFullScreen() is False
+    assert window.media_tabs_bar.isVisible() is True
+    # The paused tab is still the page in front: Escape only left fullscreen.
+    assert window.stack.currentWidget() is second
+    assert second.player.pages.currentWidget() is second.player.paused
+
+
+def test_closing_the_last_tab_in_fullscreen_leaves_fullscreen(qt_window, app):
+    window = qt_window
+    window.media.open_card(card("movie:9", "Interstellar"))
+    pump(app)
+    page = window.media_tabs.page_for(window.media_tabs.active_id)
+    page.play_embedded("https://provider.test/watch/9", "Interstellar")
+    pump(app)
+    page.player.set_fullscreen(True)
+    pump(app)
+    assert window.isFullScreen() is True
+
+    window.media_tabs.close(window.media_tabs.active_id)
+    pump(app)
+
+    assert window.isFullScreen() is False
+    assert window.media_tabs_bar.isVisible() is False

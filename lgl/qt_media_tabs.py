@@ -29,6 +29,7 @@ from PySide6.QtWidgets import (
 
 from . import media_tabs
 from .qt_media import MediaPage
+from .qt_player import end_window_fullscreen
 from .qt_widgets import label
 
 #: Long titles are shortened here so one tab cannot squeeze out the others.
@@ -105,7 +106,15 @@ class MediaTabButton(QFrame):
 
 
 class MediaTabBar(QFrame):
-    """The horizontal strip of open media tabs, scrolled like a browser's."""
+    """The horizontal strip of open media tabs, scrolled like a browser's.
+
+    The strip stays at the top of the screen during fullscreen playback: it is
+    the one piece of chrome a player leaves in place, so another open title can
+    be clicked without leaving fullscreen.
+    """
+
+    #: Read by the player's fullscreen code: do not hide this widget.
+    stays_during_fullscreen = True
 
     tab_activated = Signal(str)
     tab_closed = Signal(str)
@@ -291,9 +300,11 @@ class MediaTabsController(QObject):
         """Leaving the Media view: stop and free the tab that was in front.
 
         The tab keeps its page, its title selection and its saved position, so
-        returning to it shows the paused panel instead of playing on.
+        returning to it shows the paused panel instead of playing on.  Leaving
+        the view also ends any fullscreen: the other pages are not the video.
         """
-        self._suspend_current()
+        self._suspend_current(keep_fullscreen=True)
+        end_window_fullscreen(self.stack.window())
         self._shown = None
         self._sync_bar()
 
@@ -301,7 +312,9 @@ class MediaTabsController(QObject):
         tab = self.store.activate(tab_id)
         if tab is None or tab_id == self._shown_id():
             return
-        self._suspend_current(tab_id)
+        # Switching tabs must not drop the window out of fullscreen: the tab
+        # strip stays usable and the next tab keeps the same screen.
+        self._suspend_current(tab_id, keep_fullscreen=True)
         page = self._pages.get(tab_id)
         if page is None:
             return
@@ -321,14 +334,15 @@ class MediaTabsController(QObject):
             return None
         return self._shown
 
-    def _suspend_current(self, keep_id: str | None = None) -> None:
+    def _suspend_current(self, keep_id: str | None = None,
+                        keep_fullscreen: bool = False) -> None:
         shown = self._shown_id()
         if shown is None or shown == keep_id:
             return
         page = self._pages.get(shown)
         self._capture(shown)
         if page is not None:
-            page.suspend_tab()
+            page.suspend_tab(keep_fullscreen=keep_fullscreen)
 
     def _capture(self, tab_id: str) -> None:
         page = self._pages.get(tab_id)
@@ -374,8 +388,11 @@ class MediaTabsController(QObject):
             self.activate(new_active.tab_id)
             return
         self._sync_bar()
-        if was_active and self.store.empty and self.on_empty is not None:
-            self.on_empty()
+        if was_active and self.store.empty:
+            # Closing the last tab ends the session the tab strip belonged to.
+            end_window_fullscreen(self.stack.window())
+            if self.on_empty is not None:
+                self.on_empty()
 
     def close_active(self) -> None:
         tab = self.store.active
@@ -383,6 +400,7 @@ class MediaTabsController(QObject):
             self.close(tab.tab_id)
 
     def close_all(self) -> None:
+        end_window_fullscreen(self.stack.window())
         for tab in self.store.tabs:
             page = self._pages.pop(tab.tab_id, None)
             if page is not None:

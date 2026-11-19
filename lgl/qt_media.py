@@ -1195,15 +1195,19 @@ class MediaPage(QWidget):
             "payload": payload,
         }
 
-    def suspend_tab(self) -> None:
-        """Switch away: stop the video, free its view, keep the page."""
+    def suspend_tab(self, keep_fullscreen: bool = False) -> None:
+        """Switch away: stop the video, free its view, keep the page.
+
+        ``keep_fullscreen`` is set for a tab switch: the window stays fullscreen
+        for the tab that comes in front, and the strip above it stays usable.
+        """
         player = getattr(self, "player", None)
         if player is None:
             return
         if self._playing():
-            player.suspend()
+            player.suspend(keep_fullscreen=keep_fullscreen)
         else:
-            player.release_resources()
+            player.release_resources(keep_fullscreen=keep_fullscreen)
         self._end_forced_anime_session()
         self._player_return = None
         self.stack.setCurrentWidget(self._detail_page)

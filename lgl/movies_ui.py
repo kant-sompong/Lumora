@@ -1981,11 +1981,17 @@ class MoviesWindow(Gtk.Box):
         except Exception:  # noqa: BLE001
             pass
 
-    def stop_playback(self) -> None:
+    def stop_playback(self, keep_fullscreen: bool = False) -> None:
+        """Stop the video and free its view.
+
+        ``keep_fullscreen`` is the tab-switch case: the window stays fullscreen
+        for the tab coming in front, which is what keeps the media tab strip
+        usable while a video was playing fullscreen.
+        """
         self._stop_position_sampling()
         # Any answer still owed by the view being released is now stale.
         self._position_token = getattr(self, "_position_token", 0) + 1
-        if getattr(self, "_player_fullscreen", False):
+        if getattr(self, "_player_fullscreen", False) and not keep_fullscreen:
             self._set_player_fullscreen(False)
         view = getattr(self, "_webview", None)
         if view is not None:
@@ -2148,10 +2154,21 @@ class MoviesWindow(Gtk.Box):
         ):
             return
         leaving_player = self._stack.get_visible_child_name() == "player"
+        # Switching tabs during fullscreen keeps the window fullscreen when the
+        # tab being switched to still has its stream, so the strip stays the
+        # way between titles.  A tab with no playback left goes back to the
+        # normal layout instead of sitting on a fullscreen details page.
+        target = self._tabs.find_id(tab_id)
+        keep_fullscreen = bool(
+            getattr(self, "_player_fullscreen", False)
+            and getattr(target, "url", "")
+        )
         self._capture_active_tab()
         if leaving_player:
             # No background tab keeps decoding video once it is left behind.
-            self.stop_playback()
+            self.stop_playback(keep_fullscreen=keep_fullscreen)
+        elif getattr(self, "_player_fullscreen", False) and not keep_fullscreen:
+            self._set_player_fullscreen(False)
         tab = self._tabs.activate(tab_id)
         if tab is None:
             return
@@ -2214,9 +2231,14 @@ class MoviesWindow(Gtk.Box):
         if existing is not None:
             # Already open: save the page in front, then restore the tab's own
             # details, seasons, scroll, episode and paused stream.
+            keep_fullscreen = bool(
+                getattr(self, "_player_fullscreen", False) and existing.url
+            )
             self._capture_active_tab()
             if leaving_player:
-                self.stop_playback()
+                self.stop_playback(keep_fullscreen=keep_fullscreen)
+            elif getattr(self, "_player_fullscreen", False) and not keep_fullscreen:
+                self._set_player_fullscreen(False)
             tab = self._tabs.activate(existing.tab_id)
             if tab is not None:
                 self._restore_tab(tab)
@@ -2224,6 +2246,9 @@ class MoviesWindow(Gtk.Box):
         self._capture_active_tab()
         if leaving_player:
             self.stop_playback()
+        elif getattr(self, "_player_fullscreen", False):
+            # A title that is not open yet starts from the normal layout.
+            self._set_player_fullscreen(False)
         tab, _created = self._tabs.open(
             key, str(getattr(item, "title", "") or ""),
             str(getattr(item, "kind", "") or ""),
@@ -2631,7 +2656,12 @@ class MoviesWindow(Gtk.Box):
     def _on_page_changed(self, stack, _param) -> None:
         name = stack.get_visible_child_name()
         if name != "player":
-            self.stop_playback()
+            # A tab restore passes through the details page on its way back to
+            # the paused player; leaving fullscreen for that step would make a
+            # tab switch drop out of fullscreen before the player came back.
+            self.stop_playback(
+                keep_fullscreen=bool(getattr(self, "_restoring_tab", False))
+            )
         self._update_back()
         # The page in front decides which providers the badge offers.
         refresh = getattr(self, "_refresh_provider_button", None)
@@ -6396,6 +6426,10 @@ class MoviesWindow(Gtk.Box):
             row.pack_start(other, False, False, 0)
         self._player.pack_start(row, False, False, 0)
         self._player.show_all()
+        # Resuming from the paused panel of a fullscreen tab: the page chrome
+        # was built after fullscreen was applied, so hide it again here.
+        if getattr(self, "_player_fullscreen", False):
+            self._hide_player_page_chrome(True)
         self._stack.set_visible_child_name("player")
         self._update_back()
         self._start_position_sampling()
@@ -6553,6 +6587,24 @@ class MoviesWindow(Gtk.Box):
         except (TypeError, AttributeError):
             pass
 
+    def _hide_player_page_chrome(self, active: bool) -> None:
+        """Keep only the video on the player page: title, badges and notes go.
+
+        Nothing is hidden when there is no live frame: a tab restored from the
+        background shows its paused panel with Resume, and that panel has to
+        stay readable, including inside a fullscreen window.
+        """
+        frame = getattr(self, "_player_frame", None)
+        if frame is None:
+            return
+        for child in self._player.get_children():
+            if child is frame:
+                continue
+            try:
+                child.set_visible(not active)
+            except Exception:  # noqa: BLE001
+                pass
+
     def _set_player_fullscreen(self, active: bool) -> None:
         """Fullscreen the window and hand the whole screen to the video."""
         self._player_fullscreen = bool(active)
@@ -6587,15 +6639,10 @@ class MoviesWindow(Gtk.Box):
             except Exception:  # noqa: BLE001
                 pass
         # Nothing but the video stays on screen: title, "provider 2 of 6" and
-        # the source note would otherwise sit above and below it.
-        frame = getattr(self, "_player_frame", None)
-        for child in self._player.get_children():
-            if child is frame:
-                continue
-            try:
-                child.set_visible(not active)
-            except Exception:  # noqa: BLE001
-                pass
+        # the source note would otherwise sit above and below it.  The tab
+        # strip above the page is deliberately not touched: it stays usable
+        # so another open title can be clicked without leaving fullscreen.
+        self._hide_player_page_chrome(active)
         # The player keeps its 16:9 shape; in fullscreen it fills the screen
         # instead of sitting inside the reading margins.
         margin = 0 if active else 24
