@@ -567,6 +567,30 @@ QPushButton#carouselArrow {{
 QPushButton#carouselArrow:hover {{ background: {c['raised']}; }}
 QLabel#mediaNote {{ color: {c['muted']}; font-size: {body}px; }}
 
+/* ---- media tabs ------------------------------------------------------- */
+QFrame#mediaTabBar {{
+    background: {c['bg']};
+    border-bottom: 1px solid {alpha(fg, 0.06)};
+}}
+QScrollArea#mediaTabScroll, QWidget#mediaTabHost {{ background: transparent; border: none; }}
+QFrame#mediaTab {{
+    background: {alpha(fg, 0.035)};
+    border: 1px solid {alpha(fg, 0.05)};
+    border-radius: {md}px;
+}}
+QFrame#mediaTab:hover {{ background: {alpha(fg, 0.07)}; }}
+QFrame#mediaTab[active="true"] {{
+    background: {c['surface']};
+    border: 1px solid {alpha(fg, 0.16)};
+}}
+QLabel#mediaTabTitle {{ font-weight: 600; font-size: {small + 1}px; }}
+QLabel#mediaTabMeta {{ color: {c['muted']}; font-size: {small}px; }}
+QPushButton#mediaTabClose {{
+    background: transparent; border: none; color: {c['muted']};
+    font-size: {body}px; padding: 0; border-radius: 9px;
+}}
+QPushButton#mediaTabClose:hover {{ background: {alpha(fg, 0.14)}; color: {fg}; }}
+
 /* ---- embedded player -------------------------------------------------- */
 QWidget#playerPage, QFrame#playerStage {{ background: #000000; }}
 QWidget#playerFallback {{ background: {c['bg']}; }}

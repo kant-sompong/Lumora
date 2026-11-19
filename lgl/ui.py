@@ -8241,7 +8241,9 @@ class MainWindow(Gtk.ApplicationWindow):
                 pass
         if name != "media":
             try:
-                self.media_view.stop_playback()
+                # Save the tab that was playing before stopping it, so coming
+                # back shows its paused panel, not an empty player.
+                self.media_view.leave_view()
             except Exception:  # noqa: BLE001 - best-effort
                 pass
         GLib.idle_add(self._focus_initial)

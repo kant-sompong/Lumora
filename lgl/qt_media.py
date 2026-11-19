@@ -912,9 +912,14 @@ class MediaPage(QWidget):
 
     def __init__(self, settings: Settings | None = None,
                  cache_root: Path | None = None,
-                 player_factory: Callable[[QWidget], EmbeddedPlayer] | None = None) -> None:
+                 player_factory: Callable[[QWidget], EmbeddedPlayer] | None = None,
+                 *, session_only: bool = False) -> None:
         super().__init__()
         self.settings = settings
+        #: A tab's page: one title, its episodes and its player, no feeds.
+        self._session_only = bool(session_only)
+        #: Set by the tab controller, so opening a card routes to a tab.
+        self.tab_host = None
         self._cache_root = cache_root or platform_support.cache_dir()
         self._pix: dict[str, QPixmap] = {}
         self._section = "home"
@@ -992,6 +997,7 @@ class MediaPage(QWidget):
         stop = IconButton("close", "Clear the search", 13, 30)
         stop.clicked.connect(lambda: self.search.clear())
         bar.addWidget(stop)
+        top.setVisible(not self._session_only)
         root.addWidget(top)
 
         # Provider health: one compact strip, then the measured list of
@@ -1038,30 +1044,31 @@ class MediaPage(QWidget):
         self.health = provider_health.AutoSelect(
             settings, on_results=self.health_ready.emit, token="qt-media"
         )
-        if settings is not None:
+        if settings is not None and not self._session_only:
             QTimer.singleShot(3000, self._startup_health)
 
         self.stack = QStackedWidget()
         root.addWidget(self.stack, 1)
         self._pages: dict[str, QWidget] = {}
-        for key, title in (("home", "Home"), ("movies", "Movies"), ("tv", "TV Shows"),
-                           ("anime", "Anime"), ("search", "Search"),
-                           ("list", "My List"), ("history", "History")):
-            page, column = self._page()
-            self._pages[key] = page
-            self.stack.addWidget(page)
-            if key == "home":
-                self._build_home(column)
-            elif key in ("movies", "tv"):
-                self._build_grid_page(column, key)
-            elif key == "anime":
-                self._build_anime(column)
-            elif key == "search":
-                self._build_search(column)
-            elif key == "list":
-                self._build_list(column)
-            else:
-                self._build_history(column)
+        if not self._session_only:
+            for key, title in (("home", "Home"), ("movies", "Movies"), ("tv", "TV Shows"),
+                               ("anime", "Anime"), ("search", "Search"),
+                               ("list", "My List"), ("history", "History")):
+                page, column = self._page()
+                self._pages[key] = page
+                self.stack.addWidget(page)
+                if key == "home":
+                    self._build_home(column)
+                elif key in ("movies", "tv"):
+                    self._build_grid_page(column, key)
+                elif key == "anime":
+                    self._build_anime(column)
+                elif key == "search":
+                    self._build_search(column)
+                elif key == "list":
+                    self._build_list(column)
+                else:
+                    self._build_history(column)
         self._detail_page, detail_column = self._page()
         self.stack.addWidget(self._detail_page)
         self._build_detail(detail_column)
@@ -1088,7 +1095,170 @@ class MediaPage(QWidget):
         self._layout_choice: dict[str, bool] = {}
         self.stack.addWidget(self.player)
         self._player_return: QWidget | None = None
-        self.show_section("home")
+        if not self._session_only:
+            self.show_section("home")
+        else:
+            self.stack.setCurrentWidget(self._detail_page)
+            # A tab needs the clients; it must not load any feed to get them.
+            if self.settings is not None:
+                self._init_clients()
+
+    # tabs ------------------------------------------------------------------
+    def detail_card(self) -> Card | None:
+        """The card this page shows, so its tab can describe it."""
+        return getattr(self, "_detail_card", None)
+
+    def scroll_position(self) -> int:
+        scroll = getattr(self, "_detail_page", None)
+        if scroll is None:
+            return 0
+        return int(scroll.verticalScrollBar().value())
+
+    def set_scroll_position(self, value: object) -> None:
+        scroll = getattr(self, "_detail_page", None)
+        try:
+            position = int(value or 0)
+        except (TypeError, ValueError):
+            position = 0
+        if scroll is not None:
+            scroll.verticalScrollBar().setValue(max(0, position))
+
+    def _current_season(self) -> int | None:
+        combo = getattr(self, "season_combo", None)
+        data = combo.currentData() if combo is not None else None
+        try:
+            return int(data) if data is not None else None
+        except (TypeError, ValueError):
+            return None
+
+    def tab_snapshot(self) -> dict:
+        """What a tab switch has to remember about this page.
+
+        A tab showing the paused panel still has a stream to come back to, so
+        its URL and position are saved even though no view is running.
+        """
+        card = self.detail_card()
+        player = getattr(self, "player", None)
+        playing_now = bool(
+            card is not None and player is not None
+            and self._playing() and player.is_playing()
+        )
+        season, episode = getattr(self, "_playing_episode", None) or (None, None)
+        if season is None:
+            season = self._current_season()
+        url = player.current_url() if player is not None else ""
+        if player is None:
+            position = 0.0
+        elif playing_now:
+            position = player.capture_position()
+        else:
+            position = player.saved_position()
+        next_episode = ""
+        if player is not None and not player.next_episode.isHidden():
+            next_episode = player.next_episode.toolTip()
+        payload: dict[str, object] = {"next_episode": next_episode}
+        # A verified anime keeps its provider session with its tab: suspending
+        # must not drop the AniList episode a provider switch has to replay.
+        verified = getattr(self, "_verified_context", None)
+        if verified is not None:
+            payload["verified_anime"] = verified
+        if getattr(self, "_forced_anime_playback", False):
+            payload["forced_anime"] = True
+        return {
+            "season": int(season) if season else None,
+            "episode": int(episode) if episode else None,
+            "scroll": self.scroll_position(),
+            "playing": bool(url),
+            "position": position,
+            "url": url,
+            "payload": payload,
+        }
+
+    def suspend_tab(self) -> None:
+        """Switch away: stop the video, free its view, keep the page."""
+        player = getattr(self, "player", None)
+        if player is None:
+            return
+        if self._playing():
+            player.suspend()
+        else:
+            player.release_resources()
+        self._end_forced_anime_session()
+        self._player_return = None
+        self.stack.setCurrentWidget(self._detail_page)
+
+    def restore_tab(self, tab: object) -> None:
+        """Put this tab's page back, paused, where it was left."""
+        self.stack.setCurrentWidget(self._detail_page)
+        self.set_scroll_position(getattr(tab, "scroll", 0))
+        # A verified anime comes back as it left: the same provider session and
+        # the same AniList episode, so the badge, the session-scoped provider
+        # menu and a provider switch all agree with what was playing.
+        state = getattr(tab, "payload", {}) or {}
+        verified = state.get("verified_anime")
+        if verified is not None:
+            self._verified_context = verified
+            begin = getattr(self, "_begin_forced_anime_session", None)
+            if callable(begin):
+                begin()
+            else:
+                self._forced_anime_playback = True
+            menu = getattr(self, "_fill_provider_menu", None)
+            if callable(menu):
+                menu(self._section)
+            else:
+                self._update_badge()
+        player = getattr(self, "player", None)
+        if player is None:
+            return
+        url = str(getattr(tab, "url", "") or "")
+        if bool(getattr(tab, "playing", False)) and url:
+            card = self.detail_card()
+            title = str(getattr(tab, "title", "") or (card.title if card else ""))
+            player.pause_for_tab(url, title, getattr(tab, "position", 0.0))
+            self._player_return = self._detail_page
+            self.stack.setCurrentWidget(player)
+        else:
+            player.release_resources()
+        # The episode that follows must still be one click away after a return.
+        next_episode = str(
+            (getattr(tab, "payload", {}) or {}).get("next_episode") or ""
+        )
+        if next_episode:
+            player.offer_next_episode(next_episode)
+        else:
+            player.clear_next_episode()
+
+    def release_playback(self) -> None:
+        """Stop the hub's own player and free its view for good.
+
+        A tab's stream is suspended with its tab instead; this is only for
+        playback that started on the hub page, so leaving Media - or bringing
+        a tab in front of it - can never leave a second video running.
+        """
+        if self._session_only:
+            return
+        player = getattr(self, "player", None)
+        if player is None:
+            return
+        player.stop_playback()
+        player.release_resources()
+        self._end_forced_anime_session()
+        self._player_return = None
+        if self.stack.currentWidget() is player:
+            self.stack.setCurrentWidget(
+                self._pages.get(self._section)
+                or self._pages.get("home")
+                or self._detail_page
+            )
+
+    def close_tab(self) -> None:
+        """Stop this tab for good and let go of the player."""
+        self._end_forced_anime_session()
+        player = getattr(self, "player", None)
+        if player is not None:
+            player.stop_playback()
+            player.release_resources()
 
     # scaffolding -----------------------------------------------------------
     def _page(self) -> tuple[QWidget, QVBoxLayout]:
@@ -1593,6 +1763,25 @@ class MediaPage(QWidget):
 
     # navigation ------------------------------------------------------------
     def show_section(self, key: str) -> None:
+        if self._session_only:
+            # A tab has one detail page and no section list.  From the player,
+            # Back returns to the title; from the title, it leaves the tab page
+            # for the hub (the tab stays open).  Neither goes to a page this
+            # instance never built.
+            if (
+                getattr(self, "player", None) is not None
+                and self.stack.currentWidget() is self.player
+            ):
+                self.player.stop_playback()
+                self._end_forced_anime_session()
+                self.stack.setCurrentWidget(self._detail_page)
+                return
+            host = getattr(self, "tab_host", None)
+            if host is not None and callable(getattr(host, "back", None)):
+                host.back(self)
+                return
+            self.stack.setCurrentWidget(self._detail_page)
+            return
         # Choosing a section from the media bar while the video plays stops it,
         # so a hidden page never keeps playing sound.
         if (
@@ -1622,18 +1811,26 @@ class MediaPage(QWidget):
             self._loaded = True
             QTimer.singleShot(0, self.reload)
 
+    def _init_clients(self) -> tuple[object, object]:
+        """Build the TMDB and MAL clients from settings; no request is sent.
+
+        A tab page needs them for its episode list, ratings and playback
+        routing, but it must never load the home feeds to get them.
+        """
+        api_key = tmdb.load_api_key(settings=self.settings)
+        client_id = mal.load_client_id(settings=self.settings)
+        timeout = float(self.settings.network_timeout)
+        self._tmdb = tmdb.TmdbClient(api_key, timeout=timeout)
+        self._mal = mal.MalClient(client_id, timeout=timeout)
+        return self._tmdb, self._mal
+
     def reload(self) -> None:
         """Refresh every remote section; safe to call repeatedly."""
         self._render_list()
         self._render_history()
         if self.settings is None:
             return
-        api_key = tmdb.load_api_key(settings=self.settings)
-        client_id = mal.load_client_id(settings=self.settings)
-        tmdb_client = tmdb.TmdbClient(api_key, timeout=float(self.settings.network_timeout))
-        mal_client = mal.MalClient(client_id, timeout=float(self.settings.network_timeout))
-        self._tmdb = tmdb_client
-        self._mal = mal_client
+        tmdb_client, mal_client = self._init_clients()
 
         self._home_provider_card.setVisible(not tmdb_client.configured)
         self._pages_bits["movies"][2].setVisible(not tmdb_client.configured)
@@ -1945,6 +2142,10 @@ class MediaPage(QWidget):
         return media_history.load(self.settings)
 
     def _render_history(self) -> None:
+        if self._session_only:
+            # A tab has one detail page and no history grid: the play is still
+            # recorded, there is just no section page to redraw.
+            return
         entries = self._history()
         cards = [card_from_history(entry) for entry in entries]
         self._history_grid.set_cards(cards)
@@ -1959,6 +2160,12 @@ class MediaPage(QWidget):
         if not isinstance(card, Card):
             return
         card = self._fullest_card(card)
+        host = getattr(self, "tab_host", None)
+        if host is not None and not self._session_only:
+            # The hub never renders a second detail page: opening a title is
+            # what creates or selects its tab.
+            host.open(card, section=self._section)
+            return
         self._detail_card = card
         self._detail_seasons = ()
         self._season_cache.clear()
@@ -2549,8 +2756,23 @@ class MediaPage(QWidget):
         TrailerDialog(url, getattr(card, "title", "") or "", self).exec()
 
     def _play_current(self) -> None:
-        """Play button on the home hero: the hero's own title."""
-        self._play_card(getattr(self, "_hero_card", None))
+        """Play button on the home hero: the hero's own title.
+
+        The hub never plays anything itself: Watch Now opens or selects the
+        title's own tab and starts the stream there.  Leaving Media then
+        suspends that tab like any other, and a second player can never be
+        left running behind it.
+        """
+        card = getattr(self, "_hero_card", None)
+        host = getattr(self, "tab_host", None)
+        if card is not None and host is not None and not self._session_only:
+            host.open_and_play(card, section=self._section)
+            return
+        self._play_card(card)
+
+    def play_card(self, card: Card | None) -> None:
+        """Start a title from outside this page: the hub's Watch Now."""
+        self._play_card(card)
 
     def _play_detail(self) -> None:
         """Play button on a details page: the title that page shows."""
@@ -2649,6 +2871,10 @@ class MediaPage(QWidget):
         self.player.play(url, title)
         self.stack.setCurrentWidget(self.player)
         self.player.setFocus()
+        host = getattr(self, "tab_host", None)
+        if host is not None:
+            # The tab's subtitle follows the episode that started playing.
+            host.playback_changed(self)
         return self.player
 
     def _leave_player(self) -> None:
@@ -2658,7 +2884,8 @@ class MediaPage(QWidget):
         page = (
             self._player_return
             or self._pages.get(self._section)
-            or self._pages["home"]
+            or self._pages.get("home")
+            or self._detail_page
         )
         self._player_return = None
         self.stack.setCurrentWidget(page)
