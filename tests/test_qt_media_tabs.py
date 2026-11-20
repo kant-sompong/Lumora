@@ -726,6 +726,79 @@ def test_a_fullscreen_player_hides_the_media_tab_strip(qt_window, app):
     assert window.media_tabs_bar.count() == 1
 
 
+def test_the_tab_strip_goes_only_once_the_window_is_fullscreen(qt_window, app, monkeypatch):
+    """The strip is not hidden in the pass that calls ``showFullScreen()``.
+
+    The strip sits in the layout that sizes the page stack, and the video's
+    view lives in that stack.  Hiding the strip while the window was being
+    fullscreened resized the video's surface mid-handoff, which is what left
+    the player black or frozen.  It goes one moment later instead, still owned
+    by the session so every exit path puts it back.
+    """
+    window = qt_window
+    window.media.open_card(card("movie:9", "Interstellar"))
+    pump(app)
+    page = window.media_tabs.page_for(window.media_tabs.active_id)
+    page.play_embedded("https://provider.test/watch/9", "Interstellar")
+    pump(app)
+    assert window.media_tabs_bar.isVisible() is True
+
+    still_visible: list[bool] = []
+    show_fullscreen = window.showFullScreen
+
+    def record() -> None:
+        still_visible.append(window.media_tabs_bar.isVisible())
+        show_fullscreen()
+
+    monkeypatch.setattr(window, "showFullScreen", record)
+    page.player.set_fullscreen(True)
+    pump(app)
+
+    # At the handoff the strip is untouched; it is gone right after it.
+    assert still_visible == [True]
+    assert window.media_tabs_bar.isVisible() is False
+    # The session keeps it, so leaving fullscreen restores it.
+    assert (window.media_tabs_bar, True) in _session(window).hidden
+    page.player.set_fullscreen(False)
+    pump(app)
+    assert window.media_tabs_bar.isVisible() is True
+
+
+def test_entering_and_leaving_fullscreen_leaves_the_stream_untouched(qt_window, app):
+    """The player keeps its view and its stream through a fullscreen round trip."""
+    window = qt_window
+    window.media.open_card(card("movie:9", "Interstellar"))
+    pump(app)
+    page = window.media_tabs.page_for(window.media_tabs.active_id)
+    page.play_embedded("https://provider.test/watch/9", "Interstellar")
+    pump(app)
+    player = page.player
+    view = player.view
+    loaded = list(view.urls)
+    assert player.is_playing() is True
+
+    player.set_fullscreen(True)
+    pump(app)
+
+    # Same view, same URL, still the page in front: nothing was stopped or
+    # rebuilt to make room for the strip going away.
+    assert player.view is view
+    assert view.urls == loaded
+    assert player.is_playing() is True
+    assert player.pages.currentWidget() is view
+    assert view.isVisible() is True
+    assert window.media_tabs_bar.isVisible() is False
+
+    player.set_fullscreen(False)
+    pump(app)
+
+    assert player.view is view
+    assert view.urls == loaded
+    assert player.is_playing() is True
+    assert view.isVisible() is True
+    assert window.media_tabs_bar.isVisible() is True
+
+
 def test_switching_tabs_in_fullscreen_keeps_fullscreen_and_saved_positions(qt_window, app):
     window = qt_window
     window.media.open_card(card("movie:9", "Interstellar"))

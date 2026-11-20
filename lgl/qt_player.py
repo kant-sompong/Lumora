@@ -112,14 +112,17 @@ class _FullscreenSession:
 
     Fullscreen belongs to the window, not to a single player.  Switching tabs
     therefore keeps it, and nothing but the video stays on screen: the media
-    tab strip is chrome and is hidden with the rest of it.  Whichever player
-    ends the session puts everything back.
+    tab strip is chrome and is hidden with the rest of it, one moment later
+    (see ``hide_deferred``).  Whichever player ends the session puts
+    everything back.
     """
 
     def __init__(self, window: QWidget) -> None:
         self.window = window
         #: Widgets hidden for this session, with the visibility to restore.
         self.hidden: list[tuple[QWidget, bool]] = []
+        #: Widgets to hide only once the window is already fullscreen.
+        self.deferred: list[tuple[QWidget, bool]] = []
         #: Players whose own bar (Back, title) this session hid.
         self.players: list[QWidget] = []
         self.window_state = window.windowState()
@@ -128,9 +131,10 @@ class _FullscreenSession:
     def hide_around(self, player: QWidget) -> None:
         """Hide every visible sibling from ``player`` up to the window.
 
-        That includes the media tab strip: fullscreen shows the video and
-        nothing else.  Each widget's visibility is recorded so the session can
-        put it back the moment fullscreen ends.
+        A widget that sizes the page stack holding the video (the media tab
+        strip) is only queued here, then hidden by :meth:`hide_deferred` once
+        the window owns the screen.  Everything else is chrome that does not
+        touch the video's surface, so it goes now.
         """
         child: QWidget = player
         parent = child.parentWidget()
@@ -140,10 +144,33 @@ class _FullscreenSession:
                     continue
                 if not sibling.isVisible():
                     continue
+                if getattr(sibling, "hide_after_fullscreen", False):
+                    self.deferred.append((sibling, True))
+                    continue
                 self.hidden.append((sibling, True))
                 sibling.hide()
             child = parent
             parent = child.parentWidget()
+
+    def hide_deferred(self) -> None:
+        """Hide the queued widgets now that the window is already fullscreen.
+
+        The media tab strip sits in the layout that sizes the page stack, and
+        the player's view lives in that stack.  Hiding the strip in the same
+        pass as ``showFullScreen()`` resized the video's surface in the middle
+        of the handoff, which is what left the player black or frozen.  Hidden
+        here — the way GTK hides it after ``toplevel.fullscreen()`` — it still
+        disappears in fullscreen, but the surface is only touched once the
+        window has the whole screen.  Each widget is recorded for
+        :meth:`restore`, so the strip comes back with the rest of the chrome.
+        """
+        deferred, self.deferred = self.deferred, []
+        for widget, was_visible in deferred:
+            self.hidden.append((widget, was_visible))
+            try:
+                widget.hide()
+            except Exception:  # noqa: BLE001 - a widget already deleted
+                continue
 
     def forget(self, player: QWidget | None) -> None:
         """Stop tracking ``player``: its page is being deleted.
@@ -166,6 +193,7 @@ class _FullscreenSession:
         its own and the window's own state is restored regardless.
         """
         hidden, self.hidden = self.hidden, []
+        self.deferred = []
         players, self.players = self.players, []
         state, self.window_state = self.window_state, None
         try:
@@ -214,6 +242,9 @@ def start_window_fullscreen(player: QWidget) -> "_FullscreenSession | None":
             return None
         session.hide_around(player)
         window.showFullScreen()
+        # The strip goes only now that the window owns the screen: hiding it
+        # earlier resized the video's surface during the fullscreen handoff.
+        session.hide_deferred()
     if player not in session.players:
         session.players.append(player)
     # QtWebEngine may move the view into its own fullscreen window; if it did,
