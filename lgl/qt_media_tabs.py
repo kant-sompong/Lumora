@@ -112,6 +112,12 @@ class MediaTabBar(QFrame):
     window and the session puts it back when fullscreen ends.
     """
 
+    #: Hidden once the window is already fullscreen, not in the pass that calls
+    #: ``showFullScreen()``.  The strip sizes the page stack that holds the
+    #: player's view, so hiding it during the handoff resized the video's
+    #: surface and broke playback.  Read by ``_FullscreenSession.hide_around``.
+    hide_after_fullscreen = True
+
     tab_activated = Signal(str)
     tab_closed = Signal(str)
 
@@ -174,7 +180,6 @@ class MediaTabBar(QFrame):
             button.closed.connect(self.tab_closed)
             self._row.addWidget(button, 0, Qt.AlignVCenter)
             self._buttons.append(button)
-        self.setVisible(bool(self._buttons))
         self._scroll.setVisible(bool(self._buttons))
 
     def _same_tabs(self, tabs: list[media_tabs.TabState]) -> bool:
