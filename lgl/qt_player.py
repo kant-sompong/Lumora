@@ -98,6 +98,15 @@ def _window_session(window: QWidget | None) -> "_FullscreenSession | None":
     return getattr(window, _FULLSCREEN_ATTR, None)
 
 
+def in_window_fullscreen(window: QWidget | None) -> bool:
+    """True while this window is in media fullscreen.
+
+    Read by the tab controller: whether a tab switch keeps the window
+    fullscreen depends on the window's own session, not on the tab's player.
+    """
+    return _window_session(window) is not None
+
+
 class _FullscreenSession:
     """One window's media fullscreen: chrome hidden, video on the whole screen.
 
@@ -468,9 +477,13 @@ class EmbeddedPlayer(QWidget):
         self.pages.setCurrentWidget(self.paused)
         # A tab restored inside a fullscreen window keeps the same screen: the
         # strip and the paused panel stay, and this player's own bar does not
-        # reappear until fullscreen is left.
-        if _window_session(self.window()) is not None:
+        # reappear until fullscreen is left.  The bar this hid has to be the
+        # session's to put back, or leaving fullscreen would keep it hidden.
+        session = _window_session(self.window())
+        if session is not None:
             self.chrome.hide()
+            if self not in session.players:
+                session.players.append(self)
 
     def resume(self) -> None:
         """Continue the backgrounded tab at its saved position."""

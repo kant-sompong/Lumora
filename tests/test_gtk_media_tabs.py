@@ -1182,3 +1182,38 @@ def test_opening_another_title_during_fullscreen_returns_to_the_normal_layout(wi
     assert window._header.get_visible() is True
     assert window._tab_bar.get_mapped() is True
     assert window._tab_bar.get_allocation().height >= 40
+
+
+def test_closing_a_paused_tab_in_fullscreen_restores_the_normal_layout(window):
+    """Closing the tab in front ends fullscreen, paused or not.
+
+    Qt does the same: the paused panel is not the video the whole screen was
+    given to, so the header and the strip come back with the next tab.
+    """
+    open_title(window, movie(1, "Pixels"))
+    open_title(window, movie(2, "Rick and Morty", "tv"))
+    window._show_tab(tab(window, "movie:1").tab_id)
+    pump(0.05)
+    window._stack.set_visible_child_name("player")
+    window._playback_url = "https://provider.test/1"
+    window._playback_key = "movie:1"
+    playing_tab(window, "movie:1", url="https://provider.test/1")
+    # The paused tab keeps its saved stream, so the switch to it is the one
+    # the bug was about.
+    playing_tab(window, "tv:2", url="https://provider.test/2", position=90.0)
+    window._set_player_fullscreen(True)
+    pump(0.05)
+    # The tab in front now is paused, still inside the fullscreen window.
+    click_tab(window, 1)
+    pump(0.05)
+    assert window._player_fullscreen is True
+    assert window._tabs.active.key == "tv:2"
+
+    window._close_tab(tab(window, "tv:2").tab_id)
+    pump(0.1)
+
+    assert window._player_fullscreen is False
+    assert window._header.get_visible() is True
+    assert window._tab_bar.get_mapped() is True
+    assert window._tab_bar.get_allocation().height >= 40
+    assert [item.title for item in window._tabs] == ["Pixels"]

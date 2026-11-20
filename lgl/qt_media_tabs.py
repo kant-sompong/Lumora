@@ -29,7 +29,7 @@ from PySide6.QtWidgets import (
 
 from . import media_tabs
 from .qt_media import MediaPage
-from .qt_player import end_window_fullscreen
+from .qt_player import end_window_fullscreen, in_window_fullscreen
 from .qt_widgets import label
 
 #: Long titles are shortened here so one tab cannot squeeze out the others.
@@ -312,9 +312,19 @@ class MediaTabsController(QObject):
         tab = self.store.activate(tab_id)
         if tab is None or tab_id == self._shown_id():
             return
-        # Switching tabs must not drop the window out of fullscreen: the tab
-        # strip stays usable and the next tab keeps the same screen.
-        self._suspend_current(tab_id, keep_fullscreen=True)
+        # Switching tabs keeps the window fullscreen only when the tab coming
+        # in front still has a stream to watch: the strip stays usable and the
+        # next tab keeps the same screen.  A details-only tab has no video, so
+        # staying fullscreen there would hide the header and the rail with
+        # nothing on screen and no player to catch Escape.  This mirrors GTK.
+        keep_fullscreen = bool(getattr(tab, "url", "")) and in_window_fullscreen(
+            self.stack.window()
+        )
+        self._suspend_current(tab_id, keep_fullscreen=keep_fullscreen)
+        if not keep_fullscreen:
+            # A paused tab left earlier has no player flag of its own, so the
+            # window's session is ended here as well as by the player.
+            end_window_fullscreen(self.stack.window())
         page = self._pages.get(tab_id)
         if page is None:
             return
@@ -385,6 +395,10 @@ class MediaTabsController(QObject):
             self.stack.removeWidget(page)
             page.deleteLater()
         if was_active and new_active is not None and was_visible:
+            # Closing the tab in front ends the fullscreen it was showing, even
+            # when the tab that follows is only paused: a paused panel is not
+            # the video the whole screen was given to.  GTK does the same.
+            end_window_fullscreen(self.stack.window())
             self.activate(new_active.tab_id)
             return
         self._sync_bar()
