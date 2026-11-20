@@ -146,23 +146,59 @@ class _FullscreenSession:
             child = parent
             parent = child.parentWidget()
 
+    def forget(self, player: QWidget | None) -> None:
+        """Stop tracking ``player``: its page is being deleted.
+
+        A session that kept a deleted player could not put the window back,
+        because the widget it would show no longer exists.
+        """
+        if player is None:
+            return
+        try:
+            self.players = [known for known in self.players if known is not player]
+        except Exception:  # noqa: BLE001 - a session that cannot be edited
+            pass
+
     def restore(self) -> None:
-        for widget, was_visible in reversed(self.hidden):
-            widget.setVisible(was_visible)
-        self.hidden = []
-        for player in self.players:
-            player._fullscreen = False
-            player.chrome.show()
-        self.players = []
+        """Undo the session; a broken widget never blocks the window state.
+
+        Widgets can already be gone by the time fullscreen ends (a tab closed
+        while its player was in the background), so each one is restored on
+        its own and the window's own state is restored regardless.
+        """
+        hidden, self.hidden = self.hidden, []
+        players, self.players = self.players, []
+        state, self.window_state = self.window_state, None
+        try:
+            for widget, was_visible in reversed(hidden):
+                try:
+                    widget.setVisible(was_visible)
+                except Exception:  # noqa: BLE001 - a sibling already deleted
+                    continue
+            for player in players:
+                try:
+                    player._fullscreen = False
+                    player.chrome.show()
+                except Exception:  # noqa: BLE001 - a player already deleted
+                    continue
+        finally:
+            # The window gets its normal or maximized state back even when one
+            # of the widgets above is unusable: leaving it fullscreen with no
+            # session left would strand the whole app.
+            self._restore_window_state(state)
+
+    def _restore_window_state(self, state: object) -> None:
+        """Put the window back the way it was before the session began."""
         window = self.window
-        state = self.window_state
-        self.window_state = None
-        if state is not None and state & Qt.WindowFullScreen:
-            window.showFullScreen()
-        elif state is not None and state & Qt.WindowMaximized:
-            window.showMaximized()
-        else:
-            window.showNormal()
+        try:
+            if state is not None and state & Qt.WindowFullScreen:
+                window.showFullScreen()
+            elif state is not None and state & Qt.WindowMaximized:
+                window.showMaximized()
+            else:
+                window.showNormal()
+        except Exception:  # noqa: BLE001 - a window that is already gone
+            pass
 
 
 def start_window_fullscreen(player: QWidget) -> "_FullscreenSession | None":
@@ -187,16 +223,40 @@ def start_window_fullscreen(player: QWidget) -> "_FullscreenSession | None":
     return session
 
 
+def forget_player(window: QWidget | None, player: QWidget | None) -> None:
+    """Drop ``player`` from this window's fullscreen session, if it has one.
+
+    Called just before a tab's page is deleted: the session must not keep a
+    player whose chrome widget is about to disappear.
+    """
+    session = _window_session(window)
+    if session is None:
+        return
+    session.forget(player)
+
+
 def end_window_fullscreen(window: QWidget | None) -> bool:
-    """Leave media fullscreen if this window is in it; True when it was."""
+    """Leave media fullscreen if this window is in it; True when it was.
+
+    The session stays attached until it has been undone, so an unexpected
+    error while restoring widgets cannot lose the only handle on the window's
+    real state; the window itself is given back its state either way.
+    """
     session = _window_session(window)
     if session is None:
         return False
     try:
+        session.restore()
+    except Exception:  # noqa: BLE001 - restore guards itself; this is the net
+        try:
+            window.showNormal()
+        except Exception:  # noqa: BLE001 - the window itself is gone
+            pass
+        return True
+    try:
         delattr(window, _FULLSCREEN_ATTR)
     except Exception:  # noqa: BLE001 - already gone
         pass
-    session.restore()
     return True
 
 
@@ -718,6 +778,8 @@ __all__ = [
     "with_start",
     "ViewFactory",
     "WEBENGINE_AVAILABLE",
+    "forget_player",
+    "in_window_fullscreen",
     "make_player",
     "preload_webengine",
     "webengine_view",

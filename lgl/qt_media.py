@@ -58,7 +58,7 @@ from .design_tokens import TOKENS
 from .qt_icons import icon
 from .qt_feed import PosterRow, ScheduleStrip, ThreeColumnList
 from .qt_library import ArtworkBackdrop
-from .qt_player import EmbeddedPlayer, make_player
+from .qt_player import EmbeddedPlayer, forget_player, make_player
 from .qt_ratings import RatingsRow
 from .qt_season_picker import SeasonPicker
 from .qt_which_part import WhichPartDialog
@@ -1282,6 +1282,9 @@ class MediaPage(QWidget):
         self._end_forced_anime_session()
         player = getattr(self, "player", None)
         if player is not None:
+            # Forget the player before its page is deleted: a fullscreen
+            # session that still held it could not give the window back.
+            forget_player(self.window(), player)
             player.stop_playback()
             player.release_resources()
 
