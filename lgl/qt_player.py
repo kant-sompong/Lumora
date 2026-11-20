@@ -111,9 +111,9 @@ class _FullscreenSession:
     """One window's media fullscreen: chrome hidden, video on the whole screen.
 
     Fullscreen belongs to the window, not to a single player.  Switching tabs
-    therefore keeps it, and the media tab strip is left alone: it stays at the
-    top of the screen so another open title can be clicked without leaving
-    fullscreen.  Whichever player ends the session puts everything back.
+    therefore keeps it, and nothing but the video stays on screen: the media
+    tab strip is chrome and is hidden with the rest of it.  Whichever player
+    ends the session puts everything back.
     """
 
     def __init__(self, window: QWidget) -> None:
@@ -128,16 +128,15 @@ class _FullscreenSession:
     def hide_around(self, player: QWidget) -> None:
         """Hide every visible sibling from ``player`` up to the window.
 
-        A widget that asks to stay (the media tab strip) is skipped: hiding it
-        is what made the tabs unreachable during fullscreen.
+        That includes the media tab strip: fullscreen shows the video and
+        nothing else.  Each widget's visibility is recorded so the session can
+        put it back the moment fullscreen ends.
         """
         child: QWidget = player
         parent = child.parentWidget()
         while parent is not None and parent is not self.window:
             for sibling in parent.children():
                 if not isinstance(sibling, QWidget) or sibling is child:
-                    continue
-                if getattr(sibling, "stays_during_fullscreen", False):
                     continue
                 if not sibling.isVisible():
                     continue
@@ -451,8 +450,8 @@ class EmbeddedPlayer(QWidget):
                 loader(QUrl(self._url))
         else:
             self.pages.setCurrentWidget(self.fallback)
-        # Resuming a tab inside a fullscreen window stays fullscreen: the tab
-        # strip is still above the video and Esc still leaves fullscreen first.
+        # Resuming a tab inside a fullscreen window stays fullscreen: the
+        # video keeps the whole screen and Esc still leaves fullscreen first.
         if _window_session(self.window()) is not None and not self._fullscreen:
             self._fullscreen = True
             self.chrome.hide()
