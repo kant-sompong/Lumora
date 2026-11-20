@@ -147,10 +147,11 @@ jobs:
           if (-not $found) { throw "QtWebEngineProcess.exe is missing from the build" }
           $pak = Get-ChildItem -Path dist\Lumora -Recurse -Filter *.pak
           if (-not $pak) { throw "Qt WebEngine resources (*.pak) are missing from the build" }
-      # The zip is a release artifact: compressing and uploading ~245 MB is
-      # wasted time on a pull request, where the smoke tests above are the check.
+      # The zip is also built for a pull request, so the actual app can be
+      # downloaded and tried before it is merged.  Every step above has to have
+      # passed for this one to run, so a failed build or smoke test uploads
+      # nothing.
       - name: Zip
-        if: github.event_name != 'pull_request'
         run: |
           Compress-Archive -Path dist\Lumora -DestinationPath "dist\Lumora-Windows-x64.zip"
       - uses: actions/upload-artifact@v4
@@ -158,6 +159,14 @@ jobs:
         with:
           name: Lumora
           path: dist/Lumora-Windows-x64.zip
+      # Named after the pull request and kept for a week: a test build, not a
+      # release asset, so it should not sit in the artifact store.
+      - uses: actions/upload-artifact@v4
+        if: github.event_name == 'pull_request'
+        with:
+          name: Lumora-Windows-PR${{ github.event.pull_request.number }}
+          path: dist/Lumora-Windows-x64.zip
+          retention-days: 7
       - name: Build the per-user installer
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
