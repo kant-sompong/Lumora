@@ -15,7 +15,7 @@ gi = pytest.importorskip("gi")
 
 try:
     gi.require_version("Gtk", "3.0")
-    from gi.repository import GLib, Gtk
+    from gi.repository import Gdk, GLib, Gtk
 except (ValueError, ImportError):  # pragma: no cover - GTK 3 typelib missing
     pytest.skip("GTK 3 is not installed", allow_module_level=True)
 
@@ -986,3 +986,234 @@ def test_closing_a_tab_repaints_the_provider_badge(window):
     assert window._provider_label.get_text() == streaming.LABELS.get(
         window._streaming_provider()
     )
+
+
+def click_tab(window, index: int) -> bool:
+    """Press the left button on a tab the way a user does: its event box."""
+    events = window._tab_row.get_children()[index]
+    event = Gdk.Event.new(Gdk.EventType.BUTTON_RELEASE)
+    event.button = 1
+    event.x = event.y = 5
+    event.x_root = event.y_root = window.get_toplevel().get_position()[0] + 5
+    event.time = Gtk.get_current_event_time()
+    return bool(events.emit("button-release-event", event))
+
+
+def playing_tab(window, key: str, *, url: str, position: float = 0.0) -> None:
+    """Give an open tab a saved stream, as a tab left playing would have."""
+    state = tab(window, key)
+    item = state.payload.get("item")
+    window._tabs.update(
+        state.tab_id, season=1, episode=1, playing=True, url=url,
+        position=position, provider="cinesrc", payload={"item": item},
+    )
+    window._render_tabs()
+    pump(0.02)
+
+
+def test_a_fullscreen_player_leaves_the_media_tab_strip_on_screen(window):
+    """The strip stays at the top of the screen during fullscreen playback.
+
+    This is the reported bug: the window was fullscreened and the video handed
+    the whole screen, but the strip above it has to remain laid out and
+    clickable.  ``get_visible()`` is not enough here, so the test checks the
+    allocated geometry of the bar and of every tab.
+    """
+    open_title(window, movie(1, "Pixels"))
+    open_title(window, movie(2, "Rick and Morty", "tv"))
+    playing_tab(window, "movie:1", url="https://provider.test/1")
+    playing_tab(window, "tv:2", url="https://provider.test/2", position=612.0)
+    window._stack.set_visible_child_name("player")
+    window._playback_url = "https://provider.test/1"
+    window._playback_key = "movie:1"
+    window._playback_provider = "cinesrc"
+    fullscreen_calls: list[bool] = []
+    toplevel = window.get_toplevel()
+    request = toplevel.fullscreen
+
+    def spy() -> None:
+        fullscreen_calls.append(True)
+        request()
+
+    toplevel.fullscreen = spy
+
+    window._set_player_fullscreen(True)
+    pump(0.1)
+
+    assert fullscreen_calls, "the window was never asked to go fullscreen"
+    assert window._player_fullscreen is True
+    # The app chrome is gone; the strip is not part of it.
+    assert window._header.get_visible() is False
+    alloc = window._tab_bar.get_allocation()
+    assert window._tab_bar.get_mapped() is True
+    assert alloc.height >= 40 and alloc.width > 0
+    assert alloc.y == 0, "the strip must sit at the top of the fullscreen window"
+    for tab_widget in window._tab_row.get_children():
+        tab_alloc = tab_widget.get_allocation()
+        assert tab_widget.get_mapped() is True
+        assert tab_alloc.width >= 40 and tab_alloc.height >= 40
+    # The video starts below the strip: they cannot cover each other.
+    assert alloc.y + alloc.height <= window._stack.get_allocation().y
+
+
+def test_switching_tabs_during_fullscreen_keeps_fullscreen_and_playback_state(window):
+    open_title(window, movie(1, "Pixels"))
+    open_title(window, movie(2, "Rick and Morty", "tv"))
+    window._show_tab(tab(window, "movie:1").tab_id)
+    pump(0.05)
+    window._stack.set_visible_child_name("player")
+    window._playback_url = "https://provider.test/1"
+    window._playback_key = "movie:1"
+    window._playback_provider = "cinesrc"
+    playing_tab(window, "movie:1", url="https://provider.test/1")
+    # The other tab has a saved stream of its own: the screenshot's case.
+    playing_tab(window, "tv:2", url="https://provider.test/2", position=612.0)
+    window._set_player_fullscreen(True)
+    pump(0.1)
+
+    assert click_tab(window, 1) is True, "the tab was not clickable in fullscreen"
+    pump(0.1)
+
+    # The click switched tabs and did not drop out of fullscreen.
+    assert window._tabs.active.key == "tv:2"
+    assert window._player_fullscreen is True
+    assert window._header.get_visible() is False
+    assert window._tab_bar.get_mapped() is True
+    assert window._tab_bar.get_allocation().y == 0
+    # The tab that was left kept its stream and its place.
+    left = tab(window, "movie:1")
+    assert left.playing is True
+    assert left.url == "https://provider.test/1"
+    # The tab switched to shows its paused panel, readable, not blank.
+    assert window._stack.get_visible_child_name() == "player"
+    assert window._webview is None
+    assert any("10:12" in text for text in label_texts(window._player))
+    assert all(child.get_visible() for child in window._player.get_children())
+
+
+def test_a_fullscreen_resume_keeps_the_tab_strip_and_hides_the_page_chrome(window):
+    open_title(window, movie(1, "Pixels"))
+    open_title(window, movie(2, "Rick and Morty", "tv"))
+    window._show_tab(tab(window, "movie:1").tab_id)
+    pump(0.05)
+    window._stack.set_visible_child_name("player")
+    window._playback_url = "https://provider.test/1"
+    window._playback_key = "movie:1"
+    playing_tab(window, "movie:1", url="https://provider.test/1")
+    playing_tab(
+        window, "tv:2",
+        url="https://cinesrc.st/embed/tv/2?back=close", position=612.0,
+    )
+    window._set_player_fullscreen(True)
+    pump(0.05)
+    click_tab(window, 1)
+    pump(0.05)
+
+    window._resume_tab(tab(window, "tv:2"))
+    pump(0.1)
+
+    assert window._player_fullscreen is True
+    assert window._stack.get_visible_child_name() == "player"
+    assert window._player_frame is not None
+    assert window._tab_bar.get_mapped() is True
+    assert window._tab_bar.get_allocation().y == 0
+    # Only the video is on the page: title and notes are hidden again.
+    for child in window._player.get_children():
+        if child is window._player_frame:
+            continue
+        assert child.get_visible() is False
+
+
+def test_leaving_fullscreen_restores_the_normal_media_layout(window):
+    open_title(window, movie(1, "Pixels"))
+    open_title(window, movie(2, "Rick and Morty", "tv"))
+    playing_tab(window, "movie:1", url="https://provider.test/1")
+    window._stack.set_visible_child_name("player")
+    window._set_player_fullscreen(True)
+    pump(0.05)
+    assert window._tab_bar.get_allocation().y == 0
+
+    window._set_player_fullscreen(False)
+    pump(0.05)
+
+    assert window._player_fullscreen is False
+    assert window._header.get_visible() is True
+    bar = window._tab_bar.get_allocation()
+    # Under the header again, and still laid out.
+    assert bar.y == window._header.get_allocation().height
+    assert bar.height >= 40 and bar.width > 0
+    assert [item.title for item in window._tabs] == ["Pixels", "Rick and Morty"]
+
+
+def test_closing_the_active_tab_in_fullscreen_restores_the_normal_layout(window):
+    open_title(window, movie(1, "Pixels"))
+    open_title(window, movie(2, "Rick and Morty", "tv"))
+    window._show_tab(tab(window, "tv:2").tab_id)
+    pump(0.05)
+    playing_tab(window, "tv:2", url="https://provider.test/2", position=90.0)
+    window._stack.set_visible_child_name("player")
+    window._set_player_fullscreen(True)
+    pump(0.05)
+    assert window._player_fullscreen is True
+
+    window._close_tab(tab(window, "tv:2").tab_id)
+    pump(0.1)
+
+    # The video is gone, so the normal layout comes back with the strip in it.
+    assert window._player_fullscreen is False
+    assert window._header.get_visible() is True
+    assert window._tab_bar.get_mapped() is True
+    assert window._tab_bar.get_allocation().height >= 40
+    assert [item.title for item in window._tabs] == ["Pixels"]
+
+
+def test_opening_another_title_during_fullscreen_returns_to_the_normal_layout(window):
+    open_title(window, movie(1, "Pixels"))
+    playing_tab(window, "movie:1", url="https://provider.test/1")
+    window._stack.set_visible_child_name("player")
+    window._set_player_fullscreen(True)
+    pump(0.05)
+
+    open_title(window, movie(3, "Severance", "tv"))
+    pump(0.1)
+
+    assert window._tabs.active.key == "tv:3"
+    assert window._player_fullscreen is False
+    assert window._header.get_visible() is True
+    assert window._tab_bar.get_mapped() is True
+    assert window._tab_bar.get_allocation().height >= 40
+
+
+def test_closing_a_paused_tab_in_fullscreen_restores_the_normal_layout(window):
+    """Closing the tab in front ends fullscreen, paused or not.
+
+    Qt does the same: the paused panel is not the video the whole screen was
+    given to, so the header and the strip come back with the next tab.
+    """
+    open_title(window, movie(1, "Pixels"))
+    open_title(window, movie(2, "Rick and Morty", "tv"))
+    window._show_tab(tab(window, "movie:1").tab_id)
+    pump(0.05)
+    window._stack.set_visible_child_name("player")
+    window._playback_url = "https://provider.test/1"
+    window._playback_key = "movie:1"
+    playing_tab(window, "movie:1", url="https://provider.test/1")
+    # The paused tab keeps its saved stream, so the switch to it is the one
+    # the bug was about.
+    playing_tab(window, "tv:2", url="https://provider.test/2", position=90.0)
+    window._set_player_fullscreen(True)
+    pump(0.05)
+    # The tab in front now is paused, still inside the fullscreen window.
+    click_tab(window, 1)
+    pump(0.05)
+    assert window._player_fullscreen is True
+    assert window._tabs.active.key == "tv:2"
+
+    window._close_tab(tab(window, "tv:2").tab_id)
+    pump(0.1)
+
+    assert window._player_fullscreen is False
+    assert window._header.get_visible() is True
+    assert window._tab_bar.get_mapped() is True
+    assert window._tab_bar.get_allocation().height >= 40
+    assert [item.title for item in window._tabs] == ["Pixels"]

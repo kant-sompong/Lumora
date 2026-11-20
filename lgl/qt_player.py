@@ -87,6 +87,194 @@ def webengine_view(parent: QWidget | None = None) -> Any:
     return view
 
 
+#: Where a window keeps the media fullscreen it is in, so a tab switch can
+#: keep it.  The video is not the owner: the window is.
+_FULLSCREEN_ATTR = "_lumora_media_fullscreen"
+
+
+def _window_session(window: QWidget | None) -> "_FullscreenSession | None":
+    if window is None:
+        return None
+    return getattr(window, _FULLSCREEN_ATTR, None)
+
+
+def in_window_fullscreen(window: QWidget | None) -> bool:
+    """True while this window is in media fullscreen.
+
+    Read by the tab controller: whether a tab switch keeps the window
+    fullscreen depends on the window's own session, not on the tab's player.
+    """
+    return _window_session(window) is not None
+
+
+class _FullscreenSession:
+    """One window's media fullscreen: chrome hidden, video on the whole screen.
+
+    Fullscreen belongs to the window, not to a single player.  Switching tabs
+    therefore keeps it, and the media tab strip is left alone: it stays at the
+    top of the screen so another open title can be clicked without leaving
+    fullscreen.  Whichever player ends the session puts everything back.
+    """
+
+    def __init__(self, window: QWidget) -> None:
+        self.window = window
+        #: Widgets hidden for this session, with the visibility to restore.
+        self.hidden: list[tuple[QWidget, bool]] = []
+        #: Players whose own bar (Back, title) this session hid.
+        self.players: list[QWidget] = []
+        self.window_state = window.windowState()
+        self.view_window: QWidget | None = None
+
+    def hide_around(self, player: QWidget) -> None:
+        """Hide every visible sibling from ``player`` up to the window.
+
+        A widget that asks to stay (the media tab strip) is skipped: hiding it
+        is what made the tabs unreachable during fullscreen.
+        """
+        child: QWidget = player
+        parent = child.parentWidget()
+        while parent is not None and parent is not self.window:
+            for sibling in parent.children():
+                if not isinstance(sibling, QWidget) or sibling is child:
+                    continue
+                if getattr(sibling, "stays_during_fullscreen", False):
+                    continue
+                if not sibling.isVisible():
+                    continue
+                self.hidden.append((sibling, True))
+                sibling.hide()
+            child = parent
+            parent = child.parentWidget()
+
+    def forget(self, player: QWidget | None) -> None:
+        """Stop tracking ``player``: its page is being deleted.
+
+        A session that kept a deleted player could not put the window back,
+        because the widget it would show no longer exists.
+        """
+        if player is None:
+            return
+        try:
+            self.players = [known for known in self.players if known is not player]
+        except Exception:  # noqa: BLE001 - a session that cannot be edited
+            pass
+
+    def restore(self) -> None:
+        """Undo the session; a broken widget never blocks the window state.
+
+        Widgets can already be gone by the time fullscreen ends (a tab closed
+        while its player was in the background), so each one is restored on
+        its own and the window's own state is restored regardless.
+        """
+        hidden, self.hidden = self.hidden, []
+        players, self.players = self.players, []
+        state, self.window_state = self.window_state, None
+        try:
+            for widget, was_visible in reversed(hidden):
+                try:
+                    widget.setVisible(was_visible)
+                except Exception:  # noqa: BLE001 - a sibling already deleted
+                    continue
+            for player in players:
+                try:
+                    player._fullscreen = False
+                    player.chrome.show()
+                except Exception:  # noqa: BLE001 - a player already deleted
+                    continue
+        finally:
+            # The window gets its normal or maximized state back even when one
+            # of the widgets above is unusable: leaving it fullscreen with no
+            # session left would strand the whole app.
+            self._restore_window_state(state)
+
+    def _restore_window_state(self, state: object) -> None:
+        """Put the window back the way it was before the session began."""
+        window = self.window
+        try:
+            if state is not None and state & Qt.WindowFullScreen:
+                window.showFullScreen()
+            elif state is not None and state & Qt.WindowMaximized:
+                window.showMaximized()
+            else:
+                window.showNormal()
+        except Exception:  # noqa: BLE001 - a window that is already gone
+            pass
+
+
+def start_window_fullscreen(player: QWidget) -> "_FullscreenSession | None":
+    """Put ``player``'s window in media fullscreen, once per window."""
+    window = player.window()
+    if window is None:
+        return None
+    session = _window_session(window)
+    if session is None:
+        session = _FullscreenSession(window)
+        try:
+            setattr(window, _FULLSCREEN_ATTR, session)
+        except Exception:  # noqa: BLE001 - a window that cannot carry state
+            return None
+        session.hide_around(player)
+        window.showFullScreen()
+    if player not in session.players:
+        session.players.append(player)
+    # QtWebEngine may move the view into its own fullscreen window; if it did,
+    # that window has to cover the screen without a frame as well.
+    _cover_view_window(session, player)
+    return session
+
+
+def forget_player(window: QWidget | None, player: QWidget | None) -> None:
+    """Drop ``player`` from this window's fullscreen session, if it has one.
+
+    Called just before a tab's page is deleted: the session must not keep a
+    player whose chrome widget is about to disappear.
+    """
+    session = _window_session(window)
+    if session is None:
+        return
+    session.forget(player)
+
+
+def end_window_fullscreen(window: QWidget | None) -> bool:
+    """Leave media fullscreen if this window is in it; True when it was.
+
+    The session stays attached until it has been undone, so an unexpected
+    error while restoring widgets cannot lose the only handle on the window's
+    real state; the window itself is given back its state either way.
+    """
+    session = _window_session(window)
+    if session is None:
+        return False
+    try:
+        session.restore()
+    except Exception:  # noqa: BLE001 - restore guards itself; this is the net
+        try:
+            window.showNormal()
+        except Exception:  # noqa: BLE001 - the window itself is gone
+            pass
+        return True
+    try:
+        delattr(window, _FULLSCREEN_ATTR)
+    except Exception:  # noqa: BLE001 - already gone
+        pass
+    return True
+
+
+def _cover_view_window(session: _FullscreenSession, player: QWidget) -> None:
+    getter = getattr(player.view, "window", None) if player.view is not None else None
+    if not callable(getter):
+        return
+    try:
+        view_window = getter()
+    except Exception:  # noqa: BLE001
+        return
+    if view_window is None or view_window is session.window:
+        return
+    session.view_window = view_window
+    view_window.setWindowFlag(Qt.FramelessWindowHint, True)
+    view_window.showFullScreen()
+
+
 class EmbeddedPlayer(QWidget):
     """The player as a page of the main window.
 
@@ -117,9 +305,6 @@ class EmbeddedPlayer(QWidget):
         self._sample_timer.timeout.connect(self._request_position)
         self._fullscreen = False
         self._page_exit_requested = False
-        self._hidden: list[tuple[QWidget, bool]] = []
-        self._window_state: Qt.WindowState | None = None
-        self._view_window: QWidget | None = None
 
         column = QVBoxLayout(self)
         column.setContentsMargins(0, 0, 0, 0)
@@ -266,6 +451,14 @@ class EmbeddedPlayer(QWidget):
                 loader(QUrl(self._url))
         else:
             self.pages.setCurrentWidget(self.fallback)
+        # Resuming a tab inside a fullscreen window stays fullscreen: the tab
+        # strip is still above the video and Esc still leaves fullscreen first.
+        if _window_session(self.window()) is not None and not self._fullscreen:
+            self._fullscreen = True
+            self.chrome.hide()
+            session = _window_session(self.window())
+            if session is not None and self not in session.players:
+                session.players.append(self)
         if self._url:
             self._sample_timer.start()
 
@@ -304,14 +497,22 @@ class EmbeddedPlayer(QWidget):
         self._request_position()
         return float(self._position or 0.0)
 
-    def suspend(self) -> float:
-        """Background this tab: save the position, stop, free the view."""
+    def suspend(self, keep_fullscreen: bool = False) -> float:
+        """Background this tab: save the position, stop, free the view.
+
+        ``keep_fullscreen`` is the tab-switch case: the window stays fullscreen
+        for whichever tab comes in front, so switching never drops out of it.
+        """
         url, title = self._url, self.title_label.text()
         position = self.capture_position() if url else 0.0
         if url:
             self._resume = (url, title, position)
-        self.stop_playback()
-        self.release_resources()
+        self.stop_playback(keep_fullscreen=keep_fullscreen)
+        self.release_resources(keep_fullscreen=keep_fullscreen)
+        if keep_fullscreen:
+            # The page is leaving the screen; the session keeps the window
+            # fullscreen and the bar this player hid stays hidden until then.
+            self._fullscreen = False
         if url:
             where = format_position(position)
             self.paused_note.setText(
@@ -334,6 +535,15 @@ class EmbeddedPlayer(QWidget):
             f"Resume {title or 'this title'}" + (f" from {where}" if where else "")
         )
         self.pages.setCurrentWidget(self.paused)
+        # A tab restored inside a fullscreen window keeps the same screen: the
+        # strip and the paused panel stay, and this player's own bar does not
+        # reappear until fullscreen is left.  The bar this hid has to be the
+        # session's to put back, or leaving fullscreen would keep it hidden.
+        session = _window_session(self.window())
+        if session is not None:
+            self.chrome.hide()
+            if self not in session.players:
+                session.players.append(self)
 
     def resume(self) -> None:
         """Continue the backgrounded tab at its saved position."""
@@ -342,9 +552,9 @@ class EmbeddedPlayer(QWidget):
             return
         self.play_at(url, title, position)
 
-    def release_resources(self) -> None:
+    def release_resources(self, keep_fullscreen: bool = False) -> None:
         """Free the web view of a backgrounded tab; it is rebuilt on resume."""
-        if self._fullscreen:
+        if self._fullscreen and not keep_fullscreen:
             self.set_fullscreen(False)
         self._sample_timer.stop()
         view = self.view
@@ -427,11 +637,11 @@ class EmbeddedPlayer(QWidget):
         """Hide it: a movie, or the last episode of a show, has no next one."""
         self.next_episode.setVisible(False)
 
-    def stop_playback(self) -> None:
+    def stop_playback(self, keep_fullscreen: bool = False) -> None:
         """Stop loading and clear the video, like the GTK page's Back."""
         self.clear_next_episode()
         self._sample_timer.stop()
-        if self._fullscreen:
+        if self._fullscreen and not keep_fullscreen:
             self.set_fullscreen(False)
         view = self.view
         if view is not None:
@@ -448,9 +658,16 @@ class EmbeddedPlayer(QWidget):
         self.title_label.setText("")
 
     def leave_page(self) -> None:
-        """Back: stop the video and let the page that hosts it return."""
+        """Back: leave fullscreen first, then stop and return to the page.
+
+        A paused tab shown inside a fullscreen window has no ``_fullscreen`` of
+        its own, so the window's session is ended here too: Escape always gets
+        the normal layout back before anything navigates.
+        """
         if self._fullscreen:
             self.set_fullscreen(False)
+            return
+        if end_window_fullscreen(self.window()):
             return
         self.stop_playback()
         self.back_requested.emit()
@@ -507,75 +724,21 @@ class EmbeddedPlayer(QWidget):
         self._page_exit_requested = False
         window = self.window()
         if active:
-            self._hide_around_video(window)
             self.chrome.hide()
-            self._enter_window_fullscreen(window)
+            start_window_fullscreen(self)
+            self._fullscreen = True
         else:
-            self.chrome.show()
-            self._restore_around_video()
-            self._exit_window_fullscreen(window)
+            session = _window_session(window)
+            if session is not None and self in session.players:
+                end_window_fullscreen(window)
+            else:
+                self.chrome.show()
+            self._fullscreen = False
             if not page_started:
                 # The app hid its own fullscreen while the page still believes
                 # it is fullscreen, which breaks the provider's own button.
                 self._tell_page_fullscreen_ended()
         self.fullscreen_changed.emit(active)
-
-    def _hide_around_video(self, window: QWidget | None) -> None:
-        """Hide every visible sibling from this page up to the window."""
-        self._hidden = []
-        child: QWidget = self
-        parent = child.parentWidget()
-        while parent is not None and parent is not window:
-            for sibling in parent.children():
-                if not isinstance(sibling, QWidget) or sibling is child:
-                    continue
-                if not sibling.isVisible():
-                    continue
-                self._hidden.append((sibling, True))
-                sibling.hide()
-            child = parent
-            parent = child.parentWidget()
-
-    def _restore_around_video(self) -> None:
-        for widget, was_visible in reversed(self._hidden):
-            widget.setVisible(was_visible)
-        self._hidden = []
-
-    def _enter_window_fullscreen(self, window: QWidget | None) -> None:
-        if window is None:
-            return
-        self._window_state = window.windowState()
-        window.showFullScreen()
-        # QtWebEngine may move the view into its own fullscreen window; if it
-        # did, that window has to cover the screen without a frame as well.
-        self._cover_view_window(window)
-
-    def _cover_view_window(self, window: QWidget) -> None:
-        getter = getattr(self.view, "window", None)
-        if not callable(getter):
-            return
-        try:
-            view_window = getter()
-        except Exception:  # noqa: BLE001
-            return
-        if view_window is None or view_window is window:
-            return
-        self._view_window = view_window
-        view_window.setWindowFlag(Qt.FramelessWindowHint, True)
-        view_window.showFullScreen()
-
-    def _exit_window_fullscreen(self, window: QWidget | None) -> None:
-        self._view_window = None
-        if window is None:
-            return
-        state = self._window_state
-        self._window_state = None
-        if state is not None and state & Qt.WindowFullScreen:
-            window.showFullScreen()
-        elif state is not None and state & Qt.WindowMaximized:
-            window.showMaximized()
-        else:
-            window.showNormal()
 
     def _tell_page_fullscreen_ended(self) -> None:
         """Ask the page to leave fullscreen when the app started the exit.
@@ -615,6 +778,8 @@ __all__ = [
     "with_start",
     "ViewFactory",
     "WEBENGINE_AVAILABLE",
+    "forget_player",
+    "in_window_fullscreen",
     "make_player",
     "preload_webengine",
     "webengine_view",

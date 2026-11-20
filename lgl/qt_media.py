@@ -58,7 +58,7 @@ from .design_tokens import TOKENS
 from .qt_icons import icon
 from .qt_feed import PosterRow, ScheduleStrip, ThreeColumnList
 from .qt_library import ArtworkBackdrop
-from .qt_player import EmbeddedPlayer, make_player
+from .qt_player import EmbeddedPlayer, forget_player, make_player
 from .qt_ratings import RatingsRow
 from .qt_season_picker import SeasonPicker
 from .qt_which_part import WhichPartDialog
@@ -1195,15 +1195,19 @@ class MediaPage(QWidget):
             "payload": payload,
         }
 
-    def suspend_tab(self) -> None:
-        """Switch away: stop the video, free its view, keep the page."""
+    def suspend_tab(self, keep_fullscreen: bool = False) -> None:
+        """Switch away: stop the video, free its view, keep the page.
+
+        ``keep_fullscreen`` is set for a tab switch: the window stays fullscreen
+        for the tab that comes in front, and the strip above it stays usable.
+        """
         player = getattr(self, "player", None)
         if player is None:
             return
         if self._playing():
-            player.suspend()
+            player.suspend(keep_fullscreen=keep_fullscreen)
         else:
-            player.release_resources()
+            player.release_resources(keep_fullscreen=keep_fullscreen)
         self._end_forced_anime_session()
         self._player_return = None
         self.stack.setCurrentWidget(self._detail_page)
@@ -1278,6 +1282,9 @@ class MediaPage(QWidget):
         self._end_forced_anime_session()
         player = getattr(self, "player", None)
         if player is not None:
+            # Forget the player before its page is deleted: a fullscreen
+            # session that still held it could not give the window back.
+            forget_player(self.window(), player)
             player.stop_playback()
             player.release_resources()
 
