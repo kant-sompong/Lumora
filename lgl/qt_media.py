@@ -2433,10 +2433,13 @@ class MediaPage(QWidget):
         self.spoiler_note.setVisible(bool(text))
 
     def _refresh_air_dates(self, today: date | None = None) -> None:
-        """Re-mark the episode rows once the calendar day has changed."""
+        """Re-mark every episode row against ``today`` (default: the clock).
+
+        Every row is re-read, not only on a new calendar day: a season loaded
+        after the last check adds rows the page has not marked yet.  The work
+        is a handful of property reads, so a minute timer can afford it.
+        """
         today = today or date.today()
-        if today == self._air_day:
-            return
         self._air_day = today
         for row in self.findChildren(EpisodeRow):
             row.refresh_air_status(today)
