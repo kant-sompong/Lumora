@@ -1011,13 +1011,11 @@ def playing_tab(window, key: str, *, url: str, position: float = 0.0) -> None:
     pump(0.02)
 
 
-def test_a_fullscreen_player_leaves_the_media_tab_strip_on_screen(window):
-    """The strip stays at the top of the screen during fullscreen playback.
+def test_a_fullscreen_player_hides_the_media_tab_strip(window):
+    """Fullscreen shows the video and nothing else, the strip included.
 
-    This is the reported bug: the window was fullscreened and the video handed
-    the whole screen, but the strip above it has to remain laid out and
-    clickable.  ``get_visible()`` is not enough here, so the test checks the
-    allocated geometry of the bar and of every tab.
+    The strip is chrome: it goes with the header, and it comes back the moment
+    fullscreen ends, laid out under the header again.
     """
     open_title(window, movie(1, "Pixels"))
     open_title(window, movie(2, "Rick and Morty", "tv"))
@@ -1037,23 +1035,30 @@ def test_a_fullscreen_player_leaves_the_media_tab_strip_on_screen(window):
 
     toplevel.fullscreen = spy
 
+    assert window._tab_bar.get_visible() is True
     window._set_player_fullscreen(True)
     pump(0.1)
 
     assert fullscreen_calls, "the window was never asked to go fullscreen"
     assert window._player_fullscreen is True
-    # The app chrome is gone; the strip is not part of it.
     assert window._header.get_visible() is False
-    alloc = window._tab_bar.get_allocation()
+    assert window._tab_bar.get_visible() is False
+    assert window._tab_bar.get_mapped() is False
+
+    window._set_player_fullscreen(False)
+    pump(0.1)
+
+    assert window._player_fullscreen is False
+    assert window._header.get_visible() is True
+    assert window._tab_bar.get_visible() is True
     assert window._tab_bar.get_mapped() is True
+    alloc = window._tab_bar.get_allocation()
     assert alloc.height >= 40 and alloc.width > 0
-    assert alloc.y == 0, "the strip must sit at the top of the fullscreen window"
+    assert alloc.y == window._header.get_allocation().height
     for tab_widget in window._tab_row.get_children():
         tab_alloc = tab_widget.get_allocation()
         assert tab_widget.get_mapped() is True
         assert tab_alloc.width >= 40 and tab_alloc.height >= 40
-    # The video starts below the strip: they cannot cover each other.
-    assert alloc.y + alloc.height <= window._stack.get_allocation().y
 
 
 def test_switching_tabs_during_fullscreen_keeps_fullscreen_and_playback_state(window):
@@ -1071,15 +1076,17 @@ def test_switching_tabs_during_fullscreen_keeps_fullscreen_and_playback_state(wi
     window._set_player_fullscreen(True)
     pump(0.1)
 
-    assert click_tab(window, 1) is True, "the tab was not clickable in fullscreen"
+    # A hidden strip cannot be clicked, so the switch is the controller's own:
+    # what matters here is that it stays fullscreen and keeps the strip hidden.
+    window._show_tab(tab(window, "tv:2").tab_id)
     pump(0.1)
 
     # The click switched tabs and did not drop out of fullscreen.
     assert window._tabs.active.key == "tv:2"
     assert window._player_fullscreen is True
     assert window._header.get_visible() is False
-    assert window._tab_bar.get_mapped() is True
-    assert window._tab_bar.get_allocation().y == 0
+    # The strip is chrome too: a switch inside fullscreen does not bring it back.
+    assert window._tab_bar.get_visible() is False
     # The tab that was left kept its stream and its place.
     left = tab(window, "movie:1")
     assert left.playing is True
@@ -1091,7 +1098,7 @@ def test_switching_tabs_during_fullscreen_keeps_fullscreen_and_playback_state(wi
     assert all(child.get_visible() for child in window._player.get_children())
 
 
-def test_a_fullscreen_resume_keeps_the_tab_strip_and_hides_the_page_chrome(window):
+def test_a_fullscreen_resume_keeps_fullscreen_and_hides_the_page_chrome(window):
     open_title(window, movie(1, "Pixels"))
     open_title(window, movie(2, "Rick and Morty", "tv"))
     window._show_tab(tab(window, "movie:1").tab_id)
@@ -1106,7 +1113,7 @@ def test_a_fullscreen_resume_keeps_the_tab_strip_and_hides_the_page_chrome(windo
     )
     window._set_player_fullscreen(True)
     pump(0.05)
-    click_tab(window, 1)
+    window._show_tab(tab(window, "tv:2").tab_id)
     pump(0.05)
 
     window._resume_tab(tab(window, "tv:2"))
@@ -1115,8 +1122,7 @@ def test_a_fullscreen_resume_keeps_the_tab_strip_and_hides_the_page_chrome(windo
     assert window._player_fullscreen is True
     assert window._stack.get_visible_child_name() == "player"
     assert window._player_frame is not None
-    assert window._tab_bar.get_mapped() is True
-    assert window._tab_bar.get_allocation().y == 0
+    assert window._tab_bar.get_visible() is False
     # Only the video is on the page: title and notes are hidden again.
     for child in window._player.get_children():
         if child is window._player_frame:
@@ -1131,7 +1137,7 @@ def test_leaving_fullscreen_restores_the_normal_media_layout(window):
     window._stack.set_visible_child_name("player")
     window._set_player_fullscreen(True)
     pump(0.05)
-    assert window._tab_bar.get_allocation().y == 0
+    assert window._tab_bar.get_visible() is False
 
     window._set_player_fullscreen(False)
     pump(0.05)
@@ -1204,7 +1210,7 @@ def test_closing_a_paused_tab_in_fullscreen_restores_the_normal_layout(window):
     window._set_player_fullscreen(True)
     pump(0.05)
     # The tab in front now is paused, still inside the fullscreen window.
-    click_tab(window, 1)
+    window._show_tab(tab(window, "tv:2").tab_id)
     pump(0.05)
     assert window._player_fullscreen is True
     assert window._tabs.active.key == "tv:2"

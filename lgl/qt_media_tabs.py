@@ -108,13 +108,9 @@ class MediaTabButton(QFrame):
 class MediaTabBar(QFrame):
     """The horizontal strip of open media tabs, scrolled like a browser's.
 
-    The strip stays at the top of the screen during fullscreen playback: it is
-    the one piece of chrome a player leaves in place, so another open title can
-    be clicked without leaving fullscreen.
+    The strip is chrome: a fullscreen player hides it with the rest of the
+    window and the session puts it back when fullscreen ends.
     """
-
-    #: Read by the player's fullscreen code: do not hide this widget.
-    stays_during_fullscreen = True
 
     tab_activated = Signal(str)
     tab_closed = Signal(str)
@@ -430,7 +426,11 @@ class MediaTabsController(QObject):
     def _sync_bar(self) -> None:
         tabs = self.store.tabs
         self.bar.set_tabs(tabs, self.store.active_id)
-        self.bar.setVisible(bool(tabs))
+        # A fullscreen player owns the whole screen: a tab switch or a resume
+        # must not bring the strip back before the session ends.
+        self.bar.setVisible(
+            bool(tabs) and not in_window_fullscreen(self.stack.window())
+        )
 
 
 __all__ = ["MediaTabBar", "MediaTabButton", "MediaTabsController"]

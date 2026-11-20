@@ -2101,7 +2101,12 @@ class MoviesWindow(Gtk.Box):
             # leaves that scroller hidden, and the whole strip allocates no
             # height: show the subtree from the scroller down, then the bar.
             self._tab_scroller.show_all()
-            self._tab_bar.show()
+            # A fullscreen player leaves the whole screen to the video, so the
+            # strip stays hidden there, including after a tab switch.
+            if getattr(self, "_player_fullscreen", False):
+                self._tab_bar.hide()
+            else:
+                self._tab_bar.show()
         else:
             self._tab_bar.hide()
 
@@ -6638,11 +6643,15 @@ class MoviesWindow(Gtk.Box):
                 rail.set_visible(not active)
             except Exception:  # noqa: BLE001
                 pass
-        # Nothing but the video stays on screen: title, "provider 2 of 6" and
-        # the source note would otherwise sit above and below it.  The tab
-        # strip above the page is deliberately not touched: it stays usable
-        # so another open title can be clicked without leaving fullscreen.
+        # Nothing but the video stays on screen: title, "provider 2 of 6", the
+        # source note and the media tab strip would otherwise sit above and
+        # below it.  The strip comes back with the header, immediately, when
+        # fullscreen ends.
         self._hide_player_page_chrome(active)
+        try:
+            self._tab_bar.set_visible(bool(self._tabs.tabs) and not active)
+        except Exception:  # noqa: BLE001 - a strip that cannot answer
+            pass
         # The player keeps its 16:9 shape; in fullscreen it fills the screen
         # instead of sitting inside the reading margins.
         margin = 0 if active else 24

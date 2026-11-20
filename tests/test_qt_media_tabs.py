@@ -696,18 +696,11 @@ def test_provider_switch_after_a_tab_round_trip_replays_the_anilist_episode(tabs
     assert page._forced_anime_playback is True
 
 
-def _strip_and_player_rects(window, page):
-    bar = window.media_tabs_bar
-    bar_top = bar.mapTo(window, bar.rect().topLeft()).y()
-    player_top = page.player.mapTo(window, page.player.rect().topLeft()).y()
-    return bar, bar_top, player_top
+def test_a_fullscreen_player_hides_the_media_tab_strip(qt_window, app):
+    """Fullscreen shows the video and nothing else, the strip included.
 
-
-def test_the_tab_strip_stays_on_screen_above_a_fullscreen_player(qt_window, app):
-    """The strip is the one piece of chrome a fullscreen player leaves in place.
-
-    Hiding it made the other open titles unreachable, which is the reported
-    bug.  The test checks real widget geometry, not just ``isVisible()``.
+    The strip is chrome: it goes with the header and the rail, and it comes
+    back the moment fullscreen ends, without a tab operation first.
     """
     window = qt_window
     window.media.open_card(card("movie:9", "Interstellar"))
@@ -715,21 +708,22 @@ def test_the_tab_strip_stays_on_screen_above_a_fullscreen_player(qt_window, app)
     page = window.media_tabs.page_for(window.media_tabs.active_id)
     page.play_embedded("https://provider.test/watch/9", "Interstellar")
     pump(app)
+    assert window.media_tabs_bar.isVisible() is True
 
     page.player.set_fullscreen(True)
     pump(app)
 
     assert window.isFullScreen() is True
-    bar, bar_top, player_top = _strip_and_player_rects(window, page)
-    assert bar.isVisible() is True
-    assert bar.height() >= 36 and bar.width() > 0
-    assert bar_top >= 0
-    # The video starts below the strip, so the two never overlap.
-    assert player_top >= bar_top + bar.height()
+    assert window.media_tabs_bar.isVisible() is False
     assert page.player.chrome.isHidden() is True
-    # Every open title is on the strip and can be clicked.
-    assert bar.count() == 1
-    assert bar.buttons()[0].isVisible() is True
+
+    page.player.set_fullscreen(False)
+    pump(app)
+
+    assert window.isFullScreen() is False
+    assert window.media_tabs_bar.isVisible() is True
+    assert window.media_tabs_bar.height() >= 36
+    assert window.media_tabs_bar.count() == 1
 
 
 def test_switching_tabs_in_fullscreen_keeps_fullscreen_and_saved_positions(qt_window, app):
@@ -757,10 +751,9 @@ def test_switching_tabs_in_fullscreen_keeps_fullscreen_and_saved_positions(qt_wi
     window.media_tabs.activate(second_id)
     pump(app)
 
-    # Switching tabs does not leave fullscreen, and the strip is still there.
+    # Switching tabs does not leave fullscreen, and the strip stays hidden.
     assert window.isFullScreen() is True
-    assert window.media_tabs_bar.isVisible() is True
-    assert window.media_tabs_bar.height() >= 36
+    assert window.media_tabs_bar.isVisible() is False
     # The tab that was left is suspended with its stream and position saved.
     left = window.media_tabs.store.find("movie:9")
     assert left.playing is True
@@ -777,6 +770,12 @@ def test_switching_tabs_in_fullscreen_keeps_fullscreen_and_saved_positions(qt_wi
     assert second.player.is_playing() is True
     assert window.isFullScreen() is True
     assert second.player.chrome.isHidden() is True
+    assert window.media_tabs_bar.isVisible() is False
+
+    # Leaving fullscreen brings the strip straight back.
+    second.player.set_fullscreen(False)
+    pump(app)
+    assert window.isFullScreen() is False
     assert window.media_tabs_bar.isVisible() is True
 
 
