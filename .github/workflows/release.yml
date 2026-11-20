@@ -4,8 +4,10 @@ name: Build and release
 # builds start at once, in parallel with the tests, instead of waiting for them;
 # a failing test still stops a release because publish needs every job.
 #
-# Pull requests build and smoke-test the Windows app but do not produce the
-# portable zip or the installer, which only matter for a release.  Pushing a v*
+# Pull requests build and smoke-test the Windows app and upload the portable
+# zip and the Linux tarball as short-lived test builds, so a change can be run
+# before it is merged; the installer is still built for a release only.
+# Pushing a v*
 # tag (for example v0.3.0) publishes a GitHub release with the Windows zip,
 # the installer and the Linux tarball attached.
 
@@ -182,8 +184,9 @@ jobs:
 
   linux:
     name: Linux tarball
-    # 5 s of work, but only a release consumes it; pull requests skip it.
-    if: github.event_name != 'pull_request'
+    # 5 s of work, so a pull request builds it too: the tarball is the only
+    # Linux build there is, and it should be downloadable before a merge just
+    # like the Windows zip.
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -191,9 +194,18 @@ jobs:
       - name: Build tarball
         run: sh packaging/linux/build-tarball.sh
       - uses: actions/upload-artifact@v4
+        if: github.event_name != 'pull_request'
         with:
           name: linux-tarball
           path: dist/Lumora-*-linux-*.tar.gz
+      # Named after the pull request and kept for a week: a test build, not a
+      # release asset.
+      - uses: actions/upload-artifact@v4
+        if: github.event_name == 'pull_request'
+        with:
+          name: Lumora-Linux-PR${{ github.event.pull_request.number }}
+          path: dist/Lumora-*-linux-*.tar.gz
+          retention-days: 7
 
   publish:
     name: Publish release
