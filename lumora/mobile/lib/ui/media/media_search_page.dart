@@ -71,14 +71,28 @@ class _MediaSearchPageState extends State<MediaSearchPage> {
     return Scaffold(
       appBar: AppBar(
         titleSpacing: 0,
-        title: TextField(
-          controller: _controller,
-          autofocus: true,
-          textInputAction: TextInputAction.search,
-          onChanged: _onChanged,
-          decoration: const InputDecoration(
-            hintText: 'Search movies, TV and anime',
-            border: InputBorder.none,
+        // A bare TextField in an AppBar title is laid out flush with the top
+        // edge on a phone; centring it in a 48 dp box keeps the field (and its
+        // tap target) where the eye expects it.
+        title: Padding(
+          padding: const EdgeInsets.only(right: LumoraTheme.gapLg),
+          child: SizedBox(
+            height: 48,
+            child: Center(
+              child: TextField(
+                controller: _controller,
+                autofocus: true,
+                textInputAction: TextInputAction.search,
+                onChanged: _onChanged,
+                style: Theme.of(context).textTheme.bodyLarge,
+                decoration: const InputDecoration(
+                  hintText: 'Search movies, TV and anime',
+                  border: InputBorder.none,
+                  isDense: true,
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+            ),
           ),
         ),
       ),
