@@ -1,3 +1,6 @@
+@Tags(['golden'])
+library;
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -10,7 +13,11 @@ import 'golden_support.dart';
 import 'media_test_support.dart';
 
 /// Screenshot tests for the phone UI at 390 x 844, the size the goldens are
-/// cut at. Regenerate with `flutter test --update-goldens`.
+/// cut at.
+///
+/// Local-only: the PNGs match the fonts and rasteriser of the machine that
+/// generated them. Run `flutter test --tags golden` there; regenerate with
+/// `flutter test --update-goldens --tags golden`.
 void main() {
   setUpAll(loadGoldenFonts);
 

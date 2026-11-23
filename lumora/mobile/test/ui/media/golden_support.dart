@@ -19,18 +19,23 @@ const Size goldenScreen = Size(390, 844);
 final List<String> goldenFontFallback = <String>[];
 
 /// Loads Roboto and the Material icon font so goldens show real text instead
-/// of the test font's boxes.
+/// of the test font's boxes, plus DejaVu Sans for the few glyphs Roboto lacks
+/// ("→" in "Settings → Providers").
 ///
-/// Both come from the running Flutter SDK's `material_fonts` artifacts, which
-/// is where the app's fonts come from too; nothing extra is committed.
+/// These PNGs are **local-only**: they are pixel-exact against the fonts and
+/// rasteriser of the machine that generated them. Run them there with
+/// `flutter test --tags golden`; regenerate with
+/// `flutter test --update-goldens --tags golden`.
+///
+/// A missing font fails the goldens instead of falling back to the test font's
+/// boxes, because a box-rendered "pass" would be a lie about the UI.
 Future<void> loadGoldenFonts() async {
   TestWidgetsFlutterBinding.ensureInitialized();
   final dir = _materialFontsDir();
   if (dir == null) {
-    throw StateError(
-      'Could not find bin/cache/artifacts/material_fonts under the Flutter '
-      'SDK; run `flutter precache --universal` and retry.',
-    );
+    throw StateError(_missingOnThisMachine(
+      'the Flutter SDK fonts in bin/cache/artifacts/material_fonts',
+    ));
   }
   await _load(dir, 'Roboto', const [
     'Roboto-Regular.ttf',
@@ -39,16 +44,28 @@ Future<void> loadGoldenFonts() async {
   ]);
   await _load(dir, 'MaterialIcons', const ['MaterialIcons-Regular.otf']);
 
-  goldenFontFallback.clear();
-  // DejaVu carries the arrows Roboto and Noto Sans lack (the "Settings →
-  // Providers" copy); it is only a per-glyph fallback, not the body font.
-  final dejaVu = File('/usr/share/fonts/TTF/DejaVuSans.ttf');
-  if (dejaVu.existsSync()) {
-    final loader = FontLoader('DejaVuSans')
-      ..addFont(Future.value(ByteData.sublistView(await dejaVu.readAsBytes())));
-    await loader.load();
-    goldenFontFallback.add('DejaVuSans');
+  // DejaVu carries the arrows Roboto and Noto Sans lack; it is only a
+  // per-glyph fallback, never the body font.
+  const dejaVuPath = '/usr/share/fonts/TTF/DejaVuSans.ttf';
+  final dejaVu = File(dejaVuPath);
+  if (!dejaVu.existsSync()) {
+    throw StateError(_missingOnThisMachine('DejaVu Sans', dejaVuPath));
   }
+  final loader = FontLoader('DejaVuSans')
+    ..addFont(Future.value(ByteData.sublistView(await dejaVu.readAsBytes())));
+  await loader.load();
+  goldenFontFallback
+    ..clear()
+    ..add('DejaVuSans');
+}
+
+String _missingOnThisMachine(String what, [String? path]) {
+  final where = path == null ? '' : ' ($path)';
+  return 'Golden screenshots are local-only and this machine is missing '
+      '$what$where. They were cut on the machine that has the Flutter SDK '
+      'fonts and DejaVu Sans; run the goldens there with '
+      '`flutter test --tags golden`, or regenerate them here with '
+      '`flutter test --update-goldens --tags golden` and commit the new PNGs.';
 }
 
 Directory? _materialFontsDir() {
@@ -77,17 +94,20 @@ Future<void> _load(
   String family,
   List<String> files,
 ) async {
-  final loader = FontLoader(family);
-  var loaded = 0;
-  for (final name in files) {
-    final file = File('${dir.path}/$name');
-    if (!file.existsSync()) continue;
-    final bytes = await file.readAsBytes();
-    loader.addFont(Future.value(ByteData.sublistView(bytes)));
-    loaded++;
+  final missing = <String>[
+    for (final name in files)
+      if (!File('${dir.path}/$name').existsSync()) name,
+  ];
+  if (missing.isNotEmpty) {
+    throw StateError(_missingOnThisMachine(
+      'the $family font files ${missing.join(', ')}',
+      dir.path,
+    ));
   }
-  if (loaded == 0) {
-    throw StateError('No font files for $family in ${dir.path}');
+  final loader = FontLoader(family);
+  for (final name in files) {
+    final bytes = await File('${dir.path}/$name').readAsBytes();
+    loader.addFont(Future.value(ByteData.sublistView(bytes)));
   }
   await loader.load();
 }
