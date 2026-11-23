@@ -147,7 +147,13 @@ class _PlayerPageState extends State<PlayerPage> {
   }
 
   NavigationDecision _onNavigationRequest(NavigationRequest request) {
-    if (shouldNavigate(request.url, _origin)) {
+    // Only the page itself is held to the provider's host; a sub-frame may load
+    // a video from a CDN or another site, or the player would stay empty.
+    if (shouldNavigateRequest(
+      request.url,
+      _origin,
+      isMainFrame: request.isMainFrame,
+    )) {
       return NavigationDecision.navigate;
     }
     final requested = Uri.tryParse(request.url) ?? Uri();

@@ -102,6 +102,49 @@ void main() {
     });
   });
 
+  group('shouldNavigateRequest (main frame vs sub-frames)', () {
+    test('a cross-host sub-frame is allowed to load', () {
+      expect(
+        shouldNavigateRequest(
+          'https://cdn.videohost.example/player.html?src=1',
+          origin,
+          isMainFrame: false,
+        ),
+        isTrue,
+      );
+    });
+
+    test('a sub-frame with a non-web scheme is allowed to load', () {
+      expect(
+        shouldNavigateRequest(
+          'blob:https://cinesrc.st/abc',
+          origin,
+          isMainFrame: false,
+        ),
+        isTrue,
+      );
+    });
+
+    test('the main frame is still held to the provider host', () {
+      expect(
+        shouldNavigateRequest(
+          'https://ads.example.com/pop',
+          origin,
+          isMainFrame: true,
+        ),
+        isFalse,
+      );
+      expect(
+        shouldNavigateRequest(
+          'https://cinesrc.st/embed/tv/1399?s=2&e=1',
+          origin,
+          isMainFrame: true,
+        ),
+        isTrue,
+      );
+    });
+  });
+
   test('blockedNavigationReason never leaks a query string', () {
     final reason = blockedNavigationReason(
       Uri.parse('https://evil.example/x?key=secret'),

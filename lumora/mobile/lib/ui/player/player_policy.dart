@@ -61,7 +61,25 @@ bool isAllowedNavigation(Uri requested, Uri origin) {
   return baseDomain(host) == domain || host.endsWith('.$domain');
 }
 
-/// The delegate's decision for a raw request URL, e.g. `onNavigationRequest`.
+/// The delegate's decision for one `onNavigationRequest` callback.
+///
+/// The rules above describe where the *page* may go, so they only apply to
+/// main-frame requests. A sub-frame is an embedded player or an ad iframe: a
+/// provider serves its video from another host, and refusing those frames would
+/// leave a blank player. Sub-frames are therefore always allowed; the top-level
+/// document still may not leave the provider's site.
+bool shouldNavigateRequest(
+  String requestUrl,
+  Uri origin, {
+  required bool isMainFrame,
+}) {
+  if (!isMainFrame) {
+    return true;
+  }
+  return shouldNavigate(requestUrl, origin);
+}
+
+/// The delegate's decision for a main-frame request URL.
 ///
 /// An unparseable URL is refused, not passed on: a provider that hands the
 /// WebView junk must not be able to navigate anywhere with it.
