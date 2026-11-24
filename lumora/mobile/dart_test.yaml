@@ -1,0 +1,10 @@
+# Test-runner configuration for the Lumora mobile package.
+#
+# The goldens in test/ui/settings/goldens/ are pixel comparisons against PNGs
+# rendered on the machine that generated them: the Flutter SDK's Ahem test font
+# plus that machine's font fallback (DejaVu Sans). Any other font set renders
+# different pixels, so those tests are tagged `golden` and CI runs
+# `flutter test --exclude-tags golden`. They are refreshed with
+# `flutter test --update-goldens` on a machine that matches the reference.
+tags:
+  golden: {}
