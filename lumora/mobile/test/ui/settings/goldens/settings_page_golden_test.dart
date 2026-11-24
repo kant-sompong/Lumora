@@ -8,7 +8,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 /// The settings page at a 390x844 logical-pixel phone viewport.
 ///
-/// Regenerate the PNGs with `flutter test --update-goldens`.
+/// Every test here is tagged `golden` (declared in dart_test.yaml): the PNGs
+/// bake in the SDK's Ahem font and this machine's font fallback, so CI runs
+/// `flutter test --exclude-tags golden`. Regenerate them with
+/// `flutter test --update-goldens`.
 void main() {
   setUp(() {
     SharedPreferences.setMockInitialValues(<String, Object>{});
@@ -44,7 +47,7 @@ void main() {
       find.byType(SettingsPage),
       matchesGoldenFile('settings_page_general.png'),
     );
-  });
+  }, tags: 'golden');
 
   testWidgets('Providers tab at 390x844', (WidgetTester tester) async {
     await pumpSettings(tester);
@@ -55,7 +58,7 @@ void main() {
       find.byType(SettingsPage),
       matchesGoldenFile('settings_page_providers.png'),
     );
-  });
+  }, tags: 'golden');
 
   testWidgets('Providers tab after a rejected TMDB key at 390x844', (
     WidgetTester tester,
@@ -75,5 +78,5 @@ void main() {
       find.byType(SettingsPage),
       matchesGoldenFile('settings_page_providers_invalid_key.png'),
     );
-  });
+  }, tags: 'golden');
 }
