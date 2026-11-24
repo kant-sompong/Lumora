@@ -1,0 +1,5 @@
+# Tags used by the media tests. `golden` marks the screenshot tests, which are
+# local-only: run them on the machine that generated the PNGs, with
+#   flutter test --tags golden
+tags:
+  golden:
