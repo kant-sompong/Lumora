@@ -59,8 +59,8 @@ void main() {
     });
   });
 
-  // playbackTargets and watchUrlFor are covered by test/nav_stubs_test.dart:
-  // they live in the stand-in nav_stubs.dart, not in nav.dart.
+  // The player's switch list is private to nav.dart; it is covered here through
+  // openPlayer, and the URL building itself by agent A's registry tests.
 
   testWidgets('openPlayer asks for a provider when none are enabled', (
     WidgetTester tester,
