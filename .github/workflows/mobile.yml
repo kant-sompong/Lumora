@@ -41,8 +41,12 @@ jobs:
       - name: Analyze
         run: flutter analyze
 
+      # The goldens are pixel comparisons against PNGs rendered with the SDK
+      # test font plus the reference machine's font fallback, so they only
+      # match where they were generated. The tag is declared in
+      # lumora/mobile/dart_test.yaml.
       - name: Test
-        run: flutter test
+        run: flutter test --exclude-tags golden
 
       - name: Build release APK
         run: flutter build apk --release
