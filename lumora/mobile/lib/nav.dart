@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 // `provider` also exports a `StreamProvider`; ours is the media model.
 import 'package:provider/provider.dart' hide StreamProvider;
 
-import 'data/providers_registry.dart';
+// The only registry symbols this file is allowed to touch. Providers build
+// their own URLs; nothing here parses `StreamProvider.urlTemplate`.
+import 'data/providers_registry.dart' show buildWatchUrl, providerById;
 import 'data/settings_store.dart';
 import 'models/media_item.dart';
 import 'models/stream_provider.dart';
@@ -41,11 +43,17 @@ StreamProvider? pickProvider(AppSettings settings, MediaItem item) {
   return candidates.first;
 }
 
-/// Every enabled provider that can play [item], as ready-to-load targets.
+/// The provider-switch list for the player: every enabled provider that can
+/// play [item], in the user's order.
 ///
-/// A provider is skipped when the title has no id its route needs, so a
-/// film-only id cannot leave a dead entry in the switch list.
-List<PlaybackTarget> playbackTargets(
+/// [buildWatchUrl] throws [ArgumentError] when the provider cannot play the
+/// kind or the title lacks the id its route needs; that provider is skipped, so
+/// a film-only id cannot leave a dead entry in the switch list.
+///
+/// [watchUrlFor] and the public [playbackTargets] live in the stand-in
+/// `nav_stubs.dart`; this list is derived here so the player keeps working when
+/// that file is deleted.
+List<PlaybackTarget> _targetsFor(
   AppSettings settings,
   MediaItem item, {
   int season = 1,
@@ -73,23 +81,6 @@ List<PlaybackTarget> playbackTargets(
   return targets;
 }
 
-Uri? watchUrlFor(
-  AppSettings settings,
-  MediaItem item, {
-  int season = 1,
-  int episode = 1,
-}) {
-  final provider = pickProvider(settings, item);
-  if (provider == null) {
-    return null;
-  }
-  try {
-    return buildWatchUrl(provider, item, season: season, episode: episode);
-  } on ArgumentError {
-    return null;
-  }
-}
-
 /// Open [item] in the full-screen player on the user's provider.
 Future<void> openPlayer(
   BuildContext c,
@@ -99,7 +90,7 @@ Future<void> openPlayer(
 }) async {
   final settings = c.read<AppSettings>();
   final provider = pickProvider(settings, item);
-  final targets = playbackTargets(
+  final targets = _targetsFor(
     settings,
     item,
     season: season,
