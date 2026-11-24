@@ -154,7 +154,7 @@ class AppSettings extends ChangeNotifier {
     final storedIds = rawIds is List
         ? rawIds.whereType<String>().toList(growable: false)
         : null;
-    final enabled = storedIds == null ? defaultProviderIds : storedIds;
+    final enabled = storedIds ?? defaultProviderIds;
 
     final rawDefault = prefs.get(keyDefaultProviderId);
     final rawTheme = prefs.get(keyThemeMode);
