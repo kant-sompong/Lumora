@@ -1,5 +1,8 @@
 name: Mobile
 
+# This workflow needs the app on the same branch: every step runs with
+# lumora/mobile as its working directory, so it fails on a commit that has the
+# workflow but not the app.
 on:
   push:
     paths:
@@ -10,9 +13,43 @@ on:
       - "lumora/mobile/**"
       - ".github/workflows/mobile.yml"
 
+env:
+  # One exact version, in one place. The app is written against the 3.35 stable
+  # line, and a moving "stable" would change the analyzer results under us.
+  FLUTTER_VERSION: "3.35.7"
+
 jobs:
-  mobile:
-    name: Analyze, test, build APK
+  checks:
+    name: Analyze and test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: lumora/mobile
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Dependencies
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze
+
+      # The goldens are pixel comparisons against PNGs rendered with the SDK
+      # test font plus the reference machine's font fallback, so they only match
+      # where they were generated. The tag is declared in dart_test.yaml.
+      - name: Test
+        run: flutter test --exclude-tags golden
+
+  build-apk:
+    name: Build release APK
+    needs: checks
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -26,27 +63,15 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      # Pinned: the app is written against the 3.35 stable line, and a moving
-      # "stable" would change the analyzer results under us.
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: "3.35.7"
+          flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
           cache: true
 
       - name: Dependencies
         run: flutter pub get
-
-      - name: Analyze
-        run: flutter analyze
-
-      # The goldens are pixel comparisons against PNGs rendered with the SDK
-      # test font plus the reference machine's font fallback, so they only
-      # match where they were generated. The tag is declared in
-      # lumora/mobile/dart_test.yaml.
-      - name: Test
-        run: flutter test --exclude-tags golden
 
       - name: Build release APK
         run: flutter build apk --release
