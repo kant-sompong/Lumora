@@ -1,0 +1,21 @@
+{
+  "id": 95396,
+  "name": "Severance",
+  "first_air_date": "2022-02-17",
+  "poster_path": "/lFf6LLrQjYldcZItzOkGmMMigP7.jpg",
+  "backdrop_path": "/u8M5jg1Q9rotijIOMSAKVCojx0.jpg",
+  "vote_average": 8.4,
+  "tagline": "Who are you?",
+  "overview": "Office workers split their memories.",
+  "episode_run_time": [50],
+  "genres": [
+    { "id": 18, "name": "Drama" },
+    { "id": 9648, "name": "Mystery" },
+    { "id": 878, "name": "Science Fiction" }
+  ],
+  "seasons": [
+    { "season_number": 2, "name": "Season 2", "episode_count": 10 },
+    { "season_number": 1, "name": "Season 1", "episode_count": 9 },
+    { "season_number": 0, "name": "Specials", "episode_count": 2 }
+  ]
+}
