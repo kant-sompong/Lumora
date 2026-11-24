@@ -75,7 +75,7 @@ class _MediaSearchPageState extends State<MediaSearchPage> {
         // edge on a phone; centring it in a 48 dp box keeps the field (and its
         // tap target) where the eye expects it.
         title: Padding(
-          padding: const EdgeInsets.only(right: LumoraTheme.gapLg),
+          padding: const EdgeInsets.only(right: LumoraSpace.lg),
           child: SizedBox(
             height: 48,
             child: Center(
@@ -123,14 +123,14 @@ class _MediaSearchPageState extends State<MediaSearchPage> {
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Padding(
-            padding: EdgeInsets.all(LumoraTheme.gapXl),
+            padding: EdgeInsets.all(LumoraSpace.xl),
             child: MediaHomeSkeleton(shelfCount: 1),
           );
         }
         if (snapshot.hasError) {
           final error = snapshot.error;
           return ListView(
-            padding: const EdgeInsets.all(LumoraTheme.gapLg),
+            padding: const EdgeInsets.all(LumoraSpace.lg),
             children: [
               if (error is MissingApiKeyException)
                 const MissingApiKeyCard()
@@ -157,11 +157,11 @@ class _MediaSearchPageState extends State<MediaSearchPage> {
           );
         }
         return GridView.builder(
-          padding: const EdgeInsets.all(LumoraTheme.gapLg),
+          padding: const EdgeInsets.all(LumoraSpace.lg),
           gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: 3,
-            mainAxisSpacing: LumoraTheme.gapLg,
-            crossAxisSpacing: LumoraTheme.gapMd,
+            mainAxisSpacing: LumoraSpace.lg,
+            crossAxisSpacing: LumoraSpace.md,
             childAspectRatio: 0.46,
           ),
           itemCount: results.length,
@@ -198,9 +198,9 @@ class _KindFilters extends StatelessWidget {
       height: 48,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: LumoraTheme.gapLg),
+        padding: const EdgeInsets.symmetric(horizontal: LumoraSpace.lg),
         itemCount: options.length,
-        separatorBuilder: (_, _) => const SizedBox(width: LumoraTheme.gapSm),
+        separatorBuilder: (_, _) => const SizedBox(width: LumoraSpace.sm),
         itemBuilder: (context, index) {
           final (label, kind) = options[index];
           return Center(

@@ -6,6 +6,7 @@ import '../../models/media_item.dart';
 import '../../nav.dart';
 import '../../theme/lumora_theme.dart';
 import 'future_guard.dart';
+import 'widgets/media_colors.dart';
 import 'widgets/state_views.dart';
 
 /// How a detail page starts playback. Defaults to [openPlayer]; tests pass a
@@ -76,7 +77,7 @@ class _MediaDetailPageState extends State<MediaDetailPage> {
           return Scaffold(
             appBar: AppBar(title: Text(widget.item.title)),
             body: ListView(
-              padding: const EdgeInsets.all(LumoraTheme.gapLg),
+              padding: const EdgeInsets.all(LumoraSpace.lg),
               children: [
                 if (missing)
                   const MissingApiKeyCard()
@@ -117,8 +118,8 @@ class _MediaDetailPageState extends State<MediaDetailPage> {
             collapseMode: CollapseMode.parallax,
             titlePadding: const EdgeInsetsDirectional.only(
               start: 56,
-              end: LumoraTheme.gapLg,
-              bottom: LumoraTheme.gapMd,
+              end: LumoraSpace.lg,
+              bottom: LumoraSpace.md,
             ),
             title: Text(
               item.title,
@@ -131,26 +132,26 @@ class _MediaDetailPageState extends State<MediaDetailPage> {
         SliverToBoxAdapter(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(
-              LumoraTheme.gapLg,
-              LumoraTheme.gapLg,
-              LumoraTheme.gapLg,
-              LumoraTheme.gapXl,
+              LumoraSpace.lg,
+              LumoraSpace.lg,
+              LumoraSpace.lg,
+              LumoraSpace.xl,
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 _MetaLine(item: item, runtimeMinutes: detail.runtimeMinutes),
-                const SizedBox(height: LumoraTheme.gapMd),
+                const SizedBox(height: LumoraSpace.md),
                 if (item.genres.isNotEmpty)
                   Wrap(
-                    spacing: LumoraTheme.gapSm,
-                    runSpacing: LumoraTheme.gapSm,
+                    spacing: LumoraSpace.sm,
+                    runSpacing: LumoraSpace.sm,
                     children: [
                       for (final genre in item.genres) _GenreChip(label: genre),
                     ],
                   ),
                 if (detail.tagline?.trim().isNotEmpty ?? false) ...[
-                  const SizedBox(height: LumoraTheme.gapMd),
+                  const SizedBox(height: LumoraSpace.md),
                   Text(
                     detail.tagline!.trim(),
                     style: theme.textTheme.bodyMedium?.copyWith(
@@ -160,13 +161,13 @@ class _MediaDetailPageState extends State<MediaDetailPage> {
                   ),
                 ],
                 if (item.overview?.trim().isNotEmpty ?? false) ...[
-                  const SizedBox(height: LumoraTheme.gapMd),
+                  const SizedBox(height: LumoraSpace.md),
                   Text(
                     item.overview!.trim(),
                     style: theme.textTheme.bodyMedium?.copyWith(height: 1.45),
                   ),
                 ],
-                const SizedBox(height: LumoraTheme.gapXl),
+                const SizedBox(height: LumoraSpace.xl),
                 SizedBox(
                   width: double.infinity,
                   height: 48,
@@ -177,13 +178,13 @@ class _MediaDetailPageState extends State<MediaDetailPage> {
                   ),
                 ),
                 if (isSeries && seasons.isNotEmpty) ...[
-                  const SizedBox(height: LumoraTheme.gapXl),
+                  const SizedBox(height: LumoraSpace.xl),
                   Text(
                     'Episodes',
                     style: theme.textTheme.titleMedium
                         ?.copyWith(fontWeight: FontWeight.w700),
                   ),
-                  const SizedBox(height: LumoraTheme.gapSm),
+                  const SizedBox(height: LumoraSpace.sm),
                   DropdownButtonHideUnderline(
                     child: DropdownButton<int>(
                       isExpanded: true,
@@ -201,7 +202,7 @@ class _MediaDetailPageState extends State<MediaDetailPage> {
                       },
                     ),
                   ),
-                  const SizedBox(height: LumoraTheme.gapSm),
+                  const SizedBox(height: LumoraSpace.sm),
                   if (season.episodeCount <= 0)
                     Text(
                       'No episodes listed for this season.',
@@ -310,7 +311,7 @@ class _MetaLine extends StatelessWidget {
         child: const Icon(
           Icons.star_rounded,
           size: 16,
-          color: LumoraTheme.favorite,
+          color: favoriteStar,
         ),
       ));
       pieces.add(Text(rating.toStringAsFixed(1), style: style));
@@ -358,13 +359,13 @@ class _EpisodeTile extends StatelessWidget {
       child: Material(
         color: theme.colorScheme.surfaceContainerHighest
             .withValues(alpha: 0.45),
-        borderRadius: BorderRadius.circular(LumoraTheme.radiusMd),
+        borderRadius: BorderRadius.circular(LumoraRadius.md),
         child: InkWell(
           onTap: onTap,
-          borderRadius: BorderRadius.circular(LumoraTheme.radiusMd),
+          borderRadius: BorderRadius.circular(LumoraRadius.md),
           child: Container(
             constraints: const BoxConstraints(minHeight: 48),
-            padding: const EdgeInsets.symmetric(horizontal: LumoraTheme.gapMd),
+            padding: const EdgeInsets.symmetric(horizontal: LumoraSpace.md),
             child: Row(
               children: [
                 SizedBox(

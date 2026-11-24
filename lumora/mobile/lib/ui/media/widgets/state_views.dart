@@ -17,36 +17,36 @@ class MediaHomeSkeleton extends StatelessWidget {
   Widget build(BuildContext context) {
     final base = Theme.of(context).colorScheme.surfaceContainerHighest;
     return ListView.separated(
-      padding: const EdgeInsets.symmetric(vertical: LumoraTheme.gapLg),
+      padding: const EdgeInsets.symmetric(vertical: LumoraSpace.lg),
       itemCount: shelfCount,
-      separatorBuilder: (_, _) => const SizedBox(height: LumoraTheme.gapXl),
+      separatorBuilder: (_, _) => const SizedBox(height: LumoraSpace.xl),
       itemBuilder: (context, index) => Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
             height: 16,
             width: 140,
-            margin: const EdgeInsets.only(left: LumoraTheme.gapLg),
+            margin: const EdgeInsets.only(left: LumoraSpace.lg),
             decoration: BoxDecoration(
               color: base,
-              borderRadius: BorderRadius.circular(LumoraTheme.radiusSm),
+              borderRadius: BorderRadius.circular(LumoraRadius.sm),
             ),
           ),
-          const SizedBox(height: LumoraTheme.gapMd),
+          const SizedBox(height: LumoraSpace.md),
           SizedBox(
             height: PosterCard.normalWidth * 1.5,
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
               physics: const NeverScrollableScrollPhysics(),
-              padding: const EdgeInsets.symmetric(horizontal: LumoraTheme.gapLg),
+              padding: const EdgeInsets.symmetric(horizontal: LumoraSpace.lg),
               itemCount: 4,
               separatorBuilder: (_, _) =>
-                  const SizedBox(width: LumoraTheme.gapMd),
+                  const SizedBox(width: LumoraSpace.md),
               itemBuilder: (context, index) => Container(
                 width: PosterCard.normalWidth,
                 decoration: BoxDecoration(
                   color: base,
-                  borderRadius: BorderRadius.circular(LumoraTheme.radiusMd),
+                  borderRadius: BorderRadius.circular(LumoraRadius.md),
                 ),
               ),
             ),
@@ -69,15 +69,15 @@ class MediaDetailSkeleton extends StatelessWidget {
           widthFactor: widthFactor,
           child: Container(
             height: height,
-            margin: const EdgeInsets.only(bottom: LumoraTheme.gapMd),
+            margin: const EdgeInsets.only(bottom: LumoraSpace.md),
             decoration: BoxDecoration(
               color: base,
-              borderRadius: BorderRadius.circular(LumoraTheme.radiusSm),
+              borderRadius: BorderRadius.circular(LumoraRadius.sm),
             ),
           ),
         );
     return Padding(
-      padding: const EdgeInsets.all(LumoraTheme.gapLg),
+      padding: const EdgeInsets.all(LumoraSpace.lg),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -85,10 +85,10 @@ class MediaDetailSkeleton extends StatelessWidget {
             height: 140,
             decoration: BoxDecoration(
               color: base,
-              borderRadius: BorderRadius.circular(LumoraTheme.radiusLg),
+              borderRadius: BorderRadius.circular(LumoraRadius.lg),
             ),
           ),
-          const SizedBox(height: LumoraTheme.gapLg),
+          const SizedBox(height: LumoraSpace.lg),
           bar(0.6, 22),
           bar(0.35, 14),
           bar(1, 14),
@@ -118,28 +118,28 @@ class MediaErrorCard extends StatelessWidget {
     return Card(
       margin: EdgeInsets.zero,
       child: Padding(
-        padding: const EdgeInsets.all(LumoraTheme.gapLg),
+        padding: const EdgeInsets.all(LumoraSpace.lg),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
                 Icon(Icons.error_outline, color: theme.colorScheme.error),
-                const SizedBox(width: LumoraTheme.gapSm),
+                const SizedBox(width: LumoraSpace.sm),
                 Expanded(
                   child: Text(message, style: theme.textTheme.titleSmall),
                 ),
               ],
             ),
             if (detail != null) ...[
-              const SizedBox(height: LumoraTheme.gapSm),
+              const SizedBox(height: LumoraSpace.sm),
               Text(
                 detail!,
                 style: theme.textTheme.bodySmall
                     ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
               ),
             ],
-            const SizedBox(height: LumoraTheme.gapMd),
+            const SizedBox(height: LumoraSpace.md),
             Align(
               alignment: Alignment.centerRight,
               child: OutlinedButton(
@@ -168,14 +168,14 @@ class MissingApiKeyCard extends StatelessWidget {
     return Card(
       margin: EdgeInsets.zero,
       child: Padding(
-        padding: const EdgeInsets.all(LumoraTheme.gapLg),
+        padding: const EdgeInsets.all(LumoraSpace.lg),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
                 Icon(Icons.key_outlined, color: theme.colorScheme.primary),
-                const SizedBox(width: LumoraTheme.gapSm),
+                const SizedBox(width: LumoraSpace.sm),
                 Expanded(
                   child: Text(
                     'Add your TMDB key in Settings',
@@ -185,7 +185,7 @@ class MissingApiKeyCard extends StatelessWidget {
                 ),
               ],
             ),
-            const SizedBox(height: LumoraTheme.gapSm),
+            const SizedBox(height: LumoraSpace.sm),
             Text(
               message ??
                   'Movies and TV use a free TMDB API key. Add it in Settings → '
@@ -193,7 +193,7 @@ class MissingApiKeyCard extends StatelessWidget {
               style: theme.textTheme.bodyMedium
                   ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
             ),
-            const SizedBox(height: LumoraTheme.gapLg),
+            const SizedBox(height: LumoraSpace.lg),
             SizedBox(
               width: double.infinity,
               height: 48,
@@ -227,19 +227,19 @@ class MediaEmptyView extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Padding(
-      padding: const EdgeInsets.all(LumoraTheme.gapXl),
+      padding: const EdgeInsets.all(LumoraSpace.xl),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(icon, size: 40, color: theme.colorScheme.onSurfaceVariant),
-          const SizedBox(height: LumoraTheme.gapMd),
+          const SizedBox(height: LumoraSpace.md),
           Text(
             message,
             textAlign: TextAlign.center,
             style: theme.textTheme.titleSmall,
           ),
           if (hint != null) ...[
-            const SizedBox(height: LumoraTheme.gapSm),
+            const SizedBox(height: LumoraSpace.sm),
             Text(
               hint!,
               textAlign: TextAlign.center,

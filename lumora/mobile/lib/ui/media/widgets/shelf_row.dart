@@ -17,7 +17,7 @@ class ShelfRow extends StatelessWidget {
   final ValueChanged<MediaItem> onItemTap;
   final bool compact;
 
-  static const double _gap = LumoraTheme.gapMd;
+  static const double _gap = LumoraSpace.md;
 
   @override
   Widget build(BuildContext context) {
@@ -32,10 +32,10 @@ class ShelfRow extends StatelessWidget {
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(
-            LumoraTheme.gapLg,
+            LumoraSpace.lg,
             0,
-            LumoraTheme.gapLg,
-            LumoraTheme.gapSm,
+            LumoraSpace.lg,
+            LumoraSpace.sm,
           ),
           child: Row(
             children: [
@@ -60,7 +60,7 @@ class ShelfRow extends StatelessWidget {
           height: stripHeight,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: LumoraTheme.gapLg),
+            padding: const EdgeInsets.symmetric(horizontal: LumoraSpace.lg),
             itemCount: shelf.items.length,
             separatorBuilder: (_, _) => const SizedBox(width: _gap),
             itemBuilder: (context, index) {

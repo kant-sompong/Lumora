@@ -84,7 +84,7 @@ class _MediaHomePageState extends State<MediaHomePage> {
               final error = snapshot.error;
               return ListView(
                 physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.all(LumoraTheme.gapLg),
+                padding: const EdgeInsets.all(LumoraSpace.lg),
                 children: [
                   if (error is MissingApiKeyException)
                     const MissingApiKeyCard()
@@ -117,11 +117,11 @@ class _MediaHomePageState extends State<MediaHomePage> {
             return ListView.separated(
               physics: const AlwaysScrollableScrollPhysics(),
               padding: const EdgeInsets.symmetric(
-                vertical: LumoraTheme.gapLg,
+                vertical: LumoraSpace.lg,
               ),
               itemCount: shelves.length,
               separatorBuilder: (_, _) =>
-                  const SizedBox(height: LumoraTheme.gapXl),
+                  const SizedBox(height: LumoraSpace.xl),
               itemBuilder: (context, index) => ShelfRow(
                 shelf: shelves[index],
                 compact: compact,

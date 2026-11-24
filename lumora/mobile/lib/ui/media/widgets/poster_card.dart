@@ -2,6 +2,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../../models/media_item.dart';
 import '../../../theme/lumora_theme.dart';
+import 'media_colors.dart';
 
 /// A poster tile: artwork, then title and the year/rating line.
 ///
@@ -36,13 +37,13 @@ class PosterCard extends StatelessWidget {
 
     final card = InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(LumoraTheme.radiusMd),
+      borderRadius: BorderRadius.circular(LumoraRadius.md),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
           ClipRRect(
-            borderRadius: BorderRadius.circular(LumoraTheme.radiusMd),
+            borderRadius: BorderRadius.circular(LumoraRadius.md),
             child: AspectRatio(
               aspectRatio: 2 / 3,
               child: _Poster(item: item),
@@ -131,7 +132,7 @@ class _MetaLine extends StatelessWidget {
         ),
         if (rating != null) ...[
           const SizedBox(width: 4),
-          const Icon(Icons.star_rounded, size: 12, color: LumoraTheme.favorite),
+          const Icon(Icons.star_rounded, size: 12, color: favoriteStar),
           const SizedBox(width: 2),
           Text(
             rating.toStringAsFixed(1),
