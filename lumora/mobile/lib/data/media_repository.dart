@@ -394,6 +394,10 @@ class TmdbAniListRepository implements MediaRepository {
   final String _tmdbBaseUrl;
   final String _anilistEndpoint;
 
+  /// Wide art is cached per title, as `lgl/tmdb.py` caches it, so reopening a
+  /// detail page asks TMDB nothing.
+  final Map<String, String?> _logoCache = <String, String?>{};
+
   static const Duration _timeout = Duration(seconds: 20);
 
   static const String _anilistFields = '''
@@ -517,7 +521,15 @@ class TmdbAniListRepository implements MediaRepository {
       if (detail == null) {
         throw const NetworkException('AniList returned an unusable title.');
       }
-      return detail;
+      return MediaDetail(
+        item: detail.item,
+        seasons: detail.seasons,
+        runtimeMinutes: detail.runtimeMinutes,
+        tagline: detail.tagline,
+        // Anime has no TMDB id, so the desktop looks its logo up by exact
+        // title (`lgl/qt_media.py` `_fetch_anime_images`).
+        logoUrl: await _animeLogo(item),
+      );
     }
 
     if (_usesFallback) {
@@ -536,7 +548,85 @@ class TmdbAniListRepository implements MediaRepository {
     if (detail == null) {
       throw const NetworkException('TMDB returned an unusable title.');
     }
-    return detail;
+    return MediaDetail(
+      item: detail.item,
+      seasons: detail.seasons,
+      runtimeMinutes: detail.runtimeMinutes,
+      tagline: detail.tagline,
+      logoUrl: await _tmdbLogo(item.kind, id),
+    );
+  }
+
+  /// The title's own logo from TMDB's `/images` (best effort: wide art is
+  /// decoration, so a failure never stops a detail page from opening).
+  Future<String?> _tmdbLogo(MediaKind kind, int id) async {
+    final key = '${kind.name}:$id';
+    if (_logoCache.containsKey(key)) {
+      return _logoCache[key];
+    }
+    if (!_hasTmdbKey) {
+      return null;
+    }
+    final path = kind == MediaKind.tv ? '/tv/$id/images' : '/movie/$id/images';
+    try {
+      // No language filter: TMDB would drop every logo tagged differently.
+      final json = await _getJson(_tmdbUriWithoutLanguage(path));
+      final logo = bestTmdbLogo(json['logos'], language: 'en');
+      _logoCache[key] = logo;
+      return logo;
+    } on Exception {
+      return null;
+    }
+  }
+
+  /// Anime titles come from AniList and have no TMDB id, so one exact-title
+  /// search finds the logo, as `lgl/tmdb.py` `tmdb_images_for_title` does.
+  Future<String?> _animeLogo(MediaItem item) async {
+    final wanted = _normaliseTitle(item.title);
+    if (wanted.isEmpty || !_hasTmdbKey) {
+      return null;
+    }
+    final key = 'anime:$wanted:${item.year ?? ''}';
+    if (_logoCache.containsKey(key)) {
+      return _logoCache[key];
+    }
+    try {
+      final json = await _getJson(
+        _tmdbUri('/search/multi', <String, String>{
+          'query': item.title,
+          'include_adult': 'true',
+          'page': '1',
+        }),
+      );
+      final wantedYear = int.tryParse(item.year ?? '');
+      // Anime is a series or a film; without MAL's media type the TV side is
+      // where almost every one lives (`lgl/qt_media.py` `_anime_tmdb_kind`).
+      for (final found in parseTmdbResults(json)) {
+        if (found.kind != MediaKind.tv) {
+          continue;
+        }
+        if (_normaliseTitle(found.title) != wanted) {
+          continue;
+        }
+        final foundYear = int.tryParse(found.year ?? '');
+        if (wantedYear != null &&
+            foundYear != null &&
+            (wantedYear - foundYear).abs() > 1) {
+          continue;
+        }
+        final id = found.tmdbId;
+        if (id == null) {
+          continue;
+        }
+        final logo = await _tmdbLogo(MediaKind.tv, id);
+        _logoCache[key] = logo;
+        return logo;
+      }
+      _logoCache[key] = null;
+      return null;
+    } on Exception {
+      return null;
+    }
   }
 
   /// PC "Trending Now": the week's trending movies followed by trending TV,
@@ -581,7 +671,9 @@ class TmdbAniListRepository implements MediaRepository {
     final json = await _getJson(
       _tmdbUri('/search/multi', <String, String>{
         'query': query,
-        'include_adult': 'false',
+        // The PC searches with adult titles included and badges the results
+        // TMDB flags (`lgl/tmdb.py` `INCLUDE_ADULT`).
+        'include_adult': 'true',
         'page': '1',
       }),
     );
@@ -604,6 +696,17 @@ class TmdbAniListRepository implements MediaRepository {
       params['api_key'] = settings.tmdbApiKey.trim();
     }
     return Uri.parse('$_tmdbBaseUrl$path').replace(queryParameters: params);
+  }
+
+  /// A TMDB read with no `language` parameter; only `/images` asks for that.
+  Uri _tmdbUriWithoutLanguage(String path) {
+    final base = Uri.parse('$_tmdbBaseUrl$path');
+    if (_isV4Token) {
+      return base;
+    }
+    return base.replace(
+      queryParameters: <String, String>{'api_key': settings.tmdbApiKey.trim()},
+    );
   }
 
   bool get _isV4Token => settings.tmdbApiKey.trim().contains('.');
@@ -790,6 +893,7 @@ MediaItem? parseTmdbItem(Map<String, dynamic> raw, {MediaKind? kindOverride}) {
     rating: _rating(raw['vote_average']),
     overview: _asString(raw['overview']),
     genres: _genreNames(raw['genres']),
+    adult: raw['adult'] == true,
   );
 }
 
@@ -916,6 +1020,89 @@ MediaDetail? parseAniListDetail(
 // ---------------------------------------------------------------------------
 // Small defensive helpers.
 // ---------------------------------------------------------------------------
+
+/// The best logo among a TMDB `/images` `logos` list
+/// (`lgl/tmdb.py` `_best_logo`).
+///
+/// Only PNG and SVG logos are used; PNG wins within a language, then the
+/// best-voted one. Language only decides which logo is preferred: [language],
+/// then English, then a language-neutral logo, then any logo at all. A title
+/// with only a foreign-language logo still gets that logo.
+String? bestTmdbLogo(dynamic raw, {String? language}) {
+  if (raw is! List) {
+    return null;
+  }
+  final wanted = _logoLanguage(language);
+  final order = <String?>[if (wanted != null) wanted, 'en', null];
+  final ranked = <String?, List<Map<String, dynamic>>>{};
+  final usable = <Map<String, dynamic>>[];
+
+  for (final entry in raw) {
+    if (entry is! Map) {
+      continue;
+    }
+    final map = _asMap(entry);
+    final path = (_asString(map['file_path']) ?? '').toLowerCase();
+    if (!path.endsWith('.png') && !path.endsWith('.svg')) {
+      continue;
+    }
+    usable.add(map);
+    ranked
+        .putIfAbsent(
+          _logoLanguage(map['iso_639_1']),
+          () => <Map<String, dynamic>>[],
+        )
+        .add(map);
+  }
+
+  for (final code in order) {
+    final entries = ranked[code];
+    if (entries != null && entries.isNotEmpty) {
+      return _tmdbImage(_bestLogoEntry(entries)['file_path'], 'w500');
+    }
+  }
+  if (usable.isNotEmpty) {
+    return _tmdbImage(_bestLogoEntry(usable)['file_path'], 'w500');
+  }
+  return null;
+}
+
+Map<String, dynamic> _bestLogoEntry(List<Map<String, dynamic>> entries) {
+  var best = entries.first;
+  for (final entry in entries.skip(1)) {
+    if (_logoPreferred(entry, best)) {
+      best = entry;
+    }
+  }
+  return best;
+}
+
+bool _logoPreferred(Map<String, dynamic> candidate, Map<String, dynamic> best) {
+  final candidatePng =
+      (_asString(candidate['file_path']) ?? '').toLowerCase().endsWith('.png');
+  final bestPng =
+      (_asString(best['file_path']) ?? '').toLowerCase().endsWith('.png');
+  if (candidatePng != bestPng) {
+    return candidatePng;
+  }
+  return _logoVotes(candidate) > _logoVotes(best);
+}
+
+double _logoVotes(Map<String, dynamic> entry) =>
+    _asDouble(entry['vote_average']) ?? 0.0;
+
+/// A TMDB language tag reduced to a two-letter code, or null.
+String? _logoLanguage(dynamic raw) {
+  final text = _asString(raw)?.toLowerCase();
+  if (text == null || text == 'null' || text == 'none') {
+    return null;
+  }
+  return text.length >= 2 ? text.substring(0, 2) : text;
+}
+
+String _normaliseTitle(String value) {
+  return value.toLowerCase().replaceAll(RegExp('[^0-9a-z]+'), ' ').trim();
+}
 
 const String _tmdbImageBase = 'https://image.tmdb.org/t/p';
 

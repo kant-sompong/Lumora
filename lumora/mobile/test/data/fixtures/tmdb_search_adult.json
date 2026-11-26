@@ -1,0 +1,28 @@
+{
+  "results": [
+    {
+      "id": 900,
+      "media_type": "movie",
+      "title": "Adult Title",
+      "release_date": "2024-01-01",
+      "adult": true,
+      "vote_average": 6.1,
+      "poster_path": "/adult.jpg",
+      "overview": "Adults only."
+    },
+    {
+      "id": 901,
+      "media_type": "movie",
+      "title": "Family Film",
+      "release_date": "2023-05-05",
+      "adult": false,
+      "vote_average": 7.4
+    },
+    {
+      "id": 902,
+      "media_type": "person",
+      "name": "Someone",
+      "adult": false
+    }
+  ]
+}
