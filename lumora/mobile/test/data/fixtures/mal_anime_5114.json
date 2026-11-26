@@ -1,0 +1,22 @@
+{
+  "id": 5114,
+  "title": "Fullmetal Alchemist: Brotherhood",
+  "synopsis": "[b]Two brothers[/b] search for the Philosopher's Stone.",
+  "start_date": "2009-04-05",
+  "media_type": "tv",
+  "num_episodes": 64,
+  "mean": 9.09,
+  "status": "finished_airing",
+  "main_picture": {
+    "large": "https://cdn.myanimelist.net/images/anime/1208/94745l.jpg"
+  },
+  "genres": [
+    { "id": 1, "name": "Action" },
+    { "id": 2, "name": "Adventure" }
+  ],
+  "alternative_titles": {
+    "en": "Fullmetal Alchemist: Brotherhood",
+    "ja": "鋼の錬金術師 FULLMETAL ALCHEMIST",
+    "synonyms": ["Hagane no Renkinjutsushi: Fullmetal Alchemist", "FMAB"]
+  }
+}

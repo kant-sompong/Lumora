@@ -1,0 +1,10 @@
+{
+  "data": {
+    "Page": {
+      "media": [
+        { "id": 9100, "idMal": 5114, "seasonYear": 2009, "format": "TV", "synonyms": [], "title": { "romaji": "Fullmetal Alchemist: Brotherhood" } },
+        { "id": 9101, "idMal": 5114, "seasonYear": 2009, "format": "TV", "synonyms": [], "title": { "romaji": "Fullmetal Alchemist: Brotherhood (Dub)" } }
+      ]
+    }
+  }
+}
