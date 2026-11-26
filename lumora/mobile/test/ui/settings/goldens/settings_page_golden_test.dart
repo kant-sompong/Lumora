@@ -67,7 +67,10 @@ void main() {
     await tester.tap(find.text('Providers'));
     await tester.pumpAndSettle();
 
-    await tester.enterText(find.byType(TextField), 'not-a-real-key');
+    await tester.enterText(
+      find.byKey(const Key('tmdbApiKeyField')),
+      'not-a-real-key',
+    );
     await tester.tap(find.text('Test key'));
     await tester.pumpAndSettle();
 
