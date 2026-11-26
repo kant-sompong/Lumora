@@ -1,6 +1,10 @@
 /// What a [MediaItem] is, which decides the provider and the detail layout.
 enum MediaKind { movie, tv, anime }
 
+/// Sentinel for [MediaItem.copyWith]'s nullable fields, so `null` can clear one
+/// and an omitted argument keeps the current value.
+const Object _unset = Object();
+
 /// One poster-sized entry: a movie, a TV show or an anime.
 class MediaItem {
   const MediaItem({
@@ -15,6 +19,7 @@ class MediaItem {
     this.genres = const <String>[],
     this.tmdbId,
     this.anilistId,
+    this.adult = false,
   });
 
   /// Stable repository id (`tmdb:603`, `anilist:154587`, ...).
@@ -35,6 +40,54 @@ class MediaItem {
 
   /// AniList id, used by the anime providers and the AniList detail query.
   final int? anilistId;
+
+  /// TMDB's own adult flag (`lgl/tmdb.py` `MediaItem.adult`).
+  ///
+  /// Search includes adult titles, so the cards badge the results that carry
+  /// this instead of hiding them.
+  final bool adult;
+
+  /// A copy with [MediaKind], the ids, [adult] or any other field replaced.
+  ///
+  /// Nullable fields accept an explicit `null` to clear them; omitting one
+  /// keeps the current value.
+  MediaItem copyWith({
+    String? id,
+    String? title,
+    MediaKind? kind,
+    Object? posterUrl = _unset,
+    Object? backdropUrl = _unset,
+    Object? year = _unset,
+    Object? rating = _unset,
+    Object? overview = _unset,
+    List<String>? genres,
+    Object? tmdbId = _unset,
+    Object? anilistId = _unset,
+    bool? adult,
+  }) {
+    return MediaItem(
+      id: id ?? this.id,
+      title: title ?? this.title,
+      kind: kind ?? this.kind,
+      posterUrl: identical(posterUrl, _unset)
+          ? this.posterUrl
+          : posterUrl as String?,
+      backdropUrl: identical(backdropUrl, _unset)
+          ? this.backdropUrl
+          : backdropUrl as String?,
+      year: identical(year, _unset) ? this.year : year as String?,
+      rating: identical(rating, _unset) ? this.rating : rating as double?,
+      overview: identical(overview, _unset)
+          ? this.overview
+          : overview as String?,
+      genres: genres ?? this.genres,
+      tmdbId: identical(tmdbId, _unset) ? this.tmdbId : tmdbId as int?,
+      anilistId: identical(anilistId, _unset)
+          ? this.anilistId
+          : anilistId as int?,
+      adult: adult ?? this.adult,
+    );
+  }
 }
 
 /// One season row on a detail page.
@@ -57,12 +110,17 @@ class MediaDetail {
     this.seasons = const <SeasonInfo>[],
     this.runtimeMinutes,
     this.tagline,
+    this.logoUrl,
   });
 
   final MediaItem item;
   final List<SeasonInfo> seasons;
   final int? runtimeMinutes;
   final String? tagline;
+
+  /// The title's own logo from TMDB's `/images` (a `w500` URL), or null when
+  /// TMDB has none (`lgl/tmdb.py` `MediaImages.logo_url` / `_best_logo`).
+  final String? logoUrl;
 }
 
 /// A named horizontal row on the home page.
