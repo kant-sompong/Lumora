@@ -82,6 +82,33 @@ def qt_widgets_destroyed():
 
 
 @pytest.fixture(autouse=True)
+def qt_theme_restored():
+    """Put the shared QApplication theme back after a test changed it.
+
+    ``qt_main.apply_theme`` writes the stylesheet, the palette and the painted
+    widgets' theme state on the one QApplication, so a test that asks for dark
+    otherwise decides the colours of every test that runs after it.
+    """
+    app = None
+    widgets = sys.modules.get("PySide6.QtWidgets")
+    if widgets is not None:
+        app = widgets.QApplication.instance()
+    if app is None:
+        yield
+        return
+    painted = sys.modules.get("lgl.qt_widgets")
+    state = dict(painted.THEME_STATE) if painted is not None else None
+    stylesheet = app.styleSheet()
+    palette = app.palette()
+    yield
+    if painted is not None and state is not None:
+        painted.THEME_STATE.clear()
+        painted.THEME_STATE.update(state)
+    app.setStyleSheet(stylesheet)
+    app.setPalette(palette)
+
+
+@pytest.fixture(autouse=True)
 def qt_pool_drained(request):
     """Wait for this test's Qt worker jobs; fail it if they do not finish."""
     yield

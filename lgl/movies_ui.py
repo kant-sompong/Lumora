@@ -40,9 +40,11 @@ from gi.repository import (  # noqa: E402
 
 from . import artwork_background, platform_support, recently_viewed  # noqa: E402
 from . import gtk_feed_home  # noqa: E402
+from . import media_tabs  # noqa: E402
 from . import (  # noqa: E402
     anipm,
     framextv,
+    gtk_playback,
     mal,
     media_history,
     ratings,
@@ -966,12 +968,12 @@ class PosterTile(Gtk.FlowBoxChild):
         images.load(item.poster_url, POSTER_SIZE, poster.set_pixbuf)
 
 
-class AniPmTile(Gtk.FlowBoxChild):
-    """One ani.pm catalogue result: poster, title, meta and an 18+ badge.
+class AniListTile(Gtk.FlowBoxChild):
+    """One AniList-sourced anime poster in a grid: art, title, meta, 18+ badge.
 
-    Metadata is exactly what the ani.pm catalogue API returned - year, format
-    and score when present, genres in the tooltip, and a visible 18+ badge
-    when the title is flagged ``adult``.  Nothing is filled in by guesswork.
+    The title is an :class:`anipm.AniTitle` used as the anime card model, but
+    every field here comes from AniList (Hidden Gems) rather than an ani.pm
+    catalogue search, which no surface performs any more.
     """
 
     def __init__(self, item: "anipm.AniTitle", images: Images, on_open) -> None:
@@ -1006,7 +1008,7 @@ class AniPmTile(Gtk.FlowBoxChild):
             badge.set_margin_top(7)
             badge.set_margin_end(7)
             badge.get_style_context().add_class("movie-adult-badge")
-            badge.set_tooltip_text("Marked adult (18+) by ani.pm")
+            badge.set_tooltip_text("Marked adult (18+) by AniList")
             holder.add_overlay(badge)
         box.pack_start(holder, False, False, 0)
 
@@ -1613,11 +1615,34 @@ class MoviesWindow(Gtk.Box):
         self._playback_title = ""
         self._playback_reason = ""
         self._player_fullscreen = False
+        #: Browser-style tabs: identity and restorable state per open title.
+        self._tabs = media_tabs.TabStore()
+        self._restoring_tab = False
+        #: The URL, provider and last sampled position of the open player.
+        self._playback_url = ""
+        self._playback_provider = ""
+        self._playback_position = 0.0
+        #: The tab key the current stream belongs to, so playback started
+        #: outside a tab can never be saved into one.
+        self._playback_key = ""
+        self._position_source = 0
+        #: Newest position question asked of a web view.  An answer carrying an
+        #: older tag came from a view that is already gone, so it is dropped.
+        self._position_token = 0
+        #: Season and scroll to reapply once a restored page has its data.
+        self._restore_season = None
+        self._restore_scroll = None
         #: (season, episode) of the TV episode playing, for Next episode.
         self._playing_episode: tuple[int, int] | None = None
         #: Seasons fetched in full: MediaDetails carries only their summaries,
         #: so the Next episode target reads the episodes from here.
         self._season_cache: dict[int, Any] = {}
+        #: Newest playback / anime-page routing request; older workers are stale.
+        self._playback_token = 0
+        #: The tab in front when that request was made, so a route that
+        #: resolves after a tab switch cannot play into the new tab.
+        self._playback_tab_id: str | None = None
+        self._anime_route_token = 0
         #: The title line of the player, where Next episode is added.
         self._player_header: Any | None = None
         self._active_section = "home"
@@ -1647,6 +1672,7 @@ class MoviesWindow(Gtk.Box):
         self._player.set_margin_bottom(16)
 
         self._build_header()
+        self._tab_bar = self._build_tab_bar()
 
         self._stack.add_named(self._build_home_page(), "home")
         self._stack.add_named(self._build_browse_page(), "browse")
@@ -1659,6 +1685,7 @@ class MoviesWindow(Gtk.Box):
         self._stack.add_named(self._player, "player")
 
         self.pack_start(self._header, False, False, 0)
+        self.pack_start(self._tab_bar, False, False, 0)
         self.pack_start(self._stack, True, True, 0)
 
         self._stack.connect("notify::visible-child-name", self._on_page_changed)
@@ -1781,21 +1808,79 @@ class MoviesWindow(Gtk.Box):
     # provider picker -------------------------------------------------------
     # provider health -----------------------------------------------------
     def _provider_section(self) -> str:
-        """Whether the header button offers anime or movie/TV providers."""
+        """Whether the header button offers anime or movie/TV providers.
+
+        A tab's own title decides while that tab's details or player is
+        showing, because a tab keeps its own origin while the rail may still
+        name another page -- and a MAL-verified anime session is that tab's,
+        so anime opened from Movies still offers anime providers only.  Home,
+        Browse and Search are the rail's pages, not anybody's tab: a
+        background tab's saved session must not put its anime providers on the
+        header there, and a pick made there is a plain preference change.  A
+        play no tab owns has no page boundary of its own, so its live session
+        decides wherever it is shown; the rail is the fallback for every other
+        page that is not a tab.
+        """
+        name = self._stack.get_visible_child_name()
+        tab = self._tabs.active
+        if tab is None or name in ("details", "player"):
+            if getattr(self, "_forced_playback", None):
+                return "anime"
+            if tab is not None:
+                # A paused verified anime keeps its session, and so its menu.
+                if self._session_for_tab(tab) is not None:
+                    return "anime"
+                item = tab.payload.get("item")
+                if item is not None:
+                    is_anime = int(getattr(item, "anilist_id", 0) or 0) > 0
+                    return "anime" if is_anime else "movies"
         return "anime" if self._active_section in ("anime", "gems") else "movies"
 
-    def _provider_choices(self) -> tuple[str, ...]:
+    def _section_providers(self) -> tuple[str, ...]:
+        """Providers that can play what the open section shows.
+
+        The anime menu only lists providers with a route for an anime title:
+        ani.pm by AniList id, and the providers that document one.
+        """
         if self._provider_section() == "anime":
-            return tuple(streaming.ANIME_PROVIDERS)
+            return tuple(
+                key for key in streaming.ANIME_PROVIDERS
+                if key == streaming.ANI_PROVIDER or streaming.has_anime_route(key)
+            )
         return tuple(streaming.PROVIDERS)
 
+    def _provider_choices(self) -> tuple[str, ...]:
+        return self._section_providers()
+
     def _current_provider(self) -> str:
-        if self._provider_section() == "anime":
+        """The provider playing now: a verified session names its own.
+
+        Only while that session is in front: on Home or Browse the header names
+        the provider the page will play with, not the session a background tab
+        still holds.
+        """
+        section = self._provider_section()
+        playing = getattr(self, "_forced_playback", None)
+        if playing and section == "anime":
+            return playing.get("provider") or streaming.ANI_PROVIDER
+        if section == "anime":
             return self._anime_provider()
         return self._streaming_provider()
 
     def _choose_provider(self, provider: str) -> None:
+        provider = str(provider)
         if self._provider_section() == "anime":
+            if self._switch_forced_provider(provider):
+                # A manual pick during a verified anime switches this play only:
+                # the saved anime preference is not rewritten behind the owner.
+                self._refresh_provider_button()
+                return
+            if getattr(self, "_forced_playback", None):
+                # No anime route, so this is an ordinary movie/TV preference
+                # change made while the verified anime keeps playing.
+                self._set_streaming_provider(provider)
+                self._refresh_provider_button()
+                return
             self._set_anime_provider(provider)
         else:
             self._set_streaming_provider(provider)
@@ -1896,8 +1981,17 @@ class MoviesWindow(Gtk.Box):
         except Exception:  # noqa: BLE001
             pass
 
-    def stop_playback(self) -> None:
-        if getattr(self, "_player_fullscreen", False):
+    def stop_playback(self, keep_fullscreen: bool = False) -> None:
+        """Stop the video and free its view.
+
+        ``keep_fullscreen`` is the tab-switch case: the window stays fullscreen
+        for the tab coming in front, which is what keeps the media tab strip
+        usable while a video was playing fullscreen.
+        """
+        self._stop_position_sampling()
+        # Any answer still owed by the view being released is now stale.
+        self._position_token = getattr(self, "_position_token", 0) + 1
+        if getattr(self, "_player_fullscreen", False) and not keep_fullscreen:
             self._set_player_fullscreen(False)
         view = getattr(self, "_webview", None)
         if view is not None:
@@ -1911,6 +2005,10 @@ class MoviesWindow(Gtk.Box):
                 pass
             self._webview = None
         self._player_frame = None
+        # Only the live context is released here: navigation and player
+        # teardown are not the end of a verified session, so the tab's saved
+        # copy stays until :meth:`_end_verified_session` says it is over.
+        self._forced_playback = None
         for child in list(self._player.get_children()):
             try:
                 self._player.remove(child)
@@ -1921,7 +2019,551 @@ class MoviesWindow(Gtk.Box):
             except Exception:  # noqa: BLE001
                 pass
 
+    def leave_view(self) -> None:
+        """The app shell left Movies & TV: keep the tab, stop the video.
+
+        Called while the page is still in front, so the active tab keeps its
+        URL and position; coming back then shows its paused panel instead of
+        an empty player.
+        """
+        on_player = self._stack.get_visible_child_name() == "player"
+        self._capture_active_tab()
+        if not on_player:
+            return
+        self.stop_playback()
+        tab = self._tabs.active
+        if tab is not None and tab.url:
+            self._restore_player_panel(tab)
+        elif self._current_item is not None:
+            self._stack.set_visible_child_name("details")
+            self._update_back()
+
+    # -- media tabs ---------------------------------------------------------
+
+    #: How often the open player asks the page where the video is.
+    POSITION_SAMPLE_MS = 4000
+    POSITION_SCRIPT = (
+        "(() => { const v = document.querySelector('video');"
+        " return v && isFinite(v.currentTime) ? v.currentTime : 0; })()"
+    )
+
+    def _build_tab_bar(self) -> Gtk.Widget:
+        """The strip under the header: one tab per open title, in order."""
+        bar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        bar.get_style_context().add_class("movie-tabbar")
+        scroller = Gtk.ScrolledWindow()
+        scroller.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.NEVER)
+        scroller.set_size_request(-1, 48)
+        scroller.get_style_context().add_class("movie-tabscroll")
+        self._tab_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
+        self._tab_row.get_style_context().add_class("movie-tabrow")
+        scroller.add(self._tab_row)
+        bar.pack_start(scroller, True, True, 0)
+        self._tab_scroller = scroller
+        bar.set_no_show_all(True)
+        bar.hide()
+        return bar
+
+    @staticmethod
+    def _media_key(item) -> str:
+        """The tab key for a card: its own key, or kind and identifier."""
+        key = getattr(item, "key", "")
+        if callable(key):
+            try:
+                key = key()
+            except Exception:  # noqa: BLE001 - a key that cannot answer
+                key = ""
+        key = str(key or "")
+        if key:
+            return key
+        kind = str(getattr(item, "kind", "") or "")
+        ident = getattr(item, "anilist_id", None) or getattr(item, "tmdb_id", 0)
+        try:
+            ident = int(ident or 0)
+        except (TypeError, ValueError):
+            ident = 0
+        return f"{kind}:{ident}" if ident else ""
+
+    def _render_tabs(self) -> None:
+        """Redraw the strip from the tab store; the list is short."""
+        for child in list(self._tab_row.get_children()):
+            self._tab_row.remove(child)
+            child.destroy()
+        tabs = self._tabs.tabs
+        active = self._tabs.active_id
+        for tab in tabs:
+            self._tab_row.pack_start(
+                self._build_tab(tab, tab.tab_id == active), False, False, 0
+            )
+        if tabs:
+            # The bar is no-show-all, so the window's show_all() never reached
+            # it and neither did the scroller inside it.  Showing only the bar
+            # leaves that scroller hidden, and the whole strip allocates no
+            # height: show the subtree from the scroller down, then the bar.
+            self._tab_scroller.show_all()
+            # A fullscreen player leaves the whole screen to the video, so the
+            # strip stays hidden there, including after a tab switch.
+            if getattr(self, "_player_fullscreen", False):
+                self._tab_bar.hide()
+            else:
+                self._tab_bar.show()
+        else:
+            self._tab_bar.hide()
+
+    def _build_tab(self, tab, active: bool) -> Gtk.Widget:
+        box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
+        box.get_style_context().add_class("movie-tab")
+        if active:
+            box.get_style_context().add_class("active")
+        text = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        title = Gtk.Label(label=tab.title or "Untitled", xalign=0)
+        title.set_ellipsize(Pango.EllipsizeMode.END)
+        title.set_max_width_chars(24)
+        title.get_style_context().add_class("movie-tab-title")
+        meta = Gtk.Label(label=tab.subtitle, xalign=0)
+        meta.get_style_context().add_class("movie-tab-meta")
+        text.pack_start(title, False, False, 0)
+        text.pack_start(meta, False, False, 0)
+        box.pack_start(text, True, True, 0)
+        close = Gtk.Button(label="×")
+        close.set_relief(Gtk.ReliefStyle.NONE)
+        close.set_tooltip_text(f"Close {tab.title or 'this tab'}")
+        try:
+            close.get_accessible().set_name(f"Close {tab.title or 'this tab'}")
+        except (AttributeError, TypeError):
+            pass
+        close.get_style_context().add_class("movie-tab-close")
+        close.connect("clicked", lambda _b, t=tab.tab_id: self._close_tab(t))
+        box.pack_end(close, False, False, 0)
+
+        events = Gtk.EventBox()
+        events.set_visible_window(False)
+        events.set_tooltip_text(f"{tab.title}\n{tab.subtitle}")
+        events.add(box)
+        events.connect(
+            "button-release-event",
+            lambda _w, event, t=tab.tab_id: self._tab_clicked(t, event),
+        )
+        return events
+
+    def _tab_clicked(self, tab_id: str, event) -> bool:
+        if getattr(event, "button", 1) != 1:
+            return False
+        self._show_tab(tab_id)
+        return True
+
+    def _show_tab(self, tab_id: str) -> None:
+        """Bring a tab back: save the current one, then restore the page."""
+        if tab_id == self._tabs.active_id and (
+            self._stack.get_visible_child_name() in ("details", "player")
+        ):
+            return
+        leaving_player = self._stack.get_visible_child_name() == "player"
+        # Switching tabs during fullscreen keeps the window fullscreen when the
+        # tab being switched to still has its stream, so the strip stays the
+        # way between titles.  A tab with no playback left goes back to the
+        # normal layout instead of sitting on a fullscreen details page.
+        target = self._tabs.find_id(tab_id)
+        keep_fullscreen = bool(
+            getattr(self, "_player_fullscreen", False)
+            and getattr(target, "url", "")
+        )
+        self._capture_active_tab()
+        if leaving_player:
+            # No background tab keeps decoding video once it is left behind.
+            self.stop_playback(keep_fullscreen=keep_fullscreen)
+        elif getattr(self, "_player_fullscreen", False) and not keep_fullscreen:
+            self._set_player_fullscreen(False)
+        tab = self._tabs.activate(tab_id)
+        if tab is None:
+            return
+        self._restore_tab(tab)
+
+    def _close_tab(self, tab_id: str) -> None:
+        """Close a tab; the active one stops playing, an inactive one does not."""
+        was_active = self._tabs.active_id == tab_id
+        # Restoring a neighbour is navigation, so it belongs only to the page
+        # the app is showing: a hidden Movies & TV just forgets the tab.  This
+        # is Qt's ``was_visible`` rule, kept the same on both frontends.
+        was_visible = bool(self.get_mapped())
+        closing = self._tabs.find(tab_id)
+        session = getattr(self, "_forced_playback", None)
+        if (
+            closing is not None
+            and session
+            and self._media_key(session.get("item")) == closing.key
+        ):
+            # Closing the tab that owns the session ends it; a neighbour must
+            # not inherit a session of a title that is no longer open.
+            self._end_verified_session(closing.key)
+        if was_active and self._stack.get_visible_child_name() == "player":
+            self.stop_playback()
+        new_active = self._tabs.close(tab_id)
+        if new_active is not None:
+            if was_active and was_visible:
+                self._restore_tab(new_active)
+            else:
+                self._render_tabs()
+                # No neighbour page is restored, but the closed tab may have
+                # owned the session the badge was naming: repaint it for the
+                # page that is actually in front (Home, Browse, Search).
+                self._refresh_provider_button()
+            return
+        self._render_tabs()
+        self._refresh_provider_button()
+        # The last tab closed: the normal Media page is the sensible default.
+        if self._stack.get_visible_child_name() in ("details", "player"):
+            self._current_item = None
+            self._current_details = None
+            self._playing_episode = None
+            self._season_cache.clear()
+            self._activate_nav("home")
+
+    def _open_tab_for(self, item) -> bool:
+        """A title was opened: create its tab, or select the one it has.
+
+        Returns True when the title already had a tab and that tab's own
+        session was brought back, so the caller must not build a fresh page
+        over it.
+        """
+        if self._restoring_tab or item is None:
+            return False
+        key = self._media_key(item)
+        if not key:
+            return False
+        leaving_player = self._stack.get_visible_child_name() == "player"
+        existing = self._tabs.find(key)
+        if existing is not None:
+            # Already open: save the page in front, then restore the tab's own
+            # details, seasons, scroll, episode and paused stream.
+            keep_fullscreen = bool(
+                getattr(self, "_player_fullscreen", False) and existing.url
+            )
+            self._capture_active_tab()
+            if leaving_player:
+                self.stop_playback(keep_fullscreen=keep_fullscreen)
+            elif getattr(self, "_player_fullscreen", False) and not keep_fullscreen:
+                self._set_player_fullscreen(False)
+            tab = self._tabs.activate(existing.tab_id)
+            if tab is not None:
+                self._restore_tab(tab)
+            return True
+        self._capture_active_tab()
+        if leaving_player:
+            self.stop_playback()
+        elif getattr(self, "_player_fullscreen", False):
+            # A title that is not open yet starts from the normal layout.
+            self._set_player_fullscreen(False)
+        tab, _created = self._tabs.open(
+            key, str(getattr(item, "title", "") or ""),
+            str(getattr(item, "kind", "") or ""),
+        )
+        payload = dict(tab.payload)
+        payload["item"] = item
+        self._tabs.update(tab.tab_id, payload=payload)
+        # The new tab is what is in front now: the session that was live for
+        # the tab just left is saved with it, so the badge follows the new tab.
+        self._forced_playback = self._session_for_tab(tab)
+        self._render_tabs()
+        return False
+
+    def _capture_active_tab(self) -> None:
+        """Save the active tab's page state before anything replaces it."""
+        tab = self._tabs.active
+        if tab is None or self._restoring_tab:
+            return
+        # Playback belongs to this tab only when it started for this title: a
+        # stream opened outside the tabs must not be written into one.
+        owns = not self._playback_key or self._playback_key == tab.key
+        playing = bool(
+            self._stack.get_visible_child_name() == "player"
+            and owns
+            and getattr(self, "_playback_url", "")
+        )
+        season, episode = self._playing_episode or (None, None)
+        if season is None:
+            picker = getattr(self, "_season_picker", None)
+            season = getattr(picker, "_current", None)
+        payload = dict(tab.payload)
+        if self._current_item is not None:
+            payload["item"] = self._current_item
+        if self._current_details is not None:
+            payload["details"] = self._current_details
+        if self._season_cache:
+            payload["seasons"] = dict(self._season_cache)
+        # A returning anime tab keeps the ani.pm series, its episode list and
+        # its MAL details, so the verified route and its tracks still work.
+        if getattr(self, "_current_ani_series", None) is not None:
+            payload["ani_series"] = self._current_ani_series
+            payload["ani_episodes"] = list(
+                getattr(self, "_current_ani_episodes", ()) or ()
+            )
+        if getattr(self, "_current_anime_details", None) is not None:
+            payload["anime_details"] = self._current_anime_details
+        # A verified anime keeps its provider session with its tab, so a switch
+        # away and back keeps the AniList episode and the provider badge.  The
+        # session is only this tab's when it plays this tab's title: a session
+        # that belongs elsewhere is never written here.  No live session is
+        # not an ending either -- Back to details and player teardown release
+        # only the live context -- so the tab's saved copy stays untouched
+        # until :meth:`_end_verified_session` ends it.
+        session = getattr(self, "_forced_playback", None)
+        owner = self._media_key(session.get("item")) if session else ""
+        if session and (not owner or owner == tab.key):
+            payload["verified_playback"] = dict(session)
+        if playing:
+            # A paused tab has no web view, so its last known position is its
+            # saved one; asking the page would only lose it.
+            position = (
+                float(self._capture_position())
+                if getattr(self, "_webview", None) is not None
+                else float(self._playback_position or 0.0)
+            )
+        else:
+            position = 0.0
+        self._tabs.update(
+            tab.tab_id,
+            season=int(season) if season else None,
+            episode=int(episode) if episode else None,
+            scroll=int(self._details_scroll.get_vadjustment().get_value()),
+            playing=bool(playing),
+            position=position,
+            url=self._playback_url if playing else "",
+            provider=self._playback_provider if playing else "",
+            payload=payload,
+        )
+
+    def _session_for_tab(self, tab) -> dict | None:
+        """The verified session saved with ``tab``, when it is that tab's own."""
+        state = getattr(tab, "payload", None) or {}
+        saved = state.get("verified_playback")
+        if not isinstance(saved, dict):
+            return None
+        owner = self._media_key(saved.get("item"))
+        if owner and owner != tab.key:
+            return None
+        return dict(saved)
+
+    def _end_verified_session(self, owner: str = "") -> None:
+        """A verified session really ended: forget it here and in its tab.
+
+        Navigation and player teardown release only the live context, because
+        the tab may come back.  This is the one teardown for a session that is
+        over, so neither the provider badge nor a later tab switch can bring
+        it back.  ``owner`` names the tab a closing session belonged to; with
+        none, the live session's own tab is cleared, or the active tab when
+        nothing is live any more.
+        """
+        session = getattr(self, "_forced_playback", None)
+        keys: set[str] = set()
+        if owner:
+            keys.add(owner)
+        elif session:
+            keys.add(self._media_key(session.get("item")))
+        else:
+            active = self._tabs.active
+            if active is not None:
+                keys.add(active.key)
+        self._forced_playback = None
+        for key in keys:
+            if not key:
+                continue
+            tab = self._tabs.find(key)
+            if tab is None:
+                continue
+            payload = dict(tab.payload)
+            if payload.pop("verified_playback", None) is not None:
+                self._tabs.update(tab.tab_id, payload=payload)
+        refresh = getattr(self, "_refresh_provider_button", None)
+        if callable(refresh):
+            refresh()
+
+    def _restore_tab(self, tab) -> None:
+        """Rebuild a tab's page from what it saved, without autoplay."""
+        item = tab.payload.get("item")
+        if item is None:
+            self._render_tabs()
+            return
+        self._restore_season = tab.season
+        self._restore_scroll = tab.scroll
+        # The episode the tab was on is what Next episode and Watch read.
+        self._playing_episode = (
+            (int(tab.season), int(tab.episode))
+            if tab.season and tab.episode else None
+        )
+        self._playback_key = tab.key
+        self._restoring_tab = True
+        try:
+            if int(getattr(item, "anilist_id", 0) or 0) > 0:
+                self._open_anime_details(item, restore=tab)
+            else:
+                self._open_details(item, restore=tab)
+        finally:
+            self._restoring_tab = False
+        # A verified anime comes back as it left: same session, provider and
+        # AniList episode, so the badge, the session-scoped provider menu and a
+        # provider switch all agree with what was playing.  A tab without one
+        # clears whatever the tab that was just left was playing, so no other
+        # tab's session follows it here.
+        self._forced_playback = self._session_for_tab(tab)
+        refresh = getattr(self, "_refresh_provider_button", None)
+        if callable(refresh):
+            refresh()
+        self._render_tabs()
+
+    def _restore_scroll_now(self) -> bool:
+        value = getattr(self, "_restore_scroll", None)
+        self._restore_scroll = None
+        if value:
+            self._details_scroll.get_vadjustment().set_value(float(value))
+        return False
+
+    def _restore_player_panel(self, tab) -> None:
+        """A returning tab shows where it stopped, paused, with Resume."""
+        # The panel stands for the tab's own stream: holding its URL, track and
+        # position here means switching away again cannot lose them.
+        self._playback_url = tab.url
+        self._playback_provider = tab.provider
+        self._playback_position = float(tab.position or 0.0)
+        self._playback_key = tab.key
+        # The paused panel stands for the tab's verified session too, so its
+        # badge and session-scoped menu are right until Resume re-arms it.
+        self._forced_playback = self._session_for_tab(tab)
+        for child in list(self._player.get_children()):
+            self._player.remove(child)
+            child.destroy()
+        heading = Gtk.Label(label=tab.title or self._playback_title, xalign=0)
+        heading.set_ellipsize(Pango.EllipsizeMode.END)
+        heading.get_style_context().add_class("movie-page-title")
+        self._player.pack_start(heading, False, False, 0)
+        where = media_tabs.format_position(tab.position)
+        note = Gtk.Label(
+            label=(
+                f"Paused at {where}. This tab was playing when you switched away."
+                if where else "This tab was playing when you switched away."
+            ),
+            xalign=0,
+        )
+        note.set_line_wrap(True)
+        note.get_style_context().add_class("movie-meta")
+        self._player.pack_start(note, False, False, 0)
+        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        resume = Gtk.Button(label="Resume")
+        resume.set_tooltip_text("Continue this tab from where it stopped")
+        resume.get_style_context().add_class("movie-btn-dark")
+        resume.connect("clicked", lambda *_a: self._resume_tab(tab))
+        row.pack_start(resume, False, False, 0)
+        following = self._next_episode()
+        if following is not None:
+            next_season, next_one = following
+            following_button = Gtk.Button(label="Next episode")
+            following_button.get_style_context().add_class("movie-btn-dark")
+            following_button.set_tooltip_text(
+                f"Play S{next_season:02d}E{next_one.number:02d}"
+            )
+            following_button.connect(
+                "clicked",
+                lambda _b, s=next_season, e=next_one: self._play_episode(s, e),
+            )
+            row.pack_start(following_button, False, False, 0)
+        close = Gtk.Button(label="Close tab")
+        close.get_style_context().add_class("movie-btn-dark")
+        close.connect("clicked", lambda *_a: self._close_tab(tab.tab_id))
+        row.pack_start(close, False, False, 0)
+        self._player.pack_start(row, False, False, 0)
+        spacer = Gtk.Box()
+        self._player.pack_start(spacer, True, True, 0)
+        self._player.show_all()
+        self._stack.set_visible_child_name("player")
+        self._update_back()
+
+    def _resume_tab(self, tab) -> None:
+        if not tab.url:
+            return
+        self._playback_key = tab.key
+        # Resume re-arms the session this tab saved, so the provider badge,
+        # the session-only provider menu and the AniList episode all agree
+        # with the stream that is about to play again.
+        self._forced_playback = self._session_for_tab(tab)
+        self._open_player(
+            tab.url, tab.title or self._playback_title,
+            provider=tab.provider or None, start=tab.position,
+        )
+        refresh = getattr(self, "_refresh_provider_button", None)
+        if callable(refresh):
+            refresh()
+
+    # position sampling -----------------------------------------------------
+    def _start_position_sampling(self) -> None:
+        if getattr(self, "_position_source", 0):
+            return
+        self._position_source = GLib.timeout_add(
+            self.POSITION_SAMPLE_MS, self._sample_position
+        )
+
+    def _stop_position_sampling(self) -> None:
+        source = getattr(self, "_position_source", 0)
+        if source:
+            try:
+                GLib.source_remove(source)
+            except Exception:  # noqa: BLE001 - already gone
+                pass
+        self._position_source = 0
+
+    def _sample_position(self) -> bool:
+        if getattr(self, "_webview", None) is None:
+            self._position_source = 0
+            return False
+        self._request_position()
+        return True
+
+    def _request_position(self) -> None:
+        view = getattr(self, "_webview", None)
+        runner = getattr(view, "run_javascript", None)
+        if not callable(runner):
+            return
+        # Every question is tagged, so an answer can be matched to the view and
+        # the request it belongs to before it is allowed to move the position.
+        self._position_token = getattr(self, "_position_token", 0) + 1
+        token = self._position_token
+
+        def answer(answered, result, _data=None) -> None:
+            self._position_read(answered, result, _data, token=token)
+
+        try:
+            runner(self.POSITION_SCRIPT, None, answer, None)
+        except Exception:  # noqa: BLE001 - a page that is still loading
+            return
+
+    def _position_read(self, view, result, _data=None, token=None) -> None:
+        # A callback from a view that was replaced, released or torn down, or
+        # from a question a newer one has superseded, is not this tab's news.
+        # WebKitGTK may still deliver it after a switch or a close.
+        if view is not getattr(self, "_webview", None):
+            return
+        if token is not None and token != getattr(self, "_position_token", 0):
+            return
+        try:
+            answer = view.run_javascript_finish(result)
+            seconds = float(answer.get_js_value().to_double())
+        except Exception:  # noqa: BLE001 - an engine without an answer
+            return
+        if view is not getattr(self, "_webview", None):
+            # ``run_javascript_finish`` may pump the loop and let a switch in.
+            return
+        if seconds == seconds and seconds >= 0:
+            self._playback_position = seconds
+
+    def _capture_position(self) -> float:
+        self._request_position()
+        return float(getattr(self, "_playback_position", 0.0) or 0.0)
+
     def _activate_nav(self, page: str) -> None:
+        if self._stack.get_visible_child_name() == "player":
+            # Moving to a Media page stops the video, as it always has; the
+            # open tab keeps its place and position for when it is back.
+            self._capture_active_tab()
+            self.stop_playback()
         if page == "movies":
             self._open_browse("movie")
             return
@@ -2019,14 +2661,36 @@ class MoviesWindow(Gtk.Box):
     def _on_page_changed(self, stack, _param) -> None:
         name = stack.get_visible_child_name()
         if name != "player":
-            self.stop_playback()
+            # A tab restore passes through the details page on its way back to
+            # the paused player; leaving fullscreen for that step would make a
+            # tab switch drop out of fullscreen before the player came back.
+            self.stop_playback(
+                keep_fullscreen=bool(getattr(self, "_restoring_tab", False))
+            )
         self._update_back()
+        # The page in front decides which providers the badge offers.
+        refresh = getattr(self, "_refresh_provider_button", None)
+        if callable(refresh):
+            refresh()
 
     def _streaming_provider(self) -> str:
         try:
             return streaming.clean_provider(self._settings.get("streaming_provider", streaming.DEFAULT_PROVIDER))
         except Exception:  # noqa: BLE001
             return streaming.DEFAULT_PROVIDER
+
+    def _anime_provider_choice(self) -> str:
+        """The anime provider the owner picked, or ani.pm when they have not."""
+        try:
+            stored = str(self._settings.get("anime_streaming_provider", "") or "")
+        except Exception:  # noqa: BLE001 - a bad setting is no choice
+            return streaming.ANI_PROVIDER
+        if not stored:
+            return streaming.ANI_PROVIDER
+        try:
+            return streaming.clean_anime_provider(stored)
+        except Exception:  # noqa: BLE001
+            return streaming.ANI_PROVIDER
 
     def _anime_provider(self) -> str:
         try:
@@ -2090,6 +2754,10 @@ class MoviesWindow(Gtk.Box):
                 pass
 
     def _navigate_back(self) -> None:
+        if self._stack.get_visible_child_name() == "player":
+            # Back leaves the video page: save where the tab was, then stop it.
+            self._capture_active_tab()
+            self.stop_playback()
         target = self._back_target if self._back_target else "home"
         if self._stack.get_visible_child_name() == "player":
             target = self._back_target if self._back_target != "player" else "details"
@@ -2685,8 +3353,15 @@ class MoviesWindow(Gtk.Box):
     def _hero_watch(self, item: MediaItem) -> None:
         if item.kind == "tv":
             self._open_details(item)
-        else:
-            self._play(item)
+            return
+        tab = self._tabs.find(self._media_key(item))
+        if tab is not None and tab.url:
+            # This title's tab already has a stream: bring it back paused, the
+            # way its own tab does, instead of playing outside every tab.
+            self._show_tab(tab.tab_id)
+            return
+        self._open_details(item)
+        self._play(item)
 
     def _load_home(self) -> None:
         self._home_token += 1
@@ -2942,7 +3617,7 @@ class MoviesWindow(Gtk.Box):
         inner.pack_start(head, False, False, 0)
 
         self._search_status = Gtk.Label(
-            label="Type a title above to search TMDB and ani.pm.", xalign=0
+            label="Type a title above to search TMDB.", xalign=0
         )
         self._search_status.set_line_wrap(True)
         self._search_status.get_style_context().add_class("movie-status")
@@ -2950,9 +3625,8 @@ class MoviesWindow(Gtk.Box):
 
         self._search_empty = self._empty_state(
             "Search movies, TV and anime",
-            "Results come straight from TMDB and ani.pm's catalogue - "
-            "anime that only exists on ani.pm shows up here too. "
-            "Nothing is suggested or invented.",
+            "Results come straight from TMDB's catalogue. Nothing is "
+            "suggested or invented.",
             icon="edit-find-symbolic",
         )
         inner.pack_start(self._search_empty, False, False, 10)
@@ -2975,7 +3649,7 @@ class MoviesWindow(Gtk.Box):
         if not text:
             self._spin(self._search_spinner, False)
             self._clear_flow(self._search_flow)
-            self._search_status.set_text("Type a title above to search TMDB and ani.pm.")
+            self._search_status.set_text("Type a title above to search TMDB.")
             self._search_empty.show()
             return
 
@@ -2996,78 +3670,44 @@ class MoviesWindow(Gtk.Box):
         GLib.timeout_add(350, later)
 
     def _run_search(self, text: str, token: int) -> None:
-        """Search TMDB and ani.pm in parallel, then show both in one grid.
+        """Search TMDB on a worker; a stale token drops a late arrival.
 
-        ani.pm is queried alongside TMDB so anime that exists only in the
-        ani.pm catalogue still appears.  Either source may fail without
-        hiding the other's results; stale tokens drop late arrivals.
+        The ani.pm catalogue is not queried here: search shows TMDB results.
         """
         results: dict[str, object] = {}
-        lock = threading.Lock()
-        remaining = 2
-
-        def finish() -> None:
-            nonlocal remaining
-            with lock:
-                remaining -= 1
-                done = remaining == 0
-            if done:
-                GLib.idle_add(
-                    self._apply_search, token, text,
-                    results.get("tmdb") or [], results.get("ani") or [],
-                    results.get("tmdb_error"), results.get("ani_error"),
-                )
 
         def tmdb_work() -> None:
             try:
                 results["tmdb"] = self._client.search(text)
             except TmdbError as error:
                 results["tmdb_error"] = error
-            finish()
-
-        def ani_work() -> None:
-            try:
-                results["ani"] = self._ani_client.search(text, limit=24)
-            except anipm.AniPmError as error:
-                results["ani_error"] = error
-            finish()
+            GLib.idle_add(
+                self._apply_search, token, text,
+                results.get("tmdb") or [], results.get("tmdb_error"),
+            )
 
         threading.Thread(target=tmdb_work, daemon=True, name="lgl-tmdb-search").start()
-        threading.Thread(target=ani_work, daemon=True, name="lgl-anipm-search").start()
 
-    def _apply_search(self, token: int, text: str, items, ani_items,
-                      tmdb_error=None, ani_error=None) -> bool:
+    def _apply_search(self, token: int, text: str, items,
+                      tmdb_error=None) -> bool:
         if token != self._search_token:
             return False
         self._spin(self._search_spinner, False)
         self._clear_flow(self._search_flow)
-        # ani.pm results first: this integration exists because anime that
-        # only lives there was invisible before.
-        for item in (ani_items or []):
-            self._search_flow.add(
-                AniPmTile(item, self._images, self._open_anime_details)
-            )
         for item in (items or []):
             self._search_flow.add(PosterTile(item, self._images, self._open_details))
-        total = len(items or []) + len(ani_items or [])
+        total = len(items or [])
         if not total:
-            if tmdb_error is None and ani_error is None:
+            if tmdb_error is None:
                 self._search_status.set_text(f"No titles matched “{text[:60]}”.")
             else:
-                self._search_status.set_text(
-                    self._search_error_text(tmdb_error, ani_error)
-                )
+                self._search_status.set_text(self._search_error_text(tmdb_error))
             self._search_empty.show()
             if getattr(tmdb_error, "kind", "") == "missing-key":
                 self._search_configure.show()
             return False
-        bits = []
-        if ani_items:
-            bits.append(f"{len(ani_items)} from ani.pm")
-        if items:
-            bits.append(f"{len(items)} from TMDB")
-        note = f"{total} results · " + " · ".join(bits)
-        degraded = self._search_error_text(tmdb_error, ani_error)
+        note = f"{total} results from TMDB"
+        degraded = self._search_error_text(tmdb_error)
         if degraded:
             note += f" · {degraded}"
         self._search_status.set_text(note)
@@ -3075,14 +3715,11 @@ class MoviesWindow(Gtk.Box):
         return False
 
     @staticmethod
-    def _search_error_text(tmdb_error, ani_error) -> str:
-        """A short, per-source explanation for whichever search failed."""
-        parts = []
-        if tmdb_error is not None:
-            parts.append(f"TMDB: {tmdb_error}")
-        if ani_error is not None:
-            parts.append(f"ani.pm: {ani_error}")
-        return " · ".join(parts)
+    def _search_error_text(tmdb_error) -> str:
+        """A short explanation for a search that could not be asked."""
+        if tmdb_error is None:
+            return ""
+        return f"TMDB: {tmdb_error}"
 
     # -- anime --------------------------------------------------------------
 
@@ -3108,9 +3745,7 @@ class MoviesWindow(Gtk.Box):
 
         sub = Gtk.Label(
             label="Popular anime from MyAnimeList. Metadata comes from MAL; "
-            "playback uses the anime provider selected in Settings. The main "
-            "search above also queries ani.pm's catalogue, where titles "
-            "missing from MAL/TMDB live.",
+            "playback uses the anime provider selected in Settings.",
             xalign=0,
         )
         sub.set_line_wrap(True)
@@ -3344,7 +3979,7 @@ class MoviesWindow(Gtk.Box):
 
     @staticmethod
     def _gem_title(entry):
-        """One gem as an AniPm title: its key carries the AniList id."""
+        """One gem as an AniList title: its key carries the AniList id."""
         if not isinstance(entry, dict):
             return None
         ident = _anilist_id_from_key(entry.get("key"))
@@ -3374,19 +4009,23 @@ class MoviesWindow(Gtk.Box):
         for child in self._gems_flow.get_children():
             self._gems_flow.remove(child)
         for item in items:
-            self._gems_flow.add(AniPmTile(item, self._images, self._open_anime_details))
+            self._gems_flow.add(AniListTile(item, self._images, self._open_anime_details))
         self._gems_flow.set_no_show_all(False)
         self._gems_flow.show_all()
 
     # -- anime details ------------------------------------------------------
 
-    def _open_anime_details(self, item) -> None:
+    def _open_anime_details(self, item, *, restore=None) -> None:
+        if restore is None and self._open_tab_for(item):
+            return
         current = self._stack.get_visible_child_name() or "home"
         if current not in ("details", "player"):
             self._back_target = current
             self._details_origin = current
         self._current_item = item
         self._current_details = None
+        self._current_ani_series = None
+        self._current_ani_episodes = []
         self._anime_detail_token += 1
         token = self._anime_detail_token
 
@@ -3396,8 +4035,32 @@ class MoviesWindow(Gtk.Box):
         self._stack.set_visible_child_name("details")
         self._set_active_nav(self._nav_key_for_page(self._back_target))
         self._update_back()
-        self._details_scroll.get_vadjustment().set_value(0)
-        self._load_anime_details(item, token)
+        self._details_scroll.get_vadjustment().set_value(
+            float(restore.scroll) if restore is not None else 0
+        )
+        cached_series = restore.payload.get("ani_series") if restore is not None else None
+        cached_episodes = restore.payload.get("ani_episodes") if restore is not None else None
+        cached_anime = restore.payload.get("anime_details") if restore is not None else None
+        if cached_series is not None:
+            # A returning tab keeps the ani.pm series and episode list it had:
+            # the verified route reads that list, so it must not be lost.
+            self._current_ani_series = cached_series
+            self._current_ani_episodes = list(cached_episodes or ())
+            self._anime_playing_key = str(getattr(item, "key", "") or "")
+            GLib.idle_add(
+                self._apply_anime_details_ani, token, cached_series,
+                list(cached_episodes or ()),
+            )
+        elif cached_anime is not None:
+            self._current_anime_details = cached_anime
+            GLib.idle_add(self._apply_anime_details, token, cached_anime)
+        else:
+            self._load_anime_details(item, token)
+        if restore is not None:
+            if getattr(self, "_restore_scroll", None):
+                GLib.idle_add(self._restore_scroll_now)
+            if restore.playing and restore.url:
+                self._restore_player_panel(restore)
 
     def _build_anime_details_page(self, item) -> Gtk.Widget:
         page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
@@ -3432,7 +4095,7 @@ class MoviesWindow(Gtk.Box):
             adult_badge = Gtk.Label(label="18+")
             adult_badge.set_halign(Gtk.Align.START)
             adult_badge.get_style_context().add_class("movie-adult-badge")
-            adult_badge.set_tooltip_text("Marked adult (18+) by ani.pm")
+            adult_badge.set_tooltip_text("Marked adult (18+) by the anime source")
             badge_row.pack_start(adult_badge, False, False, 0)
         content.pack_start(badge_row, False, False, 0)
 
@@ -3491,10 +4154,10 @@ class MoviesWindow(Gtk.Box):
 
         note = Gtk.Label(xalign=0)
         if isinstance(item, anipm.AniTitle):
-            # ani.pm catalogue titles play by their own AniList id; the other
+            # An AniList-sourced anime plays by its own AniList id; the other
             # anime providers join the fallback chain with the same id.
             note.set_label(
-                "Anime metadata from the ani.pm catalogue. Watch plays the "
+                "Anime metadata from AniList. Watch plays the "
                 "ani.pm player in the app using this title's AniList id "
                 "(never the MAL id or page slug); the episode list below "
                 "shows exactly which tracks ani.pm offers."
@@ -3545,7 +4208,7 @@ class MoviesWindow(Gtk.Box):
 
     def _load_anime_details(self, item, token: int) -> None:
         if isinstance(item, anipm.AniTitle):
-            # ani.pm catalogue title: series metadata, availability and the
+            # An AniList-sourced anime: series metadata, availability and the
             # episode list all come from ani.pm, keyed by the AniList id.
             def work_ani() -> None:
                 series = None
@@ -3732,90 +4395,18 @@ class MoviesWindow(Gtk.Box):
         box.show_all()
 
     def _on_ani_episode_play(self, _button, item, episode, language) -> None:
-        self._play_anime_pm(item, episode, language)
-
-    def _play_anime_pm(self, item, episode, language) -> None:
-        """Play an ani.pm catalogue title by its **AniList** id.
-
-        The API's own embed URL for this episode and track wins whenever the
-        catalogue returned one (it was already validated against the pinned
-        ani.pm origin at parse time); otherwise the documented
-        ``/embed/ani/<anilist>/<episode>/<lang>`` route is constructed from the
-        ids.  The AniList-routed providers stay in the chain as fallbacks.
-        """
-        try:
-            number = max(1, int(episode))
-        except (TypeError, ValueError):
-            return
-        language = anipm.language_key(language) or anipm.LANGUAGES[0]
-        # Watch state, not storage: the episode this title is on, so Watch
-        # resumes at the next one instead of restarting the series.
-        self._playing_episode = (1, number)
-        self._anime_playing_key = str(getattr(item, "key", "") or "")
-        api_embed = ""
-        for ep in list(getattr(self, "_current_ani_episodes", []) or []):
-            if ep.number == number:
-                try:
-                    api_embed = ep.embed_url_for(language)
-                except streaming.EmbedUrlError:
-                    api_embed = ""
-                break
-        preferred = self._anime_provider()
-        if preferred != streaming.ANI_PROVIDER and not streaming.has_anime_route(preferred):
-            # The chosen provider plays movies and TV through TMDB, so look the
-            # title up there instead of quietly opening ani.pm.
-            token = self._search_token + 1
-            self._search_token = token
-
-            def work() -> None:
-                try:
-                    results = self._client.search(item.title)
-                except TmdbError as error:
-                    GLib.idle_add(self._anime_watch_error, token, error)
-                    return
-                GLib.idle_add(
-                    self._anime_watch_apply_tmdb,
-                    token,
-                    item.title,
-                    results,
-                    preferred,
-                    language == "dub",
-                )
-
-            threading.Thread(target=work, daemon=True, name="lgl-anime-watch").start()
-            return
-        attempts: list[tuple[str, str]] = []
-        if preferred == streaming.ANI_PROVIDER:
-            try:
-                url = anipm.playback_url(
-                    item.anilist_id, number, language, api_embed
-                )
-                attempts.append(
-                    (streaming.ANI_PROVIDER,
-                     streaming.validate_embed_url(streaming.ANI_PROVIDER, url))
-                )
-            except (streaming.EmbedUrlError, ValueError):
-                pass
-        order = list(streaming.ANILIST_ANIME_PROVIDERS)
-        if preferred in order:
-            order.remove(preferred)
-            order.insert(0, preferred)
-        for provider in order:
-            try:
-                url = streaming.anime_url(provider, item.anilist_id, number)
-                attempts.append(
-                    (provider, streaming.validate_embed_url(provider, url))
-                )
-            except (streaming.EmbedUrlError, ValueError):
-                continue
-        label = anipm.LANGUAGE_LABELS.get(language, language)
-        self._start_anime_attempts(
-            item, f"{item.title} · Episode {number} ({label})", number, attempts
+        """An episode button plays through the shared MAL decision, never around it."""
+        self._watch_anime_routed(
+            item,
+            " ".join(str(getattr(item, "title", "") or "").split()),
+            max(1, int(episode)),
+            language,
         )
 
     def _apply_anime_details(self, token: int, details: AnimeDetails) -> bool:
         if token != self._anime_detail_token:
             return False
+        self._current_anime_details = details
         self._set_anime_detail_status("")
         state = getattr(self, "_anime_detail_state", {})
         title = state.get("title")
@@ -3887,60 +4478,227 @@ class MoviesWindow(Gtk.Box):
             return 1
         return number
 
+    # -- anime-page playback ------------------------------------------------
+    #
+    # Anime detail pages (MAL and ani.pm/AniList) carry no TMDB identity, so
+    # the same MAL verification is asked with what the page holds.  An AniList
+    # id alone does not bypass it: a verified title plays on ani.pm,
+    # an unverified one keeps the selected normal provider, and a verified
+    # title whose AniList entry cannot be resolved is an error.
+
     def _watch_anime(self, item, episode=None, language=None) -> None:
-        """Play an anime in the in-app player via the selected provider."""
+        """Play an anime page through the shared MAL identity decision."""
         title = " ".join(str(getattr(item, "title", "") or "").split())
         if not title:
             return
-        if isinstance(item, anipm.AniTitle):
-            # An ani.pm catalogue title plays by its own AniList id through
-            # the ani.pm route; its MAL id (if any) is never substituted here.
-            chosen_episode, chosen_language = self._anime_playback_choice(item)
-            number = chosen_episode if episode is None else max(1, int(episode))
-            self._play_anime_pm(
-                item, number, anipm.language_key(language or chosen_language)
-                or anipm.LANGUAGES[0]
+        chosen_episode, _chosen_language = self._anime_playback_choice(item)
+        number = chosen_episode if episode is None else max(1, int(episode))
+        track = anipm.language_key(language) or self._ani_playback_language()
+        self._watch_anime_routed(item, title, number, track)
+
+    def _watch_anime_routed(self, item, title, number, language=None) -> None:
+        """Decide off the UI thread: MAL/AniList identity, then the route."""
+        # AniTitle.id is its *AniList* id, so only a MAL tile may fall back to
+        # .id; the two identifiers are never interchangeable.
+        mal_id = (
+            getattr(item, "id", 0)
+            if isinstance(item, mal.AnimeItem)
+            else getattr(item, "mal_id", 0)
+        )
+        anilist_id = getattr(item, "anilist_id", 0)
+        # A MAL tile is a TV entry unless it says it is a film or special.
+        kind = "movie" if str(getattr(item, "media_type", "")).lower() in (
+            "movie", "special",
+        ) else "tv"
+
+        # Same guard for anime pages: a stale identity answer must not play.
+        self._anime_route_token += 1
+        self._playback_key = self._media_key(item)
+        token = self._anime_route_token
+
+        def work() -> None:
+            route = gtk_playback.decide_anime(
+                title=title,
+                kind=kind,
+                year=str(getattr(item, "year", "") or ""),
+                mal_id=mal_id or None,
+                anilist_id=anilist_id or None,
+                episode=number,
+                settings=self._settings,
+            )
+            if token != self._anime_route_token:
+                return
+            GLib.idle_add(
+                self._apply_anime_route, token, item, title, number, language, route
+            )
+
+        threading.Thread(
+            target=work, daemon=True, name="lgl-anime-identity"
+        ).start()
+
+    def _apply_anime_route(self, token, item, title, number, language, route) -> bool:
+        if token != self._anime_route_token:
+            return False
+        mode = getattr(route, "mode", gtk_playback.MODE_NORMAL)
+        if mode == gtk_playback.MODE_ERROR:
+            message = str(getattr(route, "message", "") or gtk_playback.UNRESOLVED)
+            self._anime_status.set_text(message)
+            # No AniList entry was resolved, so no provider URL can be built
+            # for it; the ordinary provider route is only ever entered when
+            # the owner clicks, never on its own.
+            self._open_player_message(
+                title,
+                message,
+                alternative_action=(
+                    "Try another provider",
+                    lambda: self._watch_anime_unverified(
+                        item, title, number, language
+                    ),
+                ),
+            )
+            return False
+        if mode == gtk_playback.MODE_ANI:
+            self._play_ani_verified(item, title, number, language, route)
+            return False
+        self._watch_anime_unverified(item, title, number, language)
+        return False
+
+    def _play_ani_verified(
+        self, item, title, number, language, route, preferred=None
+    ) -> None:
+        """Play a MAL-verified anime on ani.pm first, the rest behind it.
+
+        ani.pm is the first attempt whatever anime provider is saved; the
+        other AniList-keyed providers are kept behind it, so the player's Try
+        another provider button and the automatic load-failure walk both work.
+        ``preferred`` starts the chain on a manually picked provider; the saved
+        preference alone never does.
+        """
+        played = int(getattr(route, "episode", number) or number)
+        track = anipm.language_key(language) or self._ani_playback_language()
+        # Hard-sub/hard-dub tracks exist only as the API's own embed; ordinary
+        # Sub/Dub must never be substituted for the track the user clicked.
+        api_embed = self._ani_track_embed(number, track)
+        if track not in anipm.CONSTRUCTABLE_LANGUAGES and not api_embed:
+            label = anipm.LANGUAGE_LABELS.get(track, track)
+            message = (
+                f"ani.pm does not offer the {label} track for “{title[:60]}” "
+                f"episode {number}. Pick Sub or Dub."
+            )
+            # This play failed: whatever verified anime was playing before it
+            # must not stay behind as the active session.
+            self._end_verified_session()
+            self._anime_status.set_text(message)
+            self._open_player_message(title, message)
+            return
+        try:
+            url = streaming.validate_embed_url(
+                streaming.ANI_PROVIDER,
+                anipm.playback_url(
+                    int(getattr(route, "anilist_id", 0) or 0),
+                    played,
+                    track,
+                    api_embed,
+                ),
+            )
+        except (streaming.EmbedUrlError, ValueError) as error:
+            # ani.pm could not build this play, so the session it replaced is
+            # over; it must not come back on a later tab switch.
+            self._end_verified_session()
+            self._anime_status.set_text(str(error))
+            # ani.pm could not build this play: say so, and leave another
+            # provider to an explicit click rather than switching on its own.
+            self._open_player_message(
+                title,
+                str(error),
+                alternative_action=(
+                    "Try another provider",
+                    lambda: self._watch_anime_unverified(
+                        item, title, number, language
+                    ),
+                ),
             )
             return
-        provider = self._anime_provider()
-        chosen_episode, chosen_language = self._anime_playback_choice(item)
-        episode = chosen_episode if episode is None else max(1, int(episode))
-        language = chosen_language if language is None else language
-        try:
-            language = streaming.ensure_language(provider, language)
-        except streaming.EmbedUrlError as error:
-            self._anime_status.set_text(str(error))
-            return
-        dub = language == "dub"
-
-        if provider == streaming.ANI_PROVIDER or streaming.has_anime_route(provider):
-            if not streaming.has_anime_route(provider):
-                # ani.pm plays from the MAL id this page already holds.
-                attempts = self._anime_attempts(item, episode, language, None)
-                self._start_anime_attempts(item, title, episode, attempts)
-                return
-            # ToFlix and CineLite route anime by AniList id, which this page
-            # does not hold.  Look it up by title rather than reusing the MAL
-            # or TMDB id as if it were an AniList one.
-            token = self._anime_detail_token + 1
-            self._anime_detail_token = token
-            self._anime_status.set_text(f"Looking up “{title[:60]}” on AniList…")
-
-            def work() -> None:
-                found = streaming.anilist_search(title)
-                GLib.idle_add(
-                    self._apply_anime_attempts,
-                    token,
-                    item,
-                    title,
-                    episode,
-                    language,
-                    found,
+        label = anipm.LANGUAGE_LABELS.get(track, track)
+        # Watch state, not storage: the episode this title is on, so Watch
+        # resumes at the next one instead of restarting the series.
+        self._playing_episode = (1, number)
+        self._anime_playing_key = str(getattr(item, "key", "") or "")
+        self._record_playback(
+            str(getattr(item, "key", "") or ""),
+            str(getattr(item, "title", title) or title),
+            str(getattr(item, "poster_url", "") or ""),
+            str(getattr(item, "year", "") or ""),
+        )
+        self._anime_status.set_text(
+            f"Playing “{title[:60]}” via ani.pm (episode {number})."
+        )
+        # ani.pm stays first; the other AniList-keyed providers follow it, the
+        # owner's saved pick only ordering that tail for a manual switch.
+        chosen = preferred or self._anime_provider_choice()
+        ani_attempt = [(streaming.ANI_PROVIDER, url)]
+        others: list[tuple[str, str]] = []
+        for provider in sorted(
+            streaming.ANILIST_ANIME_PROVIDERS,
+            key=lambda name: name != chosen,
+        ):
+            try:
+                other = streaming.validate_embed_url(
+                    provider,
+                    streaming.anime_url(
+                        provider,
+                        int(getattr(route, "anilist_id", 0) or 0),
+                        played,
+                    ),
                 )
+            except (streaming.EmbedUrlError, ValueError):
+                continue
+            others.append((provider, other))
+        if preferred and preferred != streaming.ANI_PROVIDER:
+            picked = [pair for pair in others if pair[0] == preferred]
+            rest = [pair for pair in others if pair[0] != preferred]
+            attempts = picked + ani_attempt + rest
+        else:
+            attempts = ani_attempt + others
+        first_provider, first_url = attempts[0]
+        self._forced_playback = {
+            "kind": "anilist",
+            "item": item,
+            "title": title,
+            "number": number,
+            "language": language,
+            "route": route,
+            "provider": first_provider,
+        }
+        self._refresh_provider_button()
+        self._open_player(
+            first_url,
+            f"{title} · Episode {number} ({label})",
+            provider=first_provider,
+            attempts=attempts,
+        )
 
-            threading.Thread(target=work, daemon=True, name="lgl-anilist").start()
-            return
+    def _ani_track_embed(self, number: int, track: str) -> str:
+        """The API's own validated embed URL for one page episode and track."""
+        for episode in list(getattr(self, "_current_ani_episodes", []) or []):
+            if getattr(episode, "number", None) != number:
+                continue
+            try:
+                return episode.embed_url_for(track)
+            except (streaming.EmbedUrlError, ValueError):
+                return ""
+        return ""
 
+    def _watch_anime_unverified(self, item, title, number, language) -> None:
+        """An unverified anime page keeps the selected normal provider."""
+        # This play is not a verified session, so any earlier one is over.
+        self._end_verified_session()
+        provider = self._streaming_provider()
+        label = streaming.LABELS.get(provider, provider)
+        self._anime_status.set_text(
+            f"Playing “{title[:60]}” via {label} (episode {number})."
+        )
+        dub = bool(self._settings.get("anime_dub", False))
         token = self._search_token + 1
         self._search_token = token
 
@@ -3955,75 +4713,6 @@ class MoviesWindow(Gtk.Box):
             )
 
         threading.Thread(target=work, daemon=True, name="lgl-anime-watch").start()
-
-    def _anime_attempts(
-        self, item, episode, language, anilist_id
-    ) -> list[tuple[str, str]]:
-        """Anime providers that can play this title, the preferred one first.
-
-        ani.pm plays from the MAL id this page already holds; ToFlix and
-        CineLite only join once an AniList id was resolved.  The two
-        identifiers are never substituted for one another.
-        """
-        attempts: list[tuple[str, str]] = []
-        preferred = self._anime_provider()
-        for provider in streaming.fallback_anime_providers(preferred):
-            # Never quietly play from ani.pm when another anime provider was
-            # chosen: the pick is what the user asked for.
-            if provider == streaming.ANI_PROVIDER and preferred != streaming.ANI_PROVIDER:
-                continue
-            try:
-                if provider == streaming.ANI_PROVIDER:
-                    url = streaming.ani_mal_url(
-                        getattr(item, "id", 0), episode, language=language
-                    )
-                elif streaming.has_anime_route(provider):
-                    if anilist_id is None:
-                        continue
-                    url = streaming.anime_url(provider, anilist_id, episode)
-                else:
-                    continue
-                attempts.append(
-                    (provider, streaming.validate_embed_url(provider, url))
-                )
-            except (streaming.EmbedUrlError, ValueError):
-                continue
-        return attempts
-
-    def _apply_anime_attempts(
-        self, token, item, title, episode, language, anilist_id
-    ) -> bool:
-        if token != self._anime_detail_token:
-            return False
-        if anilist_id is None:
-            label = streaming.LABELS.get(self._anime_provider(), "That provider")
-            self._anime_status.set_text(
-                f"No AniList match for “{title[:60]}”, which {label} needs. "
-                "Trying another provider."
-            )
-        self._start_anime_attempts(
-            item, title, episode,
-            self._anime_attempts(item, episode, language, anilist_id),
-        )
-        return False
-
-    def _start_anime_attempts(self, item, title, episode, attempts) -> None:
-        if not attempts:
-            self._anime_status.set_text(
-                f"No provider could play “{title[:60]}” (episode {episode})."
-            )
-            return
-        label = streaming.LABELS.get(attempts[0][0], attempts[0][0])
-        self._anime_status.set_text(
-            f"Playing “{title[:60]}” via {label} (episode {episode})."
-        )
-        self._record_playback(
-            getattr(item, "key", ""),
-            getattr(item, "title", title),
-            getattr(item, "poster_url", ""),
-            getattr(item, "year", ""),
-        )
-        self._play_attempts(attempts, getattr(item, "title", title))
 
     def _anime_watch_apply_tmdb(
         self, token: int, title: str, results, provider=None, dub=None
@@ -4364,7 +5053,9 @@ class MoviesWindow(Gtk.Box):
 
     # -- details ------------------------------------------------------------
 
-    def _open_details(self, item: MediaItem) -> None:
+    def _open_details(self, item: MediaItem, *, restore=None) -> None:
+        if restore is None and self._open_tab_for(item):
+            return
         current = self._stack.get_visible_child_name() or "home"
         if current not in ("details", "player"):
             self._back_target = current
@@ -4380,8 +5071,12 @@ class MoviesWindow(Gtk.Box):
                 title=str(getattr(item, "title", "") or ""),
                 subtitle=str(getattr(item, "year", "") or ""),
             )
-        self._current_details = None
-        self._season_cache.clear()
+        cached = restore.payload.get("details") if restore is not None else None
+        self._current_details = cached if isinstance(cached, MediaDetails) else None
+        # A returning tab also brings back the seasons it already fetched.
+        self._season_cache = (
+            dict(restore.payload.get("seasons") or {}) if restore is not None else {}
+        )
         self._detail_token += 1
         self._season_token += 1
         token = self._detail_token
@@ -4392,10 +5087,18 @@ class MoviesWindow(Gtk.Box):
         self._stack.set_visible_child_name("details")
         self._set_active_nav(self._nav_key_for_page(self._back_target))
         self._update_back()
-        self._details_scroll.get_vadjustment().set_value(0)
+        self._details_scroll.get_vadjustment().set_value(
+            float(restore.scroll) if restore is not None else 0
+        )
         self._detail_trailer = None
-        self._load_details(item, token)
+        if self._current_details is not None:
+            # A returning tab reuses the details it already has.
+            GLib.idle_add(self._apply_details, token, self._current_details)
+        else:
+            self._load_details(item, token)
         self._load_trailer(item, token)
+        if restore is not None and restore.playing and restore.url:
+            self._restore_player_panel(restore)
 
     def _build_details_page(self, item: MediaItem) -> Gtk.Widget:
         page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
@@ -4912,6 +5615,14 @@ class MoviesWindow(Gtk.Box):
             self._load_detail_image(details.backdrop_url, backdrop)
         if details.kind == "tv" and details.seasons:
             self._render_seasons(details)
+        season = getattr(self, "_restore_season", None)
+        if season is not None:
+            self._restore_season = None
+            picker = getattr(self, "_season_picker", None)
+            if picker is not None:
+                picker.choose(int(season))
+        if getattr(self, "_restore_scroll", None):
+            GLib.idle_add(self._restore_scroll_now)
         self._load_ratings(details)
         return False
 
@@ -4999,6 +5710,11 @@ class MoviesWindow(Gtk.Box):
     def _load_season(self, tmdb_id: int, number: int, box: Gtk.ListBox) -> None:
         self._season_token += 1
         token = self._season_token
+        cached = (getattr(self, "_season_cache", None) or {}).get(int(number))
+        if cached is not None:
+            # A restored tab keeps the episodes it already had: no new request.
+            self._apply_season(token, box, cached)
+            return
         for child in box.get_children():
             box.remove(child)
         placeholder = Gtk.Label(label="Loading episodes…", xalign=0)
@@ -5162,31 +5878,307 @@ class MoviesWindow(Gtk.Box):
         if item.kind == "tv":
             self._open_details(item)
             return
-        self._playing_episode = None
-        self._record_playback(item.key, item.title, item.poster_url, item.year)
-        dub = bool(self._settings.get("anime_dub", False))
-        attempts = self._provider_attempts(
-            lambda provider: streaming.movie_url(
-                provider, item.tmdb_id, title=item.title, dub=dub
-            )
-        )
-        self._play_attempts(attempts, item.title)
+        self._play_routed(item, None, None)
 
     def _play_episode(self, season: int, episode) -> None:
         show = self._current_details or self._current_item
         if show is None:
             return
-        self._record_playback(show.key, show.title, show.poster_url, show.year)
-        self._playing_episode = (int(season), int(episode.number))
-        title = f"{episode.title} · S{season:02d}E{episode.number:02d}"
+        self._play_routed(show, int(season), episode)
+
+    def _sync_playing_tab(self) -> None:
+        """The strip names the episode that just started, Next episode too."""
+        tab = self._tabs.active
+        item = self._current_item
+        if tab is None or item is None or not self._playback_key:
+            return
+        if tab.key != self._playback_key:
+            return
+        if str(getattr(item, "kind", "")) != "tv":
+            return
+        season, episode = self._playing_episode or (None, None)
+        if not season or not episode:
+            return
+        if tab.season == int(season) and tab.episode == int(episode):
+            return
+        self._tabs.update(tab.tab_id, season=int(season), episode=int(episode))
+        self._render_tabs()
+
+    # -- identity routing ---------------------------------------------------
+    #
+    # MAL-verified anime plays on ani.pm and nowhere else: the selected normal
+    # provider and any saved anime-provider preference are ignored, and a
+    # failure to resolve the AniList entry is an error rather than a fall back
+    # to another provider.  Unverified guesses and confirmed non-anime keep
+    # today's provider chain exactly as it was.
+
+    def _play_routed(self, item, season, episode) -> None:
+        """Decide the route off the UI thread, then play it on the UI thread."""
+        kind = "tv" if str(getattr(item, "kind", "movie")) == "tv" else "movie"
+        try:
+            tmdb_id = int(getattr(item, "tmdb_id", 0) or 0)
+        except (TypeError, ValueError):
+            tmdb_id = 0
+        season_number = int(season or 1) if kind == "tv" else 1
+        episode_number = 1
+        if kind == "tv" and episode is not None:
+            try:
+                episode_number = max(1, int(getattr(episode, "number", 1) or 1))
+            except (TypeError, ValueError):
+                episode_number = 1
+        # Only the newest request may play: an older worker that finishes late
+        # is stale and must not start playback or overwrite the newer result.
+        self._playback_token += 1
+        token = self._playback_token
+        self._playback_key = self._media_key(item)
+        self._playback_tab_id = self._tabs.active_id
+
+        def work() -> None:
+            route = gtk_playback.decide_playback(
+                kind,
+                tmdb_id,
+                title=str(getattr(item, "title", "") or ""),
+                year=str(getattr(item, "year", "") or ""),
+                season=season_number,
+                episode=episode_number,
+                settings=self._settings,
+            )
+            if token != self._playback_token:
+                return
+            GLib.idle_add(
+                self._apply_playback_route, token, item, season, episode, route
+            )
+
+        threading.Thread(
+            target=work, daemon=True, name="lgl-playback-route"
+        ).start()
+
+    def _apply_playback_route(self, token, item, season, episode, route) -> bool:
+        """Play the route the shared identity API chose for this title.
+
+        A route belongs to the title and the tab that asked for it.  If the
+        user switched, closed or replaced that tab while it was resolving, the
+        page now in front never asked for this play: it is dropped here, so it
+        can neither start playing in another tab nor end that tab's verified
+        session, provider or episode.
+        """
+        if token != self._playback_token:
+            return False
+        if self._tabs.active_id != self._playback_tab_id:
+            return False
+        if self._media_key(item) != self._playback_key:
+            return False
+        mode = getattr(route, "mode", gtk_playback.MODE_NORMAL)
+        if mode == gtk_playback.MODE_ERROR:
+            # An unresolved title ends any earlier verified session too.
+            self._end_verified_session()
+            self._open_player_message(
+                self._playback_label(item, season, episode),
+                str(getattr(route, "message", "") or gtk_playback.UNRESOLVED),
+                alternatives=self._alternative_attempts(item, season, episode),
+            )
+            return False
+        if mode == gtk_playback.MODE_ANI:
+            self._play_forced_ani(item, season, episode, route)
+            return False
+        self._play_with_providers(item, season, episode)
+        return False
+
+    def _alternative_attempts(self, item, season, episode) -> list[tuple[str, str]]:
+        """Other providers that can play this title, for an explicit pick.
+
+        ani.pm is never one of them: this is what an error screen or a manual
+        switch offers instead, for the same title and the same episode.
+        """
+        title = self._playback_label(item, season, episode)
         dub = bool(self._settings.get("anime_dub", False))
-        attempts = self._provider_attempts(
-            lambda provider: streaming.episode_url(
-                provider, show.tmdb_id, season, episode.number,
+        if season is not None and episode is not None:
+            build = lambda provider: streaming.episode_url(  # noqa: E731
+                provider, item.tmdb_id, int(season), episode.number,
                 title=title, dub=dub,
             )
+        else:
+            build = lambda provider: streaming.movie_url(  # noqa: E731
+                provider, item.tmdb_id, title=item.title, dub=dub
+            )
+        preferred = self._anime_provider_choice()
+        return [
+            pair for pair in self._provider_attempts(build, preferred=preferred)
+            if pair[0] != streaming.ANI_PROVIDER
+        ]
+
+    def _switch_forced_provider(self, provider: str) -> bool:
+        """Play the verified anime on screen on ``provider``, this session only.
+
+        A verified anime starts on ani.pm whatever is saved.  Picking another
+        provider while it plays switches *this* play: the saved
+        ``anime_streaming_provider`` is left exactly as it was, and the title
+        and season/episode already playing are kept, so Next episode and
+        resume keep their TMDB numbers.  ``False`` means nothing is playing, so
+        the pick is a normal preference change.
+        """
+        playing = getattr(self, "_forced_playback", None)
+        if not playing:
+            return False
+        if provider != streaming.ANI_PROVIDER and not streaming.has_anime_route(
+            provider
+        ):
+            # Not an anime provider: a movie/TV preference change, separate
+            # from the session, so the session keeps playing.
+            return False
+        route = playing["route"]
+        if playing["kind"] == "anilist":
+            self._play_ani_verified(
+                playing["item"], playing["title"], playing["number"],
+                playing.get("language"), route,
+                preferred=None if provider == streaming.ANI_PROVIDER else provider,
+            )
+            return True
+        item = playing["item"]
+        season = playing["season"]
+        episode = playing.get("episode")
+        if provider == streaming.ANI_PROVIDER:
+            self._play_forced_ani(item, season, episode, route)
+            return True
+        playing["provider"] = provider
+        # Still the same verified session, so picking ani.pm goes back to it.
+        self._forced_playback = playing
+        self._play_with_providers(
+            item, season, episode, preferred=provider, keep_session=True,
         )
-        self._play_attempts(attempts, title)
+        self._refresh_provider_button()
+        return True
+
+    def _playback_label(self, item, season, episode) -> str:
+        title = " ".join(str(getattr(item, "title", "") or "").split())
+        if season is not None and episode is not None:
+            episode_title = str(getattr(episode, "title", "") or "")
+            number = int(getattr(episode, "number", 1) or 1)
+            return f"{episode_title or title} · S{int(season):02d}E{number:02d}"
+        return title
+
+    def _ani_playback_language(self) -> str:
+        """The sub/dub track the owner chose, in ani.pm's own spelling."""
+        try:
+            chosen = self._settings.get("anime_language", "") or (
+                "dub" if self._settings.get("anime_dub", False) else "sub"
+            )
+            track = anipm.language_key(streaming.clean_language(
+                streaming.ANI_PROVIDER, chosen
+            ))
+            if track in anipm.CONSTRUCTABLE_LANGUAGES:
+                return track
+        except Exception:  # noqa: BLE001 - a bad setting must not block a play
+            pass
+        return "dub" if self._settings.get("anime_dub", False) else "sub"
+
+    def _play_forced_ani(self, item, season, episode, route) -> None:
+        """Play a verified anime on ani.pm first, with the rest still reachable.
+
+        ani.pm is the first attempt for every MAL-verified anime, whatever
+        anime provider is saved; the saved pick only orders the chain kept
+        behind it, so the player's Try another provider button and the
+        automatic load-failure walk both continue from ani.pm.  Switching away
+        from ani.pm is a manual, session-only choice: see
+        :meth:`_switch_forced_provider`.
+        """
+        title = self._playback_label(item, season, episode)
+        dub = bool(self._settings.get("anime_dub", False))
+        if season is not None and episode is not None:
+            build = lambda provider: streaming.episode_url(  # noqa: E731
+                provider, item.tmdb_id, int(season), episode.number,
+                title=title, dub=dub,
+            )
+        else:
+            build = lambda provider: streaming.movie_url(  # noqa: E731
+                provider, item.tmdb_id, title=item.title, dub=dub
+            )
+        chosen = self._anime_provider_choice()
+        # The saved anime pick only orders the providers offered *behind*
+        # ani.pm; it never takes the first attempt away from a verified anime.
+        others = [
+            pair for pair in self._provider_attempts(build, preferred=chosen)
+            if pair[0] != streaming.ANI_PROVIDER
+        ]
+        try:
+            url = streaming.ani_url(
+                int(getattr(route, "anilist_id", 0) or 0),
+                int(getattr(route, "episode", 1) or 1),
+                language=self._ani_playback_language(),
+            )
+            url = streaming.validate_embed_url(streaming.ANI_PROVIDER, url)
+        except (streaming.EmbedUrlError, ValueError) as error:
+            # This play failed: a previous anime's verified session must not
+            # stay active behind the error screen.
+            self._end_verified_session()
+            # Never a silent fall back to another provider: say ani.pm could
+            # not build the play, and leave the rest to an explicit choice.
+            self._open_player_message(
+                title,
+                f"ani.pm could not play this title: {error} "
+                "Pick another provider yourself to watch it there.",
+                alternatives=others,
+            )
+            return
+        self._record_playback(item.key, item.title, item.poster_url, item.year)
+        if season is not None and episode is not None:
+            # Bookkeeping stays in TMDB numbers, so Next episode and resume
+            # keep working from the season list the page already loaded.
+            self._playing_episode = (int(season), int(episode.number))
+        else:
+            self._playing_episode = None
+        # Remember what plays, so a manual provider pick can replay exactly
+        # this title and episode without touching the saved preference.
+        self._forced_playback = {
+            "kind": "tmdb",
+            "item": item,
+            "season": season,
+            "episode": episode,
+            "route": route,
+            "provider": streaming.ANI_PROVIDER,
+        }
+        self._refresh_provider_button()
+        attempts = [(streaming.ANI_PROVIDER, url)] + others
+        provider, first = attempts[0]
+        self._open_player(first, title, provider=provider, attempts=attempts)
+
+    def _play_with_providers(
+        self, item, season, episode, preferred=None, keep_session=False
+    ) -> None:
+        """Today's path: the selected provider chain, for non-anime titles.
+
+        ``preferred`` starts the chain somewhere other than the saved provider;
+        a manual provider pick uses it, so the rest of the chain is unchanged.
+        ``keep_session`` keeps the verified-anime context, because this chain is
+        the session switching to another provider, not a new title.
+        """
+        if not keep_session:
+            # A new title's normal provider play is not a verified session, so
+            # the one it replaces is over, not merely paused.
+            self._end_verified_session()
+        self._record_playback(item.key, item.title, item.poster_url, item.year)
+        if season is not None and episode is not None:
+            self._playing_episode = (int(season), int(episode.number))
+            title = self._playback_label(item, season, episode)
+            dub = bool(self._settings.get("anime_dub", False))
+            attempts = self._provider_attempts(
+                lambda provider: streaming.episode_url(
+                    provider, item.tmdb_id, int(season), episode.number,
+                    title=title, dub=dub,
+                ),
+                preferred=preferred,
+            )
+            self._play_attempts(attempts, title)
+            return
+        self._playing_episode = None
+        dub = bool(self._settings.get("anime_dub", False))
+        attempts = self._provider_attempts(
+            lambda provider: streaming.movie_url(
+                provider, item.tmdb_id, title=item.title, dub=dub
+            ),
+            preferred=preferred,
+        )
+        self._play_attempts(attempts, item.title)
 
     def _provider_attempts(self, build, preferred: str | None = None) -> list[tuple[str, str]]:
         """Every provider that can build a URL, the preferred one first.
@@ -5256,11 +6248,16 @@ class MoviesWindow(Gtk.Box):
         if index >= len(attempts):
             return False
         provider, url = attempts[index]
-        failed = attempts[index - 1][0]
+        # An error screen starts the chain at -1, where the first alternative
+        # replaces nothing that loaded, so no provider is named as failed.
+        failed = attempts[index - 1][0] if index > 0 else ""
         detail = self._playback_reason
+        tried = (
+            f"{streaming.LABELS.get(failed, failed)} failed, trying "
+            if failed else ""
+        )
         self._playback_reason = (
-            f"{detail}{streaming.LABELS.get(failed, failed)} failed, trying "
-            f"{streaming.LABELS.get(provider, provider)} "
+            f"{detail}{tried}{streaming.LABELS.get(provider, provider)} "
             f"({index + 1} of {len(attempts)}). "
         )
         self._playback_index = index
@@ -5288,6 +6285,7 @@ class MoviesWindow(Gtk.Box):
         *,
         provider: str | None = None,
         attempts: list[tuple[str, str]] | None = None,
+        start: float = 0.0,
     ) -> None:
         provider = provider or self._streaming_provider()
         try:
@@ -5303,6 +6301,12 @@ class MoviesWindow(Gtk.Box):
         self._playback_title = title
         known = [item[1] for item in self._playback_attempts]
         self._playback_index = known.index(url) if url in known else 0
+        # A tab resumed from a saved position opens the stream there.
+        load_url = media_tabs.with_start(url, start)
+        self._playback_url = url
+        self._playback_provider = provider
+        self._playback_title = title
+        self._playback_position = max(0.0, float(start or 0.0))
 
         current = self._stack.get_visible_child_name()
         if current not in (None, "player"):
@@ -5380,7 +6384,7 @@ class MoviesWindow(Gtk.Box):
                         f"{spec.label} could not load this title: "
                         f"{getattr(error, 'message', error)}",
                         url,
-                        retry=lambda: view.load_uri(url),
+                        retry=lambda: view.load_uri(load_url),
                     )
                 )
                 overlay.show_all()
@@ -5391,7 +6395,7 @@ class MoviesWindow(Gtk.Box):
                 view.connect("load-failed", on_load_failed)
             except (TypeError, AttributeError):
                 loading.hide()
-            view.load_uri(url)
+            view.load_uri(load_url)
             frame.add(overlay)
         else:
             frame.add(
@@ -5427,8 +6431,14 @@ class MoviesWindow(Gtk.Box):
             row.pack_start(other, False, False, 0)
         self._player.pack_start(row, False, False, 0)
         self._player.show_all()
+        # Resuming from the paused panel of a fullscreen tab: the page chrome
+        # was built after fullscreen was applied, so hide it again here.
+        if getattr(self, "_player_fullscreen", False):
+            self._hide_player_page_chrome(True)
         self._stack.set_visible_child_name("player")
         self._update_back()
+        self._start_position_sampling()
+        self._sync_playing_tab()
 
     def _next_episode(self):
         """The episode after the one playing, from the seasons already loaded."""
@@ -5582,6 +6592,24 @@ class MoviesWindow(Gtk.Box):
         except (TypeError, AttributeError):
             pass
 
+    def _hide_player_page_chrome(self, active: bool) -> None:
+        """Keep only the video on the player page: title, badges and notes go.
+
+        Nothing is hidden when there is no live frame: a tab restored from the
+        background shows its paused panel with Resume, and that panel has to
+        stay readable, including inside a fullscreen window.
+        """
+        frame = getattr(self, "_player_frame", None)
+        if frame is None:
+            return
+        for child in self._player.get_children():
+            if child is frame:
+                continue
+            try:
+                child.set_visible(not active)
+            except Exception:  # noqa: BLE001
+                pass
+
     def _set_player_fullscreen(self, active: bool) -> None:
         """Fullscreen the window and hand the whole screen to the video."""
         self._player_fullscreen = bool(active)
@@ -5615,16 +6643,15 @@ class MoviesWindow(Gtk.Box):
                 rail.set_visible(not active)
             except Exception:  # noqa: BLE001
                 pass
-        # Nothing but the video stays on screen: title, "provider 2 of 6" and
-        # the source note would otherwise sit above and below it.
-        frame = getattr(self, "_player_frame", None)
-        for child in self._player.get_children():
-            if child is frame:
-                continue
-            try:
-                child.set_visible(not active)
-            except Exception:  # noqa: BLE001
-                pass
+        # Nothing but the video stays on screen: title, "provider 2 of 6", the
+        # source note and the media tab strip would otherwise sit above and
+        # below it.  The strip comes back with the header, immediately, when
+        # fullscreen ends.
+        self._hide_player_page_chrome(active)
+        try:
+            self._tab_bar.set_visible(bool(self._tabs.tabs) and not active)
+        except Exception:  # noqa: BLE001 - a strip that cannot answer
+            pass
         # The player keeps its 16:9 shape; in fullscreen it fills the screen
         # instead of sitting inside the reading margins.
         margin = 0 if active else 24
@@ -5666,8 +6693,19 @@ class MoviesWindow(Gtk.Box):
         else:
             Gtk.show_uri(None, url, Gdk.CURRENT_TIME)
 
-    def _open_player_message(self, title: str, message: str) -> None:
-        """Stay on the watch page and explain why nothing can play."""
+    def _open_player_message(
+        self, title: str, message: str, *, alternatives=None, alternative_action=None
+    ) -> None:
+        """Stay on the watch page and explain why nothing can play.
+
+        ``alternatives`` are the providers the owner may try instead; they are
+        only ever played on an explicit click, never automatically.
+        ``alternative_action`` is a ``(label, callable)`` button for a case with
+        no URL to build, such as a verified title with no AniList entry.
+        """
+        # Nothing verified is playing any more: a failed attempt must not
+        # leave the previous anime's session active behind the error screen.
+        self._end_verified_session()
         self._playing_episode = None
         current = self._stack.get_visible_child_name()
         if current not in (None, "player"):
@@ -5684,10 +6722,34 @@ class MoviesWindow(Gtk.Box):
         label.set_line_wrap(True)
         label.set_max_width_chars(80)
         box.pack_start(label, False, False, 0)
+        if alternatives:
+            self._playback_attempts = [(p, u) for p, u in alternatives]
+            self._playback_title = title
+            self._playback_index = -1
+            self._playback_reason = ""
+            other = Gtk.Button(label="Try another provider")
+            other.get_style_context().add_class("movie-btn-dark")
+            other.set_tooltip_text(
+                "Play this title on another provider instead."
+            )
+            other.connect("clicked", lambda *_a: self._try_another_provider())
+            box.pack_start(other, False, False, 0)
+        if alternative_action is not None:
+            label, action = alternative_action
+            button = Gtk.Button(label=label)
+            button.get_style_context().add_class("movie-btn-dark")
+            button.set_tooltip_text(
+                "Watch this title on the provider you selected."
+            )
+            button.connect("clicked", lambda *_a: action())
+            box.pack_start(button, False, False, 0)
         self._player.pack_start(box, True, True, 0)
         self._player.show_all()
         self._stack.set_visible_child_name("player")
         self._update_back()
+        refresh = getattr(self, "_refresh_provider_button", None)
+        if callable(refresh):
+            refresh()
 
     # -- watchlist ----------------------------------------------------------
 

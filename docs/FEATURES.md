@@ -49,8 +49,17 @@ Browse → Download → Library → Play
 ## Movies, TV and anime
 
 - Dedicated Movies, TV Shows and Anime areas, with Search, My List and History
-- TMDB metadata for movies and TV, MyAnimeList ranking data for anime, and
-  ani.pm catalogue lookup for titles not found through the other anime sources
+- TMDB metadata for movies and TV, and MyAnimeList ranking data for anime
+- Search results come from TMDB, plus MyAnimeList on the Qt frontend: the Qt
+  Search page combines TMDB and MyAnimeList rows, while the GTK Search page
+  queries TMDB only
+- ani.pm is a player, not a catalogue: a title is verified against
+  MyAnimeList first, and verified anime then starts on ani.pm whatever anime
+  provider is saved, including a title opened from a TMDB catalogue card; the
+  header menu on both frontends, or the GTK player's Try another provider
+  button, switches it for the current playback only, so the saved preference
+  is never overwritten.  The anime provider menu lists only providers that
+  can play the title in front of it
 - Episode selection with a season picker and episode rows showing episode
   numbers, titles and air dates
 - Provider selection in the Media bar, saved per library and switched
@@ -59,6 +68,54 @@ Browse → Download → Library → Play
   WebKit2GTK on Linux; fullscreen is controlled from the provider player
 - Trailer lookup and preview where a trailer is available and the platform's
   embedded browser supports it
+
+### Media tabs
+
+Opening a title in the GTK Media page keeps it in a browser-style tab strip
+under the header, on both Movies & TV and anime pages:
+
+- One tab per title: opening a title that is already open selects its tab
+  instead of building a second page
+- Each tab remembers its own details page, seasons, scroll position and the
+  season and episode it was on, including Next episode
+- Switching tabs pauses the player: the tab that was playing keeps its stream,
+  provider and last known position, and comes back as a paused panel with
+  **Resume** and a note of where it stopped. Nothing starts playing again on
+  its own
+- Closing the active tab stops its playback and selects a neighbouring tab;
+  closing an inactive tab leaves the open page alone
+- Leaving Media (another section, or Back) stops playback and saves the tab's
+  place, so coming back shows the paused panel rather than an empty player
+- A MAL-verified anime keeps its session with its tab: the provider badge, the
+  anime-only provider menu and the AniList episode come back with the tab, and
+  switching to a tab without a verified anime clears the session in front
+  instead of carrying it over
+- That session survives navigation as long as it genuinely lives: Back to
+  details, opening another title in another tab, navigating the Media pages or
+  leaving Media keep it saved with its tab, and restoring the tab or pressing
+  **Resume** brings the badge, the anime-only provider menu and the mapped
+  AniList episode back. Only a play that replaces the session, a failed play,
+  or closing the tab that owns it ends it, so it can never be resurrected later
+- The provider badge and menu describe the page in front: an open title's
+  details or player offers that tab's own providers, so an anime tab keeps
+  anime providers even while the rail says Home, and a movie/TV tab offers
+  movie/TV providers after an anime tab. Home, Browse and Search use their own
+  section, so a background tab's session never puts anime providers there, and
+  a provider picked on those pages is the plain movie/TV preference
+- A provider picked while a verified anime plays switches that play only; the
+  saved anime provider preference is never rewritten by tab switching or by a
+  session-scoped pick
+- A play whose route resolves after the tab in front changed is dropped: it can
+  neither start in another tab nor end that tab's session, provider or episode
+- The open player's position is sampled from the page and ignored when it
+  arrives from a view that has since been switched away, closed or torn down,
+  so a late answer cannot overwrite the active tab's position
+
+Tabs are session-only: they live until the app closes and are not written to
+disk. Playback position is the last position the page reported, which depends
+on the provider's player exposing a readable video element, and a resumed
+stream starts from that hint only where the provider honours it. Media tabs
+are a GTK feature; the Qt frontend keeps its own tab behaviour.
 
 ### Media home and feed
 

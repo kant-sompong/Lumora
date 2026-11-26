@@ -1,11 +1,11 @@
 """TMDB -> AniList routing on the Windows play path.
 
-Agent C's shared module (``lgl/anime_map.py`` + the ``tmdb`` group API) is
-built in parallel, so every contract function this code calls is stubbed here.
-The tests pin the routing contract, not C's implementation: confident,
-not confident, no answer, non-anime, another provider, and the verified-anime
-provider default.  No network: the TMDB client is a stub and the player is a
-stub view.
+Identity comes from Agent A's ``lgl/anime_identity`` and episode mapping from
+``lgl/anime_map``; both are stubbed here so the tests pin the routing contract
+rather than either module's implementation: verified, verified with no AniList
+resolution, unverified, non-anime, saved providers, confident episodes, an
+unsure mapping, and the mapping-free fallback.  No network: the TMDB client is
+a stub and the player is a stub view.
 """
 
 from __future__ import annotations
@@ -21,7 +21,14 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtCore import QObject, QUrl, Signal  # noqa: E402
 from PySide6.QtWidgets import QApplication, QDialog, QWidget  # noqa: E402
 
-from lgl import anime_map, anipm, qt_media, qt_player, streaming  # noqa: E402
+from lgl import (  # noqa: E402
+    anime_map,
+    anipm,
+    qt_anime_routing,
+    qt_media,
+    qt_player,
+    streaming,
+)
 from lgl.settings import Settings  # noqa: E402
 
 
@@ -147,19 +154,34 @@ def episode(number: int = 3) -> object:
 
 @pytest.fixture()
 def stubbed(monkeypatch):
-    """Every contract call recorded, and the verdict/target the test sets."""
-    calls: dict[str, list] = {"is_anime": [], "mapped": [], "searched": []}
-    state = {"verdict": Verdict(), "target": Target(anilist_id=42, episode=5)}
+    """Every contract call recorded, and the identity/target the test sets."""
+    calls: dict[str, list] = {"identity": [], "mapped": []}
+    state = {
+        "verdict": Verdict(),
+        "target": Target(anilist_id=42, episode=5),
+        #: The AniList entry the shared identity resolved, 0 for none.
+        "playable": 42,
+        #: Whether the shared core reports a failed AniList resolution.
+        "failed": False,
+    }
 
-    def is_anime(kind, tmdb_id, *, original_language="", genre_ids=()):
-        calls["is_anime"].append((kind, tmdb_id, original_language, tuple(genre_ids)))
-        return state["verdict"]
+    def identify_tmdb(kind, tmdb_id, *, title="", year="", settings=None):
+        calls["identity"].append((kind, tmdb_id))
+        verdict = state["verdict"]
+        return qt_anime_routing.Identity(
+            is_anime=verdict.is_anime,
+            verified=verdict.verified,
+            playable_anilist_id=state["playable"],
+            resolution_failed=state["failed"],
+        )
 
     def mapped(kind, tmdb_id, season=1, ep=1, *, title=""):
         calls["mapped"].append((kind, tmdb_id, season, ep, title))
         return state["target"]
 
-    monkeypatch.setattr(anime_map, "is_anime", is_anime, raising=False)
+    monkeypatch.setattr(
+        qt_anime_routing, "identify_tmdb", identify_tmdb, raising=False
+    )
     monkeypatch.setattr(anime_map, "tmdb_to_anilist", mapped, raising=False)
     monkeypatch.setattr(anipm, "AniPmClient", lambda *a, **k: _NoTitles())
     return calls, state
@@ -183,7 +205,7 @@ def test_a_confident_mapping_plays_the_anilist_episode(app, stubbed):
 
     assert page.urls == [streaming.ani_url(42, 5, language="sub")]
     assert calls["mapped"] == [("tv", 1396, 2, 3, "Breaking Bad")]
-    assert calls["is_anime"] == [("tv", 1396, "ja", (16, 18))]
+    assert calls["identity"] == [("tv", 1396)], "the shared identity is asked once"
     assert page.plain == [], "a confident anime must not fall back to the provider"
     assert page.widget._playing_episode == (2, 3), (
         "next-episode bookkeeping must stay in TMDB numbers"
@@ -191,14 +213,16 @@ def test_a_confident_mapping_plays_the_anilist_episode(app, stubbed):
     page.close()
 
 
-def test_the_details_document_is_fetched_once_per_card(app, stubbed):
-    _calls, _state = stubbed
+def test_identity_needs_no_tmdb_details_document(app, stubbed):
+    """The shared module owns its own lookup; the page asks TMDB for nothing."""
+    calls, _state = stubbed
     page = Page(app)
     page.widget._play_tmdb(TV, 2, episode(3))
     assert wait_for(app, lambda: page.urls)
     page.widget._play_tmdb(TV, 2, episode(4))
     assert wait_for(app, lambda: len(page.urls) == 2)
-    assert page.widget._tmdb.paths == ["/tv/1396"]
+    assert page.widget._tmdb.paths == [], "identity no longer depends on details"
+    assert len(calls["identity"]) == 2
     page.close()
 
 
@@ -276,7 +300,14 @@ def test_cancelling_which_part_plays_nothing(app, stubbed, monkeypatch):
 
 # -- no mapping -------------------------------------------------------------
 
-def test_no_mapping_uses_the_anilist_title_search(app, stubbed, monkeypatch):
+def test_no_mapping_plays_the_shared_anilist_id_without_a_title_search(
+    app, stubbed, monkeypatch
+):
+    """Verified with one AniList entry: play that entry, never search a title.
+
+    The old fallback searched the title and could land on a different entry
+    than the one MAL verification resolved.
+    """
     _calls, state = stubbed
     state["target"] = None
     searches: list[str] = []
@@ -290,22 +321,49 @@ def test_no_mapping_uses_the_anilist_title_search(app, stubbed, monkeypatch):
     page.widget._play_tmdb(TV, 2, episode(3))
     assert wait_for(app, lambda: page.urls)
 
-    assert searches == ["Breaking Bad"]
-    assert page.urls == [streaming.ani_url(777, 3, language="sub")]
+    assert searches == [], "a verified anime must not be re-identified by title"
+    assert page.urls == [streaming.ani_url(42, 3, language="sub")]
     assert page.plain == []
     page.close()
 
 
-def test_no_mapping_and_no_search_hit_keeps_todays_path(app, stubbed, monkeypatch):
+def test_a_verified_anime_with_no_anilist_resolution_is_an_error(
+    app, stubbed, monkeypatch
+):
     _calls, state = stubbed
     state["target"] = None
-    monkeypatch.setattr(streaming, "anilist_search", lambda _t: None, raising=False)
-    page = Page(app)
-    page.widget._play_tmdb(TV, 2, episode(3))
-    assert wait_for(app, lambda: page.plain)
+    state["playable"] = 0
+    searches: list[str] = []
 
-    assert page.plain and page.plain[0][0] is TV
+    def search(title):
+        searches.append(title)
+        return 777
+
+    monkeypatch.setattr(streaming, "anilist_search", search, raising=False)
+    errors: list[str] = []
+    page = Page(app)
+    page.widget._note_error = errors.append
+    page.widget._play_tmdb(TV, 2, episode(3))
+    assert wait_for(app, lambda: errors)
+
+    assert "AniList entry" in errors[0]
+    assert page.plain == [], "no provider fallback for a verified anime"
     assert page.urls == []
+    assert searches == [], "no title search either"
+    page.close()
+
+
+def test_a_resolution_failure_is_an_error_not_a_fallback(app, stubbed):
+    _calls, state = stubbed
+    state["failed"] = True
+    errors: list[str] = []
+    page = Page(app)
+    page.widget._note_error = errors.append
+    page.widget._play_tmdb(TV, 2, episode(3))
+    assert wait_for(app, lambda: errors)
+
+    assert "AniList entry" in errors[0]
+    assert page.plain == [] and page.urls == []
     page.close()
 
 
@@ -332,10 +390,10 @@ def test_the_verdict_runs_for_any_provider_but_a_guess_never_reroutes(app, stubb
     page.widget._play_tmdb(TV, 2, episode(3))
     assert wait_for(app, lambda: page.plain)
 
-    assert calls["is_anime"] == [("tv", 1396, "ja", (16, 18))], (
+    assert calls["identity"] == [("tv", 1396)], (
         "the identity is checked whatever provider is selected"
     )
-    assert page.widget._tmdb.paths == ["/tv/1396"], "the cached details document"
+    assert page.widget._tmdb.paths == [], "identity needs no details document"
     assert calls["mapped"] == [], "a guess must not reach the mapping"
     assert page.plain[0][1] == "vidy", "the user's provider keeps the play"
     assert page.urls == []
@@ -361,15 +419,16 @@ def test_a_verified_anime_plays_on_anipm_without_saving_a_setting(app, stubbed, 
 
 
 @pytest.mark.parametrize(
-    "general, saved, expected",
+    "general, saved",
     [
-        ("vidy", "cinesrc", "cinesrc"),   # the owner's anime pick wins
-        ("cinesrc", "toflix", "toflix"),
-        ("cinesrc", "", "ani"),           # no pick: the mapping route
+        ("vidy", ""),          # the movies provider is not an anime choice
+        ("cinesrc", ""),
     ],
 )
-def test_a_saved_anime_provider_wins_for_a_verified_anime(app, stubbed, tmp_path,
-                                                          general, saved, expected):
+def test_a_verified_anime_plays_on_anipm_without_an_anime_choice(
+    app, stubbed, tmp_path, general, saved
+):
+    """Verified anime uses ani.pm until an anime provider is picked."""
     calls, state = stubbed
     state["verdict"] = Verdict(is_anime=True, verified=True)
     settings = Settings(tmp_path / "settings.json", keyring=False)
@@ -377,16 +436,16 @@ def test_a_saved_anime_provider_wins_for_a_verified_anime(app, stubbed, tmp_path
         settings.set("anime_streaming_provider", saved)
     page = Page(app, settings=settings, provider=general)
     page.widget._play_tmdb(TV, 2, episode(3))
-    if expected == "ani":
-        assert wait_for(app, lambda: page.urls)
-        assert page.urls == [streaming.ani_url(42, 5, language="sub")]
-    else:
-        assert wait_for(app, lambda: page.plain)
-        assert page.plain[0][1] == expected
-        assert page.urls == []
-        assert calls["mapped"] == [], "a saved provider needs no mapping lookup"
-    assert settings.get("anime_streaming_provider", "") == saved
+    assert wait_for(app, lambda: page.urls)
+
+    assert page.urls == [streaming.ani_url(42, 5, language="sub")]
+    assert page.plain == [], "no provider may take a verified anime"
+    assert calls["mapped"], "episode mapping still decides which episode"
+    assert settings.get("anime_streaming_provider", "") == saved, (
+        "a play must not write a preference"
+    )
     page.close()
+
 
 
 # -- the dialog itself ------------------------------------------------------
@@ -463,6 +522,15 @@ def real_mapping(monkeypatch):
             raise AssertionError("the Which-part sheet must not open here")
 
     monkeypatch.setattr(qt_media, "WhichPartDialog", Never, raising=False)
+    # The shared identity verifies this title; the records below decide the
+    # episode, which is all anime_map still does.
+    monkeypatch.setattr(
+        qt_anime_routing, "identify_tmdb",
+        lambda *args, **kwargs: qt_anime_routing.Identity(
+            verified=True, playable_anilist_id=16498,
+        ),
+        raising=False,
+    )
     return None
 
 
@@ -524,6 +592,13 @@ def test_a_heuristic_only_anime_keeps_the_selected_provider(app, monkeypatch):
         lambda *a, **k: asked.append(a) or None,
         raising=False,
     )
+    monkeypatch.setattr(
+        qt_anime_routing, "identify_tmdb",
+        lambda *args, **kwargs: qt_anime_routing.Identity(
+            is_anime=True, verified=False,
+        ),
+        raising=False,
+    )
     page = Page(app, provider="vidy")
     page.widget._play_tmdb(AOT, 3, episode(1))
     assert wait_for(app, lambda: page.plain)
@@ -549,7 +624,7 @@ def test_an_english_animation_is_not_anime_and_plays_as_today(app, monkeypatch):
 
     assert page.plain[0][1] == streaming.DEFAULT_PROVIDER
     assert page.urls == []
-    assert tmdb_client.paths == ["/tv/999"], "still one verdict, no mapping route"
+    assert tmdb_client.paths == [], "identity needs no details document"
     page.close()
 
 
@@ -564,7 +639,50 @@ def test_repeated_plays_read_the_details_document_once(app, real_mapping):
         streaming.ani_url(99147, 1, language="sub"),
         streaming.ani_url(104578, 1, language="sub"),
     ]
-    assert page.widget._tmdb.paths == [f"/tv/{AOT_TMDB}"], (
-        "one details request per card, however many plays"
-    )
+    assert page.widget._tmdb.paths == [], "identity needs no details document"
+    page.close()
+
+
+# -- no TMDB client or API key ---------------------------------------------
+
+
+def test_identity_runs_without_a_tmdb_client(app, stubbed):
+    """A missing TMDB client must not disable anime identity routing."""
+    _calls, state = stubbed
+    state["verdict"] = Verdict(is_anime=True, verified=True)
+    page = Page(app)
+    page.widget._tmdb = None
+    page.widget._play_tmdb(TV, 2, episode(3))
+    assert wait_for(app, lambda: page.urls)
+
+    assert page.urls == [streaming.ani_url(42, 5, language="sub")]
+    assert page.plain == [], "a verified anime still plays on ani.pm"
+    page.close()
+
+
+def test_an_unverified_title_keeps_the_provider_without_a_tmdb_client(app, stubbed):
+    _calls, state = stubbed
+    state["verdict"] = Verdict(is_anime=True, verified=False)
+    page = Page(app, provider="vidy")
+    page.widget._tmdb = None
+    page.widget._play_tmdb(TV, 2, episode(3))
+    assert wait_for(app, lambda: page.plain)
+
+    assert page.plain[0][1] == "vidy", "an unverified title keeps the provider"
+    assert page.urls == []
+    page.close()
+
+
+def test_a_resolution_failure_without_a_tmdb_client_is_an_error(app, stubbed):
+    _calls, state = stubbed
+    state["failed"] = True
+    errors: list[str] = []
+    page = Page(app)
+    page.widget._tmdb = None
+    page.widget._note_error = errors.append
+    page.widget._play_tmdb(TV, 2, episode(3))
+    assert wait_for(app, lambda: errors)
+
+    assert "AniList entry" in errors[0]
+    assert page.plain == [] and page.urls == [], "no fallback, no stream"
     page.close()

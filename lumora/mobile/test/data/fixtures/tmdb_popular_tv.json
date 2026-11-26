@@ -1,0 +1,26 @@
+{
+  "page": 1,
+  "results": [
+    {
+      "id": 95396,
+      "name": "Severance",
+      "media_type": "tv",
+      "poster_path": "/lFf6LLrQjYldcZItzOkGmMMigP7.jpg",
+      "backdrop_path": "/u8M5jg1Q9rotijIOMSAKVCojx0.jpg",
+      "first_air_date": "2022-02-17",
+      "vote_average": 8.4,
+      "overview": "Office workers split their memories.",
+      "genre_ids": [18, 9648]
+    },
+    {
+      "id": 126308,
+      "name": "Shōgun",
+      "media_type": "tv",
+      "poster_path": null,
+      "backdrop_path": "/shogun.jpg",
+      "first_air_date": "2024-02-27",
+      "vote_average": 8.6,
+      "overview": "A sailor enters feudal Japan."
+    }
+  ]
+}

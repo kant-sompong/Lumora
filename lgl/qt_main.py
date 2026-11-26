@@ -69,6 +69,7 @@ from .qt_downloads import (
 from .qt_icons import icon
 from .qt_library import LibraryPage
 from .qt_media import MediaPage
+from .qt_media_tabs import MediaTabBar, MediaTabsController
 from .qt_settings import AboutDialog, SettingsDialog
 from .qt_theme import build_stylesheet
 from .qt_widgets import (
@@ -116,6 +117,8 @@ class Window(QMainWindow):
         self.bridge = DownloadBridge()
         self._history: list[str] = []
         self._history_index = -1
+        #: Set while a tab's Back asks for the hub rather than for that tab.
+        self._media_hub = False
         self._titles: dict[str, str] = {}
         self.catalog = CatalogStore(platform_support.data_dir() / "catalog.json")
         self.setWindowTitle(APP_TITLE)
@@ -140,6 +143,12 @@ class Window(QMainWindow):
         column.setContentsMargins(0, 0, 0, 0)
         column.setSpacing(0)
         column.addWidget(self._build_header())
+
+        # Browser-style media tabs live above every page, not inside Movies &
+        # TV, so they stay put while Browse or Downloads is open.
+        self.media_tabs_bar = MediaTabBar()
+        self.media_tabs_bar.setVisible(False)
+        column.addWidget(self.media_tabs_bar)
 
         self.stack = QStackedWidget()
         column.addWidget(self.stack, 1)
@@ -182,6 +191,15 @@ class Window(QMainWindow):
         self.media.configure_requested.connect(lambda: self.show_settings("providers"))
         self.media.surprise_requested.connect(self.pick_random)
         self.stack.addWidget(self.media)
+        # One media page per tab, in this same page stack: a tab restores its
+        # own detail view, episode selection and scroll position.
+        self.media_tabs = MediaTabsController(
+            self.stack, self.media_tabs_bar, settings=self._settings,
+            cache_root=platform_support.cache_dir(),
+            on_empty=self._tabs_empty, on_show=self._tabs_shown,
+            on_hub=self._show_media_hub,
+        )
+        self.media.tab_host = self.media_tabs
 
         self.toast = Toast(root)
         # The interface preferences are applied before the first page is shown,
@@ -361,23 +379,75 @@ class Window(QMainWindow):
         if key == "downloads" and self.downloads is None:
             self.toast.show_message("Downloads are not available.", error=True)
             return
-        page = {
-            "browse": self.browse,
-            "library": self.library,
-            "downloads": self.downloads,
-            "media": self.media,
-        }[key]
-        self._transition_to(page)  # type: ignore[arg-type]
+        page, showing_tab = self._prepare_view(key)
+        if not showing_tab:
+            self._transition_to(page)  # type: ignore[arg-type]
         self.browse.detail.hide() if key != "browse" else None
         self._remember(key)
         self._current = key
         self._sync_rail()
         self._sync_search_field(key)
+        if showing_tab:
+            return
         if key == "browse":
             self.browse.load()
         elif key == "media":
             self.media.show_section(self.media._section)
             QTimer.singleShot(0, self.media.reload) if not self.media._loaded else None
+
+    def _prepare_view(self, key: str) -> tuple[QWidget | None, bool]:
+        """Resolve ``key``'s page and run the Media leave/return lifecycle.
+
+        Shared by the rail, the shortcuts and the header's Back/Forward
+        buttons, so history navigation stops a playing tab or a hub stream
+        exactly like a rail click does.
+        """
+        page = {
+            "browse": self.browse,
+            "library": self.library,
+            "downloads": self.downloads,
+            "media": self.media,
+        }.get(key)
+        showing_tab = False
+        if key == "media":
+            if self._media_hub:
+                self._media_hub = False
+            elif self.media_tabs.active_id:
+                # Returning to Media brings the open tab back, paused.
+                showing_tab = self.media_tabs.show_active()
+        else:
+            # Leaving Media stops the video and frees its engine; the tab keeps
+            # its page, its selection and its position for when it is back.
+            self.media_tabs.suspend_shown()
+            # Playback started from the hub itself is not a tab: release it too,
+            # so nothing keeps playing behind another app page.
+            self.media.release_playback()
+        return page, showing_tab
+
+    # media tabs -----------------------------------------------------------
+    def _tabs_shown(self, page: QWidget, tab: object) -> None:
+        """A tab page is in front: the rail and header follow it."""
+        self._current = "media"
+        # Only one video ever plays: a stream the hub started is stopped as
+        # soon as a tab comes in front of it.
+        self.media.release_playback()
+        self._sync_rail()
+        self._sync_search_field("media")
+
+    def _tabs_empty(self) -> None:
+        """The last tab closed: back to the hub, but only if it was in front.
+
+        Closing the final tab from Browse or Settings removes the strip and
+        leaves the page the user is on alone.
+        """
+        self.media_tabs_bar.setVisible(False)
+        if self.media_tabs.closed_while_visible:
+            self._show_media_hub()
+
+    def _show_media_hub(self) -> None:
+        """Show the normal Movies & TV page, even when tabs are still open."""
+        self._media_hub = True
+        self.show_view("media")
 
     def _remember(self, key: str) -> None:
         if self._history_index >= 0 and self._history[self._history_index] == key:
@@ -402,13 +472,14 @@ class Window(QMainWindow):
         self._apply_history(self._history[self._history_index])
 
     def _apply_history(self, key: str) -> None:
-        page = {
-            "browse": self.browse, "library": self.library,
-            "downloads": self.downloads, "media": self.media,
-        }.get(key)
+        # The same lifecycle a rail click runs: leaving Media through Back or
+        # Forward stops the player instead of leaving it running behind the
+        # page history moves to.
+        page, showing_tab = self._prepare_view(key)
         if page is None:
             return
-        self._transition_to(page)
+        if not showing_tab:
+            self._transition_to(page)
         self._current = key
         self._sync_rail()
         self._sync_search_field(key)
@@ -1127,6 +1198,10 @@ class Window(QMainWindow):
         self.toast.show_message("Image cache cleared.")
 
     def closeEvent(self, event) -> None:  # noqa: N802
+        # Every tab's player is stopped and its view released with the window.
+        controller = getattr(self, "media_tabs", None)
+        if controller is not None:
+            controller.close_all()
         if not self.isMaximized():
             self._settings.set_window_size(self.width(), self.height())
         self._settings.set_maximized(self.isMaximized())

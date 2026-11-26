@@ -64,6 +64,10 @@ a = Analysis(
         "lgl.qt_theme",
         "lgl.qt_widgets",
         "lgl.qt_archive",
+        # Imported through ``importlib.import_module("lgl.anime_identity")`` at
+        # runtime, so PyInstaller cannot see it and the anime identifier would
+        # be missing from the packaged app.
+        "lgl.anime_identity",
         "lgl.qt_downloads",
         "PySide6.QtCore",
         "PySide6.QtGui",

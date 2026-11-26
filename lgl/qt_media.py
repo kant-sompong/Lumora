@@ -52,12 +52,13 @@ from . import (
     trailers,
     view_prefs,
 )
+from . import qt_anime_routing
 from . import ratings, recently_viewed
 from .design_tokens import TOKENS
 from .qt_icons import icon
 from .qt_feed import PosterRow, ScheduleStrip, ThreeColumnList
 from .qt_library import ArtworkBackdrop
-from .qt_player import EmbeddedPlayer, make_player
+from .qt_player import EmbeddedPlayer, forget_player, make_player
 from .qt_ratings import RatingsRow
 from .qt_season_picker import SeasonPicker
 from .qt_which_part import WhichPartDialog
@@ -901,6 +902,27 @@ class TrailerDialog(QDialog):
 # --------------------------------------------------------------------------
 
 
+@dataclass(frozen=True)
+class _VerifiedPlayback:
+    """What a MAL-verified anime is playing, so a manual pick can replay it.
+
+    ``card`` is ``None`` for a match resolved from an AniList page, which has
+    no TMDB card to replay; ``via_tmdb`` marks a play opened from a TMDB
+    catalogue card, whose providers use its season and episode numbers.
+    """
+
+    card: Card | None
+    title: str
+    anilist_id: int
+    ani_episode: int = 1
+    season: int | None = None
+    tmdb_episode: object | None = None
+    api_embed: str = ""
+    via_tmdb: bool = False
+    #: The provider this session is actually playing on, ani.pm to start with.
+    provider: str = streaming.ANI_PROVIDER
+
+
 class MediaPage(QWidget):
     """Movies & TV: Home, Movies, TV Shows, Anime, Search, My List, History."""
 
@@ -911,9 +933,14 @@ class MediaPage(QWidget):
 
     def __init__(self, settings: Settings | None = None,
                  cache_root: Path | None = None,
-                 player_factory: Callable[[QWidget], EmbeddedPlayer] | None = None) -> None:
+                 player_factory: Callable[[QWidget], EmbeddedPlayer] | None = None,
+                 *, session_only: bool = False) -> None:
         super().__init__()
         self.settings = settings
+        #: A tab's page: one title, its episodes and its player, no feeds.
+        self._session_only = bool(session_only)
+        #: Set by the tab controller, so opening a card routes to a tab.
+        self.tab_host = None
         self._cache_root = cache_root or platform_support.cache_dir()
         self._pix: dict[str, QPixmap] = {}
         self._section = "home"
@@ -932,6 +959,11 @@ class MediaPage(QWidget):
         self._tmdb_items: list[Card] = []
         self._anime_items: list[Card] = []
         self._detail_card: Card | None = None
+        #: A verified anime is playing on ani.pm: no provider switching now.
+        self._forced_anime_playback = False
+        self._provider_tip_before_forced = ""
+        #: Bumped by every Watch request; an older identity answer is dropped.
+        self._watch_seq = 0
         self._loaded = False
         self._artwork = ArtworkBackdrop(self, settings)
 
@@ -986,6 +1018,7 @@ class MediaPage(QWidget):
         stop = IconButton("close", "Clear the search", 13, 30)
         stop.clicked.connect(lambda: self.search.clear())
         bar.addWidget(stop)
+        top.setVisible(not self._session_only)
         root.addWidget(top)
 
         # Provider health: one compact strip, then the measured list of
@@ -1032,30 +1065,31 @@ class MediaPage(QWidget):
         self.health = provider_health.AutoSelect(
             settings, on_results=self.health_ready.emit, token="qt-media"
         )
-        if settings is not None:
+        if settings is not None and not self._session_only:
             QTimer.singleShot(3000, self._startup_health)
 
         self.stack = QStackedWidget()
         root.addWidget(self.stack, 1)
         self._pages: dict[str, QWidget] = {}
-        for key, title in (("home", "Home"), ("movies", "Movies"), ("tv", "TV Shows"),
-                           ("anime", "Anime"), ("search", "Search"),
-                           ("list", "My List"), ("history", "History")):
-            page, column = self._page()
-            self._pages[key] = page
-            self.stack.addWidget(page)
-            if key == "home":
-                self._build_home(column)
-            elif key in ("movies", "tv"):
-                self._build_grid_page(column, key)
-            elif key == "anime":
-                self._build_anime(column)
-            elif key == "search":
-                self._build_search(column)
-            elif key == "list":
-                self._build_list(column)
-            else:
-                self._build_history(column)
+        if not self._session_only:
+            for key, title in (("home", "Home"), ("movies", "Movies"), ("tv", "TV Shows"),
+                               ("anime", "Anime"), ("search", "Search"),
+                               ("list", "My List"), ("history", "History")):
+                page, column = self._page()
+                self._pages[key] = page
+                self.stack.addWidget(page)
+                if key == "home":
+                    self._build_home(column)
+                elif key in ("movies", "tv"):
+                    self._build_grid_page(column, key)
+                elif key == "anime":
+                    self._build_anime(column)
+                elif key == "search":
+                    self._build_search(column)
+                elif key == "list":
+                    self._build_list(column)
+                else:
+                    self._build_history(column)
         self._detail_page, detail_column = self._page()
         self.stack.addWidget(self._detail_page)
         self._build_detail(detail_column)
@@ -1082,7 +1116,177 @@ class MediaPage(QWidget):
         self._layout_choice: dict[str, bool] = {}
         self.stack.addWidget(self.player)
         self._player_return: QWidget | None = None
-        self.show_section("home")
+        if not self._session_only:
+            self.show_section("home")
+        else:
+            self.stack.setCurrentWidget(self._detail_page)
+            # A tab needs the clients; it must not load any feed to get them.
+            if self.settings is not None:
+                self._init_clients()
+
+    # tabs ------------------------------------------------------------------
+    def detail_card(self) -> Card | None:
+        """The card this page shows, so its tab can describe it."""
+        return getattr(self, "_detail_card", None)
+
+    def scroll_position(self) -> int:
+        scroll = getattr(self, "_detail_page", None)
+        if scroll is None:
+            return 0
+        return int(scroll.verticalScrollBar().value())
+
+    def set_scroll_position(self, value: object) -> None:
+        scroll = getattr(self, "_detail_page", None)
+        try:
+            position = int(value or 0)
+        except (TypeError, ValueError):
+            position = 0
+        if scroll is not None:
+            scroll.verticalScrollBar().setValue(max(0, position))
+
+    def _current_season(self) -> int | None:
+        combo = getattr(self, "season_combo", None)
+        data = combo.currentData() if combo is not None else None
+        try:
+            return int(data) if data is not None else None
+        except (TypeError, ValueError):
+            return None
+
+    def tab_snapshot(self) -> dict:
+        """What a tab switch has to remember about this page.
+
+        A tab showing the paused panel still has a stream to come back to, so
+        its URL and position are saved even though no view is running.
+        """
+        card = self.detail_card()
+        player = getattr(self, "player", None)
+        playing_now = bool(
+            card is not None and player is not None
+            and self._playing() and player.is_playing()
+        )
+        season, episode = getattr(self, "_playing_episode", None) or (None, None)
+        if season is None:
+            season = self._current_season()
+        url = player.current_url() if player is not None else ""
+        if player is None:
+            position = 0.0
+        elif playing_now:
+            position = player.capture_position()
+        else:
+            position = player.saved_position()
+        next_episode = ""
+        if player is not None and not player.next_episode.isHidden():
+            next_episode = player.next_episode.toolTip()
+        payload: dict[str, object] = {"next_episode": next_episode}
+        # A verified anime keeps its provider session with its tab: suspending
+        # must not drop the AniList episode a provider switch has to replay.
+        verified = getattr(self, "_verified_context", None)
+        if verified is not None:
+            payload["verified_anime"] = verified
+        if getattr(self, "_forced_anime_playback", False):
+            payload["forced_anime"] = True
+        return {
+            "season": int(season) if season else None,
+            "episode": int(episode) if episode else None,
+            "scroll": self.scroll_position(),
+            "playing": bool(url),
+            "position": position,
+            "url": url,
+            "payload": payload,
+        }
+
+    def suspend_tab(self, keep_fullscreen: bool = False) -> None:
+        """Switch away: stop the video, free its view, keep the page.
+
+        ``keep_fullscreen`` is set for a tab switch: the window stays fullscreen
+        for the tab that comes in front, and the strip above it stays usable.
+        """
+        player = getattr(self, "player", None)
+        if player is None:
+            return
+        if self._playing():
+            player.suspend(keep_fullscreen=keep_fullscreen)
+        else:
+            player.release_resources(keep_fullscreen=keep_fullscreen)
+        self._end_forced_anime_session()
+        self._player_return = None
+        self.stack.setCurrentWidget(self._detail_page)
+
+    def restore_tab(self, tab: object) -> None:
+        """Put this tab's page back, paused, where it was left."""
+        self.stack.setCurrentWidget(self._detail_page)
+        self.set_scroll_position(getattr(tab, "scroll", 0))
+        # A verified anime comes back as it left: the same provider session and
+        # the same AniList episode, so the badge, the session-scoped provider
+        # menu and a provider switch all agree with what was playing.
+        state = getattr(tab, "payload", {}) or {}
+        verified = state.get("verified_anime")
+        if verified is not None:
+            self._verified_context = verified
+            begin = getattr(self, "_begin_forced_anime_session", None)
+            if callable(begin):
+                begin()
+            else:
+                self._forced_anime_playback = True
+            menu = getattr(self, "_fill_provider_menu", None)
+            if callable(menu):
+                menu(self._section)
+            else:
+                self._update_badge()
+        player = getattr(self, "player", None)
+        if player is None:
+            return
+        url = str(getattr(tab, "url", "") or "")
+        if bool(getattr(tab, "playing", False)) and url:
+            card = self.detail_card()
+            title = str(getattr(tab, "title", "") or (card.title if card else ""))
+            player.pause_for_tab(url, title, getattr(tab, "position", 0.0))
+            self._player_return = self._detail_page
+            self.stack.setCurrentWidget(player)
+        else:
+            player.release_resources()
+        # The episode that follows must still be one click away after a return.
+        next_episode = str(
+            (getattr(tab, "payload", {}) or {}).get("next_episode") or ""
+        )
+        if next_episode:
+            player.offer_next_episode(next_episode)
+        else:
+            player.clear_next_episode()
+
+    def release_playback(self) -> None:
+        """Stop the hub's own player and free its view for good.
+
+        A tab's stream is suspended with its tab instead; this is only for
+        playback that started on the hub page, so leaving Media - or bringing
+        a tab in front of it - can never leave a second video running.
+        """
+        if self._session_only:
+            return
+        player = getattr(self, "player", None)
+        if player is None:
+            return
+        player.stop_playback()
+        player.release_resources()
+        self._end_forced_anime_session()
+        self._player_return = None
+        if self.stack.currentWidget() is player:
+            self.stack.setCurrentWidget(
+                self._pages.get(self._section)
+                or self._pages.get("home")
+                or self._detail_page
+            )
+
+    def close_tab(self) -> None:
+        """Stop this tab for good and let go of the player."""
+        self._end_forced_anime_session()
+        player = getattr(self, "player", None)
+        if player is not None:
+            # Forget the player before its page is deleted: a fullscreen
+            # session that still held it could not give the window back.
+            forget_player(self.window(), player)
+            player.stop_playback()
+            player.release_resources()
 
     # scaffolding -----------------------------------------------------------
     def _page(self) -> tuple[QWidget, QVBoxLayout]:
@@ -1427,8 +1631,7 @@ class MediaPage(QWidget):
         head = self._section_head(column, "Anime")
         column.addWidget(label(
             "Popular anime from MyAnimeList. Metadata comes from MAL; playback uses the "
-            "anime provider picked in the bar above (or Settings → Media). The main "
-            "search also queries the ani.pm catalogue, where titles missing from MAL live.",
+            "anime provider picked in the bar above (or Settings → Media).",
             "detailNote", wrap=True,
         ))
         self.anime_note = label("Popular now", "mediaNote")
@@ -1451,17 +1654,7 @@ class MediaPage(QWidget):
         column.addWidget(self.search_note)
         self.search_result_title = label("", "mediaNote")
         column.addWidget(self.search_result_title)
-        self.anilist_btn = QPushButton("Play on AniList…")
-        self.anilist_btn.setObjectName("suggested")
-        self.anilist_btn.setCursor(Qt.PointingHandCursor)
-        self.anilist_btn.setToolTip(
-            "Play the AniList match for this search, for titles with no TMDB or "
-            "MyAnimeList id"
-        )
-        self.anilist_btn.setVisible(False)
-        self.anilist_btn.clicked.connect(self._play_anilist_match)
         self._anilist_match: tuple[str, int] | None = None
-        column.addWidget(self.anilist_btn, 0, Qt.AlignLeft)
         grid = PosterGrid()
         grid.item_clicked.connect(self.open_card)
         column.addWidget(grid)
@@ -1598,6 +1791,25 @@ class MediaPage(QWidget):
 
     # navigation ------------------------------------------------------------
     def show_section(self, key: str) -> None:
+        if self._session_only:
+            # A tab has one detail page and no section list.  From the player,
+            # Back returns to the title; from the title, it leaves the tab page
+            # for the hub (the tab stays open).  Neither goes to a page this
+            # instance never built.
+            if (
+                getattr(self, "player", None) is not None
+                and self.stack.currentWidget() is self.player
+            ):
+                self.player.stop_playback()
+                self._end_forced_anime_session()
+                self.stack.setCurrentWidget(self._detail_page)
+                return
+            host = getattr(self, "tab_host", None)
+            if host is not None and callable(getattr(host, "back", None)):
+                host.back(self)
+                return
+            self.stack.setCurrentWidget(self._detail_page)
+            return
         # Choosing a section from the media bar while the video plays stops it,
         # so a hidden page never keeps playing sound.
         if (
@@ -1605,6 +1817,7 @@ class MediaPage(QWidget):
             and self.stack.currentWidget() is self.player
         ):
             self.player.stop_playback()
+            self._end_forced_anime_session()
             self._player_return = None
         self._section = key
         self._artwork.clear()
@@ -1626,18 +1839,26 @@ class MediaPage(QWidget):
             self._loaded = True
             QTimer.singleShot(0, self.reload)
 
+    def _init_clients(self) -> tuple[object, object]:
+        """Build the TMDB and MAL clients from settings; no request is sent.
+
+        A tab page needs them for its episode list, ratings and playback
+        routing, but it must never load the home feeds to get them.
+        """
+        api_key = tmdb.load_api_key(settings=self.settings)
+        client_id = mal.load_client_id(settings=self.settings)
+        timeout = float(self.settings.network_timeout)
+        self._tmdb = tmdb.TmdbClient(api_key, timeout=timeout)
+        self._mal = mal.MalClient(client_id, timeout=timeout)
+        return self._tmdb, self._mal
+
     def reload(self) -> None:
         """Refresh every remote section; safe to call repeatedly."""
         self._render_list()
         self._render_history()
         if self.settings is None:
             return
-        api_key = tmdb.load_api_key(settings=self.settings)
-        client_id = mal.load_client_id(settings=self.settings)
-        tmdb_client = tmdb.TmdbClient(api_key, timeout=float(self.settings.network_timeout))
-        mal_client = mal.MalClient(client_id, timeout=float(self.settings.network_timeout))
-        self._tmdb = tmdb_client
-        self._mal = mal_client
+        tmdb_client, mal_client = self._init_clients()
 
         self._home_provider_card.setVisible(not tmdb_client.configured)
         self._pages_bits["movies"][2].setVisible(not tmdb_client.configured)
@@ -1849,7 +2070,6 @@ class MediaPage(QWidget):
             self._search_empty.setVisible(True)
             self.search_result_title.setText("")
             self._anilist_match = None
-            self.anilist_btn.setVisible(False)
             return
         if self.settings is None:
             return
@@ -1870,14 +2090,6 @@ class MediaPage(QWidget):
                     found["anime"] = mal_client.search(query)
                 except Exception as exc:  # noqa: BLE001
                     found["errors"].append(f"MyAnimeList: {exc}")  # type: ignore[union-attr]
-            # The search *is* the lookup: resolve the anime provider's AniList
-            # route in the same pass instead of asking for the title a second
-            # time in a dialog.
-            if self._anime_provider() in streaming.ANILIST_ANIME_PROVIDERS:
-                try:
-                    found["anilist"] = streaming.anilist_search(query)
-                except Exception as exc:  # noqa: BLE001
-                    found["errors"].append(f"AniList: {exc}")  # type: ignore[union-attr]
             return found
 
         def done(result: object) -> None:
@@ -1890,17 +2102,7 @@ class MediaPage(QWidget):
                 f"“{query}” · {len(cards)} result{'s' if len(cards) != 1 else ''}"
                 if cards else f"No results for “{query}”."
             )
-            anilist_id = int(data.get("anilist") or 0)  # type: ignore[arg-type]
-            if anilist_id:
-                self._anilist_match = (query, anilist_id)
-                provider = self._anime_provider()
-                self.anilist_btn.setText(
-                    f"Play “{query}” on {streaming.LABELS.get(provider, provider)} (AniList)"
-                )
-                self.anilist_btn.setVisible(True)
-            else:
-                self._anilist_match = None
-                self.anilist_btn.setVisible(False)
+            self._anilist_match = None
             self._load_posters_when_shown()
 
         run_async(work, done, lambda exc: self._note_error(exc))
@@ -1968,6 +2170,10 @@ class MediaPage(QWidget):
         return media_history.load(self.settings)
 
     def _render_history(self) -> None:
+        if self._session_only:
+            # A tab has one detail page and no history grid: the play is still
+            # recorded, there is just no section page to redraw.
+            return
         entries = self._history()
         cards = [card_from_history(entry) for entry in entries]
         self._history_grid.set_cards(cards)
@@ -1982,6 +2188,12 @@ class MediaPage(QWidget):
         if not isinstance(card, Card):
             return
         card = self._fullest_card(card)
+        host = getattr(self, "tab_host", None)
+        if host is not None and not self._session_only:
+            # The hub never renders a second detail page: opening a title is
+            # what creates or selects its tab.
+            host.open(card, section=self._section)
+            return
         self._detail_card = card
         self._detail_seasons = ()
         self._season_cache.clear()
@@ -2221,10 +2433,13 @@ class MediaPage(QWidget):
         self.spoiler_note.setVisible(bool(text))
 
     def _refresh_air_dates(self, today: date | None = None) -> None:
-        """Re-mark the episode rows once the calendar day has changed."""
+        """Re-mark every episode row against ``today`` (default: the clock).
+
+        Every row is re-read, not only on a new calendar day: a season loaded
+        after the last check adds rows the page has not marked yet.  The work
+        is a handful of property reads, so a minute timer can afford it.
+        """
         today = today or date.today()
-        if today == self._air_day:
-            return
         self._air_day = today
         for row in self.findChildren(EpisodeRow):
             row.refresh_air_status(today)
@@ -2572,8 +2787,23 @@ class MediaPage(QWidget):
         TrailerDialog(url, getattr(card, "title", "") or "", self).exec()
 
     def _play_current(self) -> None:
-        """Play button on the home hero: the hero's own title."""
-        self._play_card(getattr(self, "_hero_card", None))
+        """Play button on the home hero: the hero's own title.
+
+        The hub never plays anything itself: Watch Now opens or selects the
+        title's own tab and starts the stream there.  Leaving Media then
+        suspends that tab like any other, and a second player can never be
+        left running behind it.
+        """
+        card = getattr(self, "_hero_card", None)
+        host = getattr(self, "tab_host", None)
+        if card is not None and host is not None and not self._session_only:
+            host.open_and_play(card, section=self._section)
+            return
+        self._play_card(card)
+
+    def play_card(self, card: Card | None) -> None:
+        """Start a title from outside this page: the hub's Watch Now."""
+        self._play_card(card)
 
     def _play_detail(self) -> None:
         """Play button on a details page: the title that page shows."""
@@ -2672,15 +2902,21 @@ class MediaPage(QWidget):
         self.player.play(url, title)
         self.stack.setCurrentWidget(self.player)
         self.player.setFocus()
+        host = getattr(self, "tab_host", None)
+        if host is not None:
+            # The tab's subtitle follows the episode that started playing.
+            host.playback_changed(self)
         return self.player
 
     def _leave_player(self) -> None:
         """Back stops the video and returns to the page that was open."""
+        self._end_forced_anime_session()
         self.player.stop_playback()
         page = (
             self._player_return
             or self._pages.get(self._section)
-            or self._pages["home"]
+            or self._pages.get("home")
+            or self._detail_page
         )
         self._player_return = None
         self.stack.setCurrentWidget(page)
@@ -2698,12 +2934,25 @@ class MediaPage(QWidget):
         self._update_badge()
 
     def _choose_provider(self, key: str) -> None:
-        """Persist a provider picked from the menu, exactly as the combo did."""
-        if self.settings is None or not key:
+        """Persist a provider picked from the menu, exactly as the combo did.
+
+        While a MAL-verified anime plays, the pick is a switch for this
+        playback session only: the same title is replayed on that provider and
+        the saved anime-provider preference is left untouched.
+        """
+        if not key:
             return
-        if self._section == "anime":
+        if self._switch_verified_session(str(key)):
+            self._update_badge()
+            return
+        if self.settings is None:
+            return
+        if self._section == "anime" and self._verified_session() is None:
             self.settings.set("anime_streaming_provider", key)
         else:
+            # A provider with no anime route, picked while a verified anime
+            # plays, is an ordinary movie/TV preference change: it must not be
+            # swallowed by the session, and the session keeps playing.
             self.settings.set("streaming_provider", key)
         # A manual pick wins for the rest of the session.
         health = getattr(self, "health", None)
@@ -2713,18 +2962,26 @@ class MediaPage(QWidget):
             self._update_badge()
 
     # provider health -------------------------------------------------------
+    def _verified_session(self) -> _VerifiedPlayback | None:
+        """The MAL-verified anime playing now, if any; it outranks the section."""
+        context = getattr(self, "_verified_context", None)
+        return context if isinstance(context, _VerifiedPlayback) else None
+
+    def _anime_providers(self) -> tuple[str, ...]:
+        """ani.pm plus every provider that documents a route for anime."""
+        return tuple(
+            key for key in streaming.ANIME_PROVIDERS
+            if key == streaming.ANI_PROVIDER or streaming.has_anime_route(key)
+        )
+
     def _menu_providers(self) -> tuple[str, ...]:
-        """Every provider the menu offers: the same list the old combo had."""
-        if self._section == "anime":
-            return tuple(streaming.ANIME_PROVIDERS)
-        return tuple(streaming.PROVIDERS)
+        """Every provider the menu offers for what is playing or open."""
+        return self._section_providers()
 
     def _section_providers(self) -> tuple[str, ...]:
-        if self._section == "anime":
-            return tuple(
-                key for key in streaming.ANIME_PROVIDERS
-                if key == streaming.ANI_PROVIDER or streaming.has_anime_route(key)
-            )
+        """A verified anime session decides the menu, whatever section opened it."""
+        if self._section == "anime" or self._verified_session() is not None:
+            return self._anime_providers()
         return streaming.PROVIDERS
 
     def _playing(self) -> bool:
@@ -2792,6 +3049,10 @@ class MediaPage(QWidget):
             )
 
     def _active_provider(self) -> str:
+        """The provider playing now: a verified session names its own."""
+        context = self._verified_session()
+        if context is not None:
+            return context.provider or streaming.ANI_PROVIDER
         return self._anime_provider() if self._section == "anime" else self._provider()
 
     def _provider_row_text(self, key: str) -> str:
@@ -2930,6 +3191,19 @@ class MediaPage(QWidget):
             return default
         return streaming.clean_provider(self.settings.get("streaming_provider", default))
 
+    def _anime_provider_choice(self) -> str:
+        """The anime provider the owner picked, or ani.pm when they have not.
+
+        Deliberately not :meth:`_anime_provider`, which falls back to the
+        movies provider: that fallback must never move a verified anime.
+        """
+        if self.settings is None:
+            return streaming.ANI_PROVIDER
+        stored = str(self.settings.get("anime_streaming_provider", "") or "")
+        if not stored:
+            return streaming.ANI_PROVIDER
+        return streaming.clean_anime_provider(stored)
+
     def _anime_provider(self) -> str:
         if self.settings is None:
             return streaming.DEFAULT_ANIME_PROVIDER
@@ -2942,25 +3216,44 @@ class MediaPage(QWidget):
     def _language(self) -> str:
         if self.settings is None:
             return "sub"
-        return streaming.clean_language(
-            "ani", self.settings.get("anime_language", "") or
-            ("dub" if self.settings.get("anime_dub", False) else "sub"),
+        stored = self.settings.get("anime_language", "") or (
+            "dub" if self.settings.get("anime_dub", False) else "sub"
         )
+        # A hard track is not a normal track: clamping it to Sub/Dub here would
+        # silently play the wrong audio, so it is kept, and it must either play
+        # its own validated embed or fail with an explanation.
+        track = anipm.language_key(stored)
+        if track in qt_anime_routing.HARD_TRACKS:
+            return track
+        return streaming.clean_language("ani", stored)
+
+    def _begin_watch_request(self) -> int:
+        """Claim the current Watch request; every older lookup becomes stale."""
+        self._watch_seq = int(getattr(self, "_watch_seq", 0)) + 1
+        return self._watch_seq
+
+    def _watch_is_stale(self, token: int) -> bool:
+        """Whether a newer Watch request has superseded ``token``."""
+        return int(token) != int(getattr(self, "_watch_seq", 0))
 
     def _play_tmdb(self, card: Card, season: int | None = None, episode: object | None = None) -> None:
+        self._end_forced_anime_session()
         if card.tmdb_id <= 0:
             self._note_error("This title has no TMDB id, so it cannot be played.")
             return
         # The identity of the title decides where it plays, not the provider
-        # that happens to be selected for movies and TV.
+        # that happens to be selected for movies and TV.  The lookup runs on a
+        # worker, so the token it carries keeps a slower older answer from
+        # playing after a newer Watch request.
+        token = self._begin_watch_request()
         if self._anime_verdict_applies(card):
-            self._play_tmdb_routed(card, season, episode)
+            self._play_tmdb_routed(card, season, episode, token)
             return
         self._play_tmdb_plain(card, self._provider(), season, episode)
 
     def _play_tmdb_plain(self, card: Card, provider: str,
                          season: int | None = None,
-                         episode: object | None = None) -> None:
+                         episode: object | None = None) -> bool:
         """Today's play path: the provider's own URL for these numbers."""
         try:
             if card.kind == "tv":
@@ -2972,7 +3265,7 @@ class MediaPage(QWidget):
                 url = streaming.movie_url(provider, card.tmdb_id, title=card.title)
         except (streaming.EmbedUrlError, ValueError) as exc:
             self._note_error(str(exc))
-            return
+            return False
         self._record_history(card)
         # Next episode belongs to TV episodes only; a card's Watch button has
         # no season or episode to move on from.
@@ -2986,24 +3279,20 @@ class MediaPage(QWidget):
             self._playing_card = None
         self.play_embedded(url, card.title)
         self._refresh_next_episode()
+        return True
 
     # anime routing ----------------------------------------------------------
     def _anime_verdict_applies(self, card: Card) -> bool:
         """A TMDB title's identity is checked whatever provider is selected.
 
-        The verdict is a cached local index read plus one cached details
-        document, so this costs nothing on a repeat play; a client stub without
-        ``get`` (or a build without the shared module) simply falls through to
-        today's path instead of failing a play.
+        Identity needs no TMDB client: the MAL and AniList lookups belong to the
+        shared module, so a missing TMDB key must not silently disable anime
+        routing.  Only a TMDB id to identify and the shared module are needed;
+        a build without the module keeps today's provider path.
         """
         if card.kind not in ("tv", "movie") or card.tmdb_id <= 0:
             return False
-        client = getattr(self, "_tmdb", None)
-        if client is None or not callable(getattr(client, "get", None)):
-            return False
-        return callable(getattr(anime_map, "is_anime", None)) and callable(
-            getattr(anime_map, "tmdb_to_anilist", None)
-        )
+        return qt_anime_routing.available()
 
     def _details_document(self, card: Card) -> dict:
         """TMDB's details document for this card, fetched once per session."""
@@ -3019,58 +3308,67 @@ class MediaPage(QWidget):
 
     def _play_tmdb_routed(self, card: Card,
                           season: int | None = None,
-                          episode: object | None = None) -> None:
-        """Ask the mapping list where this TMDB title plays, then play there.
+                          episode: object | None = None,
+                          token: int | None = None) -> None:
+        """Ask the shared identity where this TMDB title plays, then play there.
 
-        The details document, the verdict and the mapping lookup all happen on
-        one worker; the UI thread only applies the answer.  A verified anime
-        plays on ani.pm unless the owner saved an anime provider, which wins;
-        a heuristic-only guess and a non-anime title keep the selected
-        provider, and neither is asked anything.
+        The shared module's answer alone decides the provider: a verified anime
+        always plays on ani.pm, whatever provider is selected or saved, and a
+        verified anime whose AniList entry could not be resolved is an error -
+        never another provider and never a title search.  ``anime_map`` is kept
+        for season-aware episode mapping only; it never establishes identity.
         """
+        if token is None:
+            token = self._begin_watch_request()
         provider = self._provider()
-        chosen = self._saved_anime_provider()
-        mapping_route = not chosen or chosen == streaming.ANI_PROVIDER
         season_number = int(season or 1) if card.kind == "tv" else 1
         episode_number = int(getattr(episode, "number", 0) or 1) if (
             card.kind == "tv"
         ) else 1
 
         def work() -> object:
-            document = self._details_document(card)
-            language, genres = anime_source_document(document)
-            verdict = anime_map.is_anime(
+            identity = qt_anime_routing.identify_tmdb(
                 card.kind, card.tmdb_id,
-                original_language=language, genre_ids=genres,
+                title=card.title, year=card.year, settings=self.settings,
             )
             target = None
-            # Only a verified identity that will play on ani.pm is looked up:
-            # a guess, or a saved provider that will play instead, needs no
-            # mapping search (and a guess must never trigger a title search).
-            if getattr(verdict, "verified", False) and mapping_route:
-                target = anime_map.tmdb_to_anilist(
+            mapping = getattr(anime_map, "tmdb_to_anilist", None)
+            if identity is not None and identity.playable and callable(mapping):
+                target = mapping(
                     card.kind, card.tmdb_id, season_number, episode_number,
                     title=card.title,
                 )
-            return verdict, target
+            return identity, target
 
         def done(result: object) -> None:
-            verdict, target = result  # type: ignore[misc]
-            if not getattr(verdict, "is_anime", False):
+            if self._watch_is_stale(token):
+                return  # a newer Watch request already answered
+            identity, target = result  # type: ignore[misc]
+            if identity is not None and identity.resolution_failed:
+                # MAL verified this title but its AniList entry could not be
+                # resolved: an error, never another provider and never a
+                # title search.  The shared core reports this status as not
+                # verified, so it has to be checked first.
+                self._note_error(
+                    qt_anime_routing.resolution_error(card.title, identity)
+                )
+                return
+            if identity is None or not identity.verified:
+                # No identity, a failed lookup or a heuristic guess: the
+                # selected provider keeps the play and nothing is rerouted.
                 self._play_tmdb_plain(card, provider, season, episode)
                 return
-            if not getattr(verdict, "verified", False):
-                # A ja + Animation guess is not an identity: the selected
-                # provider keeps the play and nothing is rerouted.
-                self._play_tmdb_plain(card, provider, season, episode)
-                return
-            if not mapping_route:
-                self._play_tmdb_plain(
-                    card, streaming.clean_anime_provider(chosen), season, episode,
+            if identity.anilist_id <= 0:
+                self._note_error(
+                    qt_anime_routing.resolution_error(card.title, identity)
                 )
                 return
             if target is None:
-                self._play_anime_by_title(card, season, episode)
+                # Verified, one AniList entry, but the mapping list has no
+                # season record: play that entry at the requested episode.
+                self._play_on_ani(
+                    card, identity.anilist_id, episode_number, season, episode,
+                )
                 return
             if getattr(target, "confident", False):
                 self._play_on_ani(
@@ -3079,63 +3377,64 @@ class MediaPage(QWidget):
                 return
             self._ask_which_part(card, target, season, episode)
 
-        run_async(work, done, lambda exc: self._note_error(str(exc)))
-
-    def _saved_anime_provider(self) -> str:
-        """The anime provider the owner saved, or ``""`` when they saved none.
-
-        Read-only on purpose: routing a play is a per-play decision from the
-        mapping list's answer, so a play never writes a preference back.
-        """
-        if self.settings is None:
-            return ""
-        return str(
-            self.settings.get("anime_streaming_provider", "") or ""
-        ).strip().lower()
-
-    def _play_anime_by_title(self, card: Card, season: int | None,
-                             episode: object | None) -> None:
-        """No mapping: the AniList title search, exactly as before."""
-        episode_number = int(getattr(episode, "number", 0) or 1) if (
-            card.kind == "tv"
-        ) else 1
-
-        def work() -> object:
-            return streaming.anilist_search(card.title)
-
-        def done(found: object) -> None:
-            try:
-                anilist_id = int(found or 0)
-            except (TypeError, ValueError):
-                anilist_id = 0
-            if anilist_id <= 0:
-                self._play_tmdb_plain(card, self._provider(), season, episode)
+        def failed(exc: object) -> None:
+            if self._watch_is_stale(token):
                 return
-            self._play_on_ani(card, anilist_id, episode_number, season, episode)
+            self._note_error(str(exc))
 
-        run_async(work, done, lambda exc: self._note_error(str(exc)))
+        run_async(work, done, failed)
 
     def _play_on_ani(self, card: Card, anilist_id: object, episode_number: object,
-                     season: int | None, episode: object | None) -> None:
-        """Play an AniList id at an episode through the existing ani.pm embed."""
+                     season: int | None, episode: object | None,
+                     api_embed: str = "") -> None:
+        """Play a verified anime from a TMDB card on ani.pm, always first.
+
+        This is the TMDB catalogue route for a MAL-verified anime, so the saved
+        anime provider never preempts ani.pm here either.  The verified session
+        is recorded with the AniList episode that plays, so picking another
+        provider replays this title at this episode for the current session
+        only (see :meth:`_switch_verified_session`).
+        """
+        identifier = int(anilist_id or 0)
+        if identifier <= 0:
+            self._end_forced_anime_session()
+            self._note_error(
+                qt_anime_routing.UNRESOLVED.format(title=card.title)
+            )
+            return
+        played = int(episode_number or 1)
         try:
-            url = streaming.ani_url(
-                anilist_id, episode_number, language=self._language(),
+            url = qt_anime_routing.embed_url(
+                identifier, played, language=self._language(),
+                api_embed=api_embed,
             )
         except (streaming.EmbedUrlError, ValueError) as exc:
+            self._end_forced_anime_session()
             self._note_error(str(exc))
             return
         self._record_history(card)
         if card.kind == "tv" and season is not None:
             # Bookkeeping stays in TMDB numbers: the next episode is looked up
             # in the seasons the page loaded, not in the AniList entry.
-            tracked = int(getattr(episode, "number", 0) or 0) or int(episode_number)
+            tracked = int(getattr(episode, "number", 0) or 0) or played
             self._playing_episode = (int(season), tracked)
             self._playing_card = card
         else:
             self._playing_episode = None
             self._playing_card = None
-        self.play_embedded(url, card.title)
+        self._verified_context = _VerifiedPlayback(
+            card=card, title=card.title, anilist_id=identifier,
+            ani_episode=played,
+            season=int(season) if season is not None else None,
+            tmdb_episode=episode, api_embed=api_embed, via_tmdb=True,
+        )
+        self._begin_forced_anime_session()
+        try:
+            self.play_embedded(url, card.title)
+        except Exception as exc:  # noqa: BLE001 - no player is not a fallback
+            self._end_forced_anime_session()
+            self._note_error(f"ani.pm could not be opened: {exc}")
+            return
         self._refresh_next_episode()
 
     def _ask_which_part(self, card: Card, target: object, season: int | None,
@@ -3143,7 +3442,9 @@ class MediaPage(QWidget):
         """The mapping is unsure: offer its candidates and play the pick."""
         candidates = list(getattr(target, "candidates", ()) or ())
         if not candidates:
-            self._play_tmdb_plain(card, self._provider(), season, episode)
+            self._note_error(
+                qt_anime_routing.UNRESOLVED.format(title=card.title)
+            )
             return
         dialog = WhichPartDialog(card.title, candidates, parent=self)
 
@@ -3170,39 +3471,173 @@ class MediaPage(QWidget):
         The AniList routes need an id that TMDB and MyAnimeList do not provide
         for every title, so the search resolves it for the term that was typed
         and offers it as one button, instead of a second lookup box.
+
+        The shared identity is asked on a worker, with the same Watch token as
+        the other entry points: a superseded answer is dropped.  A MAL-verified
+        anime always plays its AniList entry on ani.pm; a resolution failure is
+        an error and never a reason to use the selected provider, and the page's
+        AniList id is never replaced by the MAL id.
         """
         match = getattr(self, "_anilist_match", None)
         if match is None:
             return
         title, anilist_id = match
+        token = self._begin_watch_request()
+
+        def work() -> object:
+            return qt_anime_routing.identify_anilist(
+                anilist_id, title=title, settings=self.settings,
+            )
+
+        def done(identity: object) -> None:
+            if self._watch_is_stale(token):
+                return
+            if identity is not None and identity.resolution_failed:
+                self._end_forced_anime_session()
+                self._note_error(
+                    qt_anime_routing.resolution_error(title, identity)
+                )
+                return
+            if identity is not None and identity.verified:
+                self._play_forced_anilist(title, identity.anilist_id)
+                return
+            self._play_anilist_provider(title, anilist_id)
+
+        def failed(exc: object) -> None:
+            if self._watch_is_stale(token):
+                return
+            # A lookup that could not be asked is not a verified anime: the
+            # offer the search resolved still plays on its own provider route.
+            self._note_error(f"Anime identity could not be checked: {exc}")
+            self._play_anilist_provider(title, anilist_id)
+
+        run_async(work, done, failed)
+
+    def _play_anilist_provider(self, title: str, anilist_id: int) -> bool:
+        """The unforced route: the selected provider keeps the play.
+
+        A provider that documents an AniList route gets the id the search
+        resolved.  A provider without one - the normal provider inherited by
+        the anime section - is never bypassed and never replaced by another
+        provider: the title is looked up on TMDB and played on that provider,
+        exactly as GTK plays an unverified AniList page.
+        """
+        self._end_forced_anime_session()
         provider = self._anime_provider()
         if provider not in streaming.ANILIST_ANIME_PROVIDERS:
-            self._note_error(
-                "Pick ToFlix or CineLite as the anime provider first; those two "
-                "routes take an AniList id."
-            )
-            return
+            self._play_anilist_via_tmdb(title, provider)
+            return True
         try:
             url = streaming.anime_url(provider, anilist_id, 1)
         except (streaming.EmbedUrlError, ValueError) as exc:
             self._note_error(str(exc))
-            return
+            return False
         self._playing_episode = None
         self._playing_card = None
         self.play_embedded(url, title)
         self._refresh_next_episode()
+        return True
+
+    def _play_anilist_via_tmdb(self, title: str, provider: str) -> None:
+        """A provider with no AniList route: find the title on TMDB first.
+
+        The search and the play stay on the selected provider; a missing TMDB
+        client is reported rather than approximated on another provider, and a
+        show opens its details page because it has no episode to play yet.
+        """
+        client = getattr(self, "_tmdb", None)
+        label = streaming.LABELS.get(provider, provider)
+        if client is None or not callable(getattr(client, "search", None)):
+            self._note_error(
+                f"Add a TMDB API key to watch anime on {label} "
+                "(Settings → Providers)."
+            )
+            return
+        token = self._begin_watch_request()
+
+        def work() -> object:
+            return client.search(title)
+
+        def done(result: object) -> None:
+            if self._watch_is_stale(token):
+                return
+            results = list(result or ())  # type: ignore[arg-type]
+            if not results:
+                self._note_error(f"No TMDB match for “{title}” on {label}.")
+                return
+            card = card_from_tmdb(results[0])
+            if card.kind == "tv":
+                # A show needs a season and episode picked before it plays;
+                # GTK opens the details page for the same reason.
+                self.open_card(card)
+                return
+            self._play_tmdb_plain(card, provider)
+
+        def failed(exc: object) -> None:
+            if self._watch_is_stale(token):
+                return
+            self._note_error(f"Could not search TMDB: {exc}")
+
+        run_async(work, done, failed)
 
     def _play_anime(self, card: Card) -> None:
+        """Ask the shared identity on a worker, then play the route it gives.
+
+        The MAL/AniList lookup is network work and never runs on the UI thread.
+        The answer carries this request's token, so an older answer cannot
+        start playback after a newer Watch request; a lookup that raises or
+        cannot be asked falls back to the selected provider, exactly as an
+        unverified title does, and never leaves the page waiting.
+        """
+        token = self._begin_watch_request()
         provider = self._anime_provider()
+
+        def work() -> object:
+            return qt_anime_routing.plan(
+                card.mal_id, card.title, provider=provider,
+                settings=self.settings,
+            )
+
+        def done(route: object) -> None:
+            if self._watch_is_stale(token):
+                return  # a newer Watch request already answered
+            if getattr(route, "forced", False):
+                self._play_forced_anime(card, route)
+                return
+            self._play_anime_provider(
+                card, getattr(route, "provider", "") or provider,
+            )
+
+        def failed(exc: object) -> None:
+            if self._watch_is_stale(token):
+                return
+            self._note_error(f"Anime identity could not be checked: {exc}")
+            self._play_anime_provider(card, provider)
+
+        run_async(work, done, failed)
+
+    def _play_anime_provider(
+        self, card: Card, provider: str, *, anilist_id: int = 0,
+        keep_verified_session: bool = False,
+    ) -> None:
+        """Today's unforced play path for a MAL-keyed anime card.
+
+        ``anilist_id`` is an AniList entry already resolved for this title, so a
+        manual switch never searches a title again.  ``keep_verified_session``
+        leaves the verified-anime session in place, which keeps the next
+        provider pick session-only too.
+        """
+        if not keep_verified_session:
+            self._end_forced_anime_session()
         try:
             if provider == streaming.ANI_PROVIDER and card.mal_id:
                 url = streaming.ani_mal_url(card.mal_id, 1, language=self._language())
             elif card.mal_id and provider in streaming.ANILIST_ANIME_PROVIDERS:
-                anilist_id = streaming.anilist_search(card.title)
-                if not anilist_id:
+                found = int(anilist_id or 0) or streaming.anilist_search(card.title)
+                if not found:
                     self._note_error("No AniList id matched this title.")
                     return
-                url = streaming.anime_url(provider, anilist_id, 1)
+                url = streaming.anime_url(provider, found, 1)
             elif card.tmdb_id:
                 # A TMDB provider plays anime too; it needs the TMDB id that a
                 # MAL-keyed title may not have, so ask TMDB for one.
@@ -3223,6 +3658,155 @@ class MediaPage(QWidget):
         self._playing_card = None
         self.play_embedded(url, card.title)
         self._refresh_next_episode()
+
+    def _play_forced_anime(self, card: Card, route, api_embed: str = "") -> None:
+        """Play a MAL-verified anime on ani.pm first, whatever is saved.
+
+        ani.pm is the first provider for verified anime; the saved anime
+        preference never preempts it, it only decides what a manual switch
+        offers first.  The provider menu is never switched off, and picking
+        another anime provider replays this title there for the current
+        session only (see :meth:`_switch_verified_session`).  A missing AniList
+        id is still an error, not a reason to search for the title elsewhere -
+        and the MAL id is never handed to ani.pm in its place.
+
+        ``api_embed`` is the embed URL ani.pm's API returned for this exact
+        episode and track, when one is available.  A hard track has no other
+        route: without its embed it raises and is reported, never swapped for
+        Sub or Dub.
+        """
+        if route.anilist_id <= 0:
+            self._end_forced_anime_session()
+            self._note_error(route.error)
+            return
+        try:
+            url = qt_anime_routing.embed_url(
+                route.anilist_id, 1, language=self._language(),
+                api_embed=api_embed,
+            )
+        except (streaming.EmbedUrlError, ValueError) as exc:
+            self._end_forced_anime_session()
+            self._note_error(str(exc))
+            return
+        self._record_history(card)
+        self._playing_episode = None
+        self._playing_card = None
+        # What is playing, so a manual provider pick replays exactly this
+        # title without a new identity lookup or a title search.
+        self._verified_context = _VerifiedPlayback(
+            card=card, title=card.title,
+            anilist_id=int(route.anilist_id), api_embed=api_embed,
+        )
+        self._begin_forced_anime_session()
+        try:
+            self.play_embedded(url, card.title)
+        except Exception as exc:  # noqa: BLE001 - no player is not a fallback
+            self._end_forced_anime_session()
+            self._note_error(f"ani.pm could not be opened: {exc}")
+            return
+        self._refresh_next_episode()
+
+    def _play_forced_anilist(self, title: str, anilist_id: int,
+                             api_embed: str = "") -> None:
+        """An ani.pm play with no TMDB card: the search's AniList match.
+
+        A MAL-verified match is a verified anime like any other, so ani.pm
+        starts it whatever anime provider is saved.  The session is recorded
+        without a card, so a provider pick still replays this match for the
+        current session only (see :meth:`_switch_verified_session`).
+        """
+        if anilist_id <= 0:
+            self._end_forced_anime_session()
+            self._note_error(qt_anime_routing.UNRESOLVED.format(title=title))
+            return
+        try:
+            url = qt_anime_routing.embed_url(
+                anilist_id, 1, language=self._language(), api_embed=api_embed,
+            )
+        except (streaming.EmbedUrlError, ValueError) as exc:
+            self._end_forced_anime_session()
+            self._note_error(str(exc))
+            return
+        self._playing_episode = None
+        self._playing_card = None
+        self._verified_context = _VerifiedPlayback(
+            card=None, title=title, anilist_id=int(anilist_id),
+            api_embed=api_embed,
+        )
+        self._begin_forced_anime_session()
+        try:
+            self.play_embedded(url, title)
+        except Exception as exc:  # noqa: BLE001 - no player is not a fallback
+            self._end_forced_anime_session()
+            self._note_error(f"ani.pm could not be opened: {exc}")
+            return
+        self._refresh_next_episode()
+
+    def _begin_forced_anime_session(self) -> None:
+        """Note that a verified anime is playing; the provider menu stays usable.
+
+        The menu used to be switched off here.  It is not any more: ani.pm is
+        the first provider for a verified anime, not the only one the owner may
+        use, so picking another one has to work during playback too.
+        """
+        self._forced_anime_playback = True
+        self._update_badge()
+
+    def _switch_verified_session(self, key: str) -> bool:
+        """Play the verified anime on screen on ``key``: this session only.
+
+        The saved ``anime_streaming_provider`` is never rewritten here, and the
+        title already playing is the one replayed, with the AniList entry the
+        identity resolved, so a switch needs no new lookup and no title search.
+        ``False`` means no verified anime is playing, so the pick is a normal
+        preference change.
+        """
+        context = self._verified_session()
+        if context is None:
+            return False
+        if key != streaming.ANI_PROVIDER and not streaming.has_anime_route(key):
+            # Not an anime provider: a movie/TV preference change, separate
+            # from the session, so the session keeps playing.
+            return False
+        if key == streaming.ANI_PROVIDER:
+            if context.card is None:
+                self._play_forced_anilist(
+                    context.title, context.anilist_id, context.api_embed,
+                )
+            else:
+                self._play_on_ani(
+                    context.card, context.anilist_id, context.ani_episode,
+                    context.season, context.tmdb_episode, context.api_embed,
+                )
+            return True
+        if context.card is None:
+            if self._play_anilist_provider(context.title, context.anilist_id):
+                # Still the same verified session, so picking ani.pm goes back.
+                self._verified_context = replace(context, provider=key)
+                self._begin_forced_anime_session()
+            return True
+        if context.via_tmdb:
+            # A provider keyed by TMDB plays this season and episode, not the
+            # first episode of the series.
+            if self._play_tmdb_plain(
+                context.card, key, context.season, context.tmdb_episode,
+            ):
+                self._verified_context = replace(context, provider=key)
+                self._begin_forced_anime_session()
+            return True
+        self._play_anime_provider(
+            context.card, key, anilist_id=context.anilist_id,
+            keep_verified_session=True,
+        )
+        self._verified_context = replace(context, provider=key)
+        self._update_badge()
+        return True
+
+    def _end_forced_anime_session(self) -> None:
+        """Forget the verified-anime playback, for the next-request bookkeeping."""
+        self._forced_anime_playback = False
+        self._verified_context = None
+        self._update_badge()
 
     def _record_history(self, card: Card) -> None:
         if self.settings is None or card.key.startswith("anime:"):

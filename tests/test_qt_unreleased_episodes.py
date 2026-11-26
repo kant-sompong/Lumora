@@ -136,6 +136,63 @@ def test_the_page_rechecks_the_rows_when_the_day_rolls_over(app):
         page.deleteLater()
 
 
+def _marked(row: EpisodeRow) -> bool:
+    """The upcoming ink, as the page draws it (its own ancestors stay hidden)."""
+    return row.property("upcoming") is True and row.status.isHidden() is False
+
+
+def test_a_row_added_after_todays_check_is_marked_on_the_same_day(app):
+    """A season loaded later the same day still gets the mark.
+
+    The row starts with a stale answer (as if it had been built before the
+    rollover), so this fails whenever the page trusts its cached day instead of
+    re-reading the rows it now owns.
+    """
+    page = qt_media.MediaPage(None, cache_root=None)
+    try:
+        later_row = EpisodeRow(2, "The Next One", (TODAY + timedelta(days=5)).isoformat())
+        assert later_row.refresh_air_status(TODAY + timedelta(days=60)) is False
+        page.episode_column.addWidget(later_row)
+        page._air_day = TODAY
+
+        page._refresh_air_dates(TODAY)
+
+        assert _marked(later_row)
+    finally:
+        page.deleteLater()
+
+
+def test_a_row_added_after_the_rollover_is_marked(app):
+    """Rows that appear after the page recorded a new day are re-read too."""
+    page = qt_media.MediaPage(None, cache_root=None)
+    try:
+        page._air_day = TODAY
+        page._refresh_air_dates(TODAY)
+
+        later_row = EpisodeRow(2, "The Next One", (TODAY + timedelta(days=5)).isoformat())
+        assert later_row.refresh_air_status(TODAY + timedelta(days=60)) is False
+        page.episode_column.addWidget(later_row)
+
+        # The timer fires on the next day with the new row already in place.
+        page._refresh_air_dates(TODAY + timedelta(days=1))
+
+        assert page._air_day == TODAY + timedelta(days=1)
+        assert _marked(later_row)
+
+        # A row that arrives after the new day was recorded is marked without
+        # waiting for another rollover.
+        newest_row = EpisodeRow(3, "The One After", (TODAY + timedelta(days=9)).isoformat())
+        assert newest_row.refresh_air_status(TODAY + timedelta(days=60)) is False
+        page.episode_column.addWidget(newest_row)
+
+        page._refresh_air_dates(TODAY + timedelta(days=1))
+
+        assert _marked(newest_row)
+        assert _marked(later_row)
+    finally:
+        page.deleteLater()
+
+
 # -- the ink ----------------------------------------------------------------
 
 @pytest.mark.parametrize("theme", ["dark", "light"])

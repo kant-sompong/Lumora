@@ -1626,6 +1626,64 @@ flowboxchild.browse-tile:hover .cover-card {
   background-image: none;
 }
 
+/* Browser-style media tabs: the same @surface as the header, one selected. */
+.movie-tabbar {
+  background-color: @surface;
+  background-image: none;
+  border-bottom: 1px solid alpha(@text, 0.07);
+  padding: 4px 12px;
+}
+
+.movie-tabscroll,
+.movie-tabscroll viewport {
+  background-color: transparent;
+}
+
+.movie-tab {
+  background-color: alpha(@text, 0.05);
+  border: 1px solid alpha(@text, 0.07);
+  border-radius: 6px;
+  padding: 2px 6px 2px 10px;
+  min-width: 90px;
+}
+
+.movie-tab:hover {
+  background-color: alpha(@text, 0.10);
+}
+
+.movie-tab.active {
+  background-color: alpha(@text, 0.14);
+  border-color: alpha(@text, 0.22);
+}
+
+.movie-tab-title {
+  color: @text;
+  font-weight: 600;
+  font-size: 0.92em;
+}
+
+.movie-tab-meta {
+  color: @text2;
+  font-size: 0.78em;
+}
+
+button.movie-tab-close {
+  background-color: transparent;
+  background-image: none;
+  border: none;
+  box-shadow: none;
+  color: @text2;
+  padding: 0 4px;
+  min-width: 18px;
+  min-height: 18px;
+}
+
+button.movie-tab-close:hover {
+  background-color: alpha(@text, 0.16);
+  color: @text;
+  border-radius: 9px;
+}
+
 /* The Media header is a header bar like the rest of the app: same @surface. */
 headerbar.movie-nav {
   background-color: @surface;

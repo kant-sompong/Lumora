@@ -1,0 +1,16 @@
+{
+  "id": 693134,
+  "title": "Dune: Part Two",
+  "release_date": "2024-02-27",
+  "poster_path": "/1pdfLvkbY9ohJlCjQH2CZjjYVvJ.jpg",
+  "backdrop_path": "/xOMo8BRK7PfcJv9JCnx7s5hj0PX.jpg",
+  "vote_average": 8.2,
+  "overview": "Paul Atreides unites with the Fremen.",
+  "runtime": 167,
+  "tagline": "Long live the fighters.",
+  "genres": [
+    { "id": 878, "name": "Science Fiction" },
+    { "id": 12, "name": "Adventure" }
+  ],
+  "seasons": []
+}

@@ -107,7 +107,11 @@ def test_media_provider_picker_switches_with_the_section(app):
     assert texts[0].startswith("Auto (fastest")
     assert texts[-1] == "Test connections now"
     assert len(texts) - 2 == len(page._menu_providers())
-    assert len(texts) - 2 == len(streaming.ANIME_PROVIDERS)
+    assert len(texts) - 2 == len(page._section_providers())
+    assert streaming.ANI_PROVIDER in page._section_providers()
+    assert not all(key in page._section_providers() for key in streaming.ANIME_PROVIDERS), (
+        "the anime menu must not offer providers with no anime route"
+    )
 
     page.show_section("movies")
     assert len(rows()) - 2 == len(streaming.PROVIDERS)
@@ -222,20 +226,8 @@ def test_media_lookup_lives_in_the_search_bar(app):
     qt_main.apply_theme(app, "dark")
     page = MediaPage(None)
     assert not hasattr(page, "lookup_btn")
-    assert page.anilist_btn.isHidden()
-    page.deleteLater()
-
-
-def test_search_anilist_match_is_one_button(app):
-    from lgl.qt_media import MediaPage
-
-    qt_main.apply_theme(app, "dark")
-    page = MediaPage(None)
-    page._anilist_match = ("Example Anime", 42)
-    page.anilist_btn.setText("Play “Example Anime” on ani.pm (AniList)")
-    page.anilist_btn.setVisible(True)
-    assert not page.anilist_btn.isHidden()
-    assert "Example Anime" in page.anilist_btn.text()
+    # The search no longer offers an ani.pm/AniList button at all.
+    assert not hasattr(page, "anilist_btn")
     page.deleteLater()
 
 

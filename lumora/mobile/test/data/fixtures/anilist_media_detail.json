@@ -1,0 +1,20 @@
+{
+  "Media": {
+    "id": 16498,
+    "title": {
+      "romaji": "Shingeki no Kyojin",
+      "english": "Attack on Titan"
+    },
+    "coverImage": {
+      "extraLarge": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx16498-C6FPmWm59CyP.jpg"
+    },
+    "bannerImage": "https://s4.anilist.co/file/anilistcdn/media/anime/banner/16498-8jpFCOcDmneX.jpg",
+    "startDate": { "year": 2013 },
+    "averageScore": 85,
+    "description": "<i>Humanity</i> fights &amp; survives.<br>More.",
+    "genres": ["Action", "Drama"],
+    "episodes": 25,
+    "duration": 24,
+    "format": "TV"
+  }
+}

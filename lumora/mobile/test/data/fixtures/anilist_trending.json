@@ -1,0 +1,43 @@
+{
+  "Page": {
+    "media": [
+      {
+        "id": 154587,
+        "title": {
+          "romaji": "Sousou no Frieren",
+          "english": "Frieren: Beyond Journey's End",
+          "native": "葬送のフリーレン"
+        },
+        "coverImage": {
+          "extraLarge": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx154587-qQTzQnEJJ3jP.jpg",
+          "large": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx154587-qQTzQnEJJ3jP.jpg"
+        },
+        "bannerImage": null,
+        "startDate": { "year": 2023 },
+        "averageScore": 93,
+        "description": "<p>After the party, an elf retraces the journey.</p>",
+        "genres": ["Adventure", "Drama", "Fantasy"],
+        "episodes": 28,
+        "duration": 24,
+        "format": "TV"
+      },
+      {
+        "id": 21,
+        "title": { "romaji": "One Piece", "english": null },
+        "coverImage": null,
+        "bannerImage": "https://s4.anilist.co/file/anilistcdn/media/anime/banner/21-wf37VakJmZqs.jpg",
+        "startDate": null,
+        "averageScore": 88,
+        "description": null,
+        "genres": null,
+        "episodes": null,
+        "duration": null,
+        "format": "TV"
+      },
+      {
+        "id": null,
+        "title": { "romaji": "Broken" }
+      }
+    ]
+  }
+}
