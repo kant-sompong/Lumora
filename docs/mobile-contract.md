@@ -34,7 +34,7 @@ lib/data/provider_health.dart: enum HealthStatus { fast, ok, slow, unreachable, 
   Desktop rules: one HEAD request per attempt to the provider's BASE host only (never a player or video), 3 attempts, median time to first byte, 5 s timeout, at most 4 at once, cache 10 minutes. fast <300 ms, ok 300-999, slow >=1000; an HTTP error is a response, so still reachable.
 lib/data/provider_choice.dart: List<String> orderedProviders({required MediaItem item, required AppSettings settings, ProviderHealthService? health, AnimeIdentity? identity}) -> provider ids in order to try; first = default.
   (1) Anime (item.kind == anime, or identity is verified anime with an anilistId): provider 'ani' (ani.pm) first if enabled, then the user's order. (2) Otherwise, if autoProvider and health data exists: the fastest reachable enabled provider that supports the kind first, then the user's order. (3) Otherwise defaultProviderId, then the enabled order. Never include disabled providers or ones that cannot play the kind. If it is not anime, do nothing special.
-Search: TMDB search keeps include_adult=true like the desktop (lgl/tmdb.py ~line 253) and sets MediaItem.adult from TMDB's own flag; the UI marks those cards "18+".
+Search: uses TMDB only (`/search/multi`); no AniList results are mixed in, since the anime shelves and a title's detail page are where AniList entries live. TMDB search keeps include_adult=true like the desktop (lgl/tmdb.py ~line 253) and sets MediaItem.adult from TMDB's own flag; the UI marks those cards "18+".
 
 ## Contract v3 - player and settings
 

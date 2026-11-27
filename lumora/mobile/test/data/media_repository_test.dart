@@ -18,9 +18,7 @@ Map<String, dynamic> fixtureJson(String name) =>
 /// it.
 http.Response graphqlResponse(String name, {int status = 200}) =>
     http.Response.bytes(
-      utf8.encode(
-        jsonEncode(<String, dynamic>{'data': fixtureJson(name)}),
-      ),
+      utf8.encode(jsonEncode(<String, dynamic>{'data': fixtureJson(name)})),
       status,
       headers: <String, String>{
         'content-type': 'application/json; charset=utf-8',
@@ -174,10 +172,7 @@ void main() {
         FakeMediaRepository.items.firstWhere((i) => i.id == 'tmdb:95396'),
       );
       expect(series.seasons.length, 2);
-      expect(
-        series.seasons.fold<int>(0, (sum, s) => sum + s.episodeCount),
-        9,
-      );
+      expect(series.seasons.fold<int>(0, (sum, s) => sum + s.episodeCount), 9);
 
       final anime = await repo.detail(
         FakeMediaRepository.items.firstWhere((i) => i.id == 'anilist:154587'),
@@ -265,16 +260,17 @@ void main() {
       );
       await repo.search('severance');
 
-      final tmdb = requests.firstWhere((r) => r.url.host == 'api.themoviedb.org');
+      final tmdb = requests.firstWhere(
+        (r) => r.url.host == 'api.themoviedb.org',
+      );
       expect(tmdb.url.queryParameters.containsKey('api_key'), isFalse);
       expect(tmdb.headers['Authorization'], startsWith('Bearer '));
     });
 
-    test('search merges TMDB and AniList results', () async {
+    test('search asks TMDB only and returns its results', () async {
+      final requests = <http.Request>[];
       final client = MockClient((request) async {
-        if (request.url.host == 'graphql.anilist.co') {
-          return graphqlResponse('anilist_trending.json');
-        }
+        requests.add(request);
         return jsonResponse('tmdb_trending_movie.json');
       });
       final repo = TmdbAniListRepository(
@@ -282,8 +278,49 @@ void main() {
         client: client,
       );
       final results = await repo.search('dune');
-      expect(results.any((i) => i.kind == MediaKind.movie), isTrue);
-      expect(results.any((i) => i.kind == MediaKind.anime), isTrue);
+
+      expect(requests, hasLength(1));
+      expect(requests.single.url.path, '/3/search/multi');
+      expect(requests.single.url.queryParameters['include_adult'], 'true');
+      expect(results.map((item) => item.title), <String>[
+        'Dune: Part Two',
+        'The Batman',
+      ]);
+      expect(results.every((item) => item.kind != MediaKind.anime), isTrue);
+    });
+
+    test(
+      'search without a key asks for one instead of trying AniList',
+      () async {
+        final requests = <http.Request>[];
+        final repo = TmdbAniListRepository(
+          AppSettings(),
+          client: MockClient((request) async {
+            requests.add(request);
+            return graphqlResponse('anilist_trending.json');
+          }),
+        );
+
+        expect(
+          repo.search('attack on titan'),
+          throwsA(isA<MissingApiKeyException>()),
+        );
+        expect(requests, isEmpty);
+      },
+    );
+
+    test('a failing TMDB search raises the usual errors', () async {
+      final rejected = TmdbAniListRepository(
+        AppSettings(tmdbApiKey: 'bad'),
+        client: MockClient((_) async => http.Response('{}', 401)),
+      );
+      expect(rejected.search('dune'), throwsA(isA<MissingApiKeyException>()));
+
+      final broken = TmdbAniListRepository(
+        AppSettings(tmdbApiKey: 'key'),
+        client: MockClient((_) async => http.Response('nope', 500)),
+      );
+      expect(broken.search('dune'), throwsA(isA<NetworkException>()));
     });
 
     test('maps HTTP failures onto the exceptions the UI shows', () async {
@@ -378,10 +415,7 @@ void main() {
     test('_best_logo prefers a PNG in the wanted language', () {
       final logos = fixtureJson('tmdb_images_logos.json')['logos'];
 
-      expect(
-        bestTmdbLogo(logos),
-        'https://image.tmdb.org/t/p/w500/en.png',
-      );
+      expect(bestTmdbLogo(logos), 'https://image.tmdb.org/t/p/w500/en.png');
       expect(
         bestTmdbLogo(logos, language: 'ja'),
         'https://image.tmdb.org/t/p/w500/ja.png',
@@ -420,21 +454,23 @@ void main() {
 
       final detail = await repo.detail(item);
 
-      expect(
-        detail.logoUrl,
-        'https://image.tmdb.org/t/p/w500/en.png',
-      );
+      expect(detail.logoUrl, 'https://image.tmdb.org/t/p/w500/en.png');
       final images = requests
           .where((request) => request.url.path.endsWith('/images'))
           .toList();
       expect(images, hasLength(1));
       // `/images` asks for no language filter at all.
-      expect(images.single.url.queryParameters.containsKey('language'), isFalse);
+      expect(
+        images.single.url.queryParameters.containsKey('language'),
+        isFalse,
+      );
       expect(images.single.url.queryParameters['api_key'], 'key123');
 
       await repo.detail(item);
       expect(
-        requests.where((request) => request.url.path.endsWith('/images')).length,
+        requests
+            .where((request) => request.url.path.endsWith('/images'))
+            .length,
         1,
       );
     });
@@ -468,10 +504,7 @@ void main() {
       );
 
       expect(detail.seasons.single.episodeCount, 28);
-      expect(
-        detail.logoUrl,
-        'https://image.tmdb.org/t/p/w500/frieren.png',
-      );
+      expect(detail.logoUrl, 'https://image.tmdb.org/t/p/w500/frieren.png');
     });
   });
 }

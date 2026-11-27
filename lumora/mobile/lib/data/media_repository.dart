@@ -468,35 +468,13 @@ class TmdbAniListRepository implements MediaRepository {
     if (_usesFallback) {
       return fallback!.search(needle);
     }
-
-    var moviesAndTv = const <MediaItem>[];
-    Object? tmdbError;
-    if (_hasTmdbKey) {
-      try {
-        moviesAndTv = await _searchTmdb(needle);
-      } catch (error) {
-        tmdbError = error;
-      }
+    if (!_hasTmdbKey) {
+      throw const MissingApiKeyException();
     }
 
-    var anime = const <MediaItem>[];
-    Object? animeError;
-    try {
-      anime = await _searchAniList(needle);
-    } catch (error) {
-      animeError = error;
-    }
-
-    final results = <MediaItem>[...moviesAndTv, ...anime];
-    if (results.isEmpty) {
-      if (tmdbError != null) {
-        throw tmdbError;
-      }
-      if (animeError != null) {
-        throw animeError;
-      }
-    }
-    return results;
+    // Search is TMDB only: AniList's seasons stay on the anime shelves and
+    // reachable from a title's detail page.
+    return _searchTmdb(needle);
   }
 
   @override
@@ -678,16 +656,6 @@ class TmdbAniListRepository implements MediaRepository {
       }),
     );
     return parseTmdbResults(json);
-  }
-
-  Future<List<MediaItem>> _searchAniList(String query) async {
-    final data = await _postAniList(
-      'query (\$search: String) { Page(page: 1, perPage: 24) { '
-      'media(type: ANIME, search: \$search, sort: SEARCH_MATCH, '
-      'isAdult: false) { $_anilistFields } } }',
-      <String, dynamic>{'search': query},
-    );
-    return parseAniListPage(data);
   }
 
   Uri _tmdbUri(String path, [Map<String, String>? extra]) {
@@ -910,7 +878,8 @@ MediaDetail? parseTmdbDetail(
     return null;
   }
 
-  final runtime = _asInt(json['runtime']) ?? _firstInt(json['episode_run_time']);
+  final runtime =
+      _asInt(json['runtime']) ?? _firstInt(json['episode_run_time']);
   final tagline = _asString(json['tagline']);
   return MediaDetail(
     item: item,
@@ -1078,10 +1047,12 @@ Map<String, dynamic> _bestLogoEntry(List<Map<String, dynamic>> entries) {
 }
 
 bool _logoPreferred(Map<String, dynamic> candidate, Map<String, dynamic> best) {
-  final candidatePng =
-      (_asString(candidate['file_path']) ?? '').toLowerCase().endsWith('.png');
-  final bestPng =
-      (_asString(best['file_path']) ?? '').toLowerCase().endsWith('.png');
+  final candidatePng = (_asString(candidate['file_path']) ?? '')
+      .toLowerCase()
+      .endsWith('.png');
+  final bestPng = (_asString(best['file_path']) ?? '').toLowerCase().endsWith(
+    '.png',
+  );
   if (candidatePng != bestPng) {
     return candidatePng;
   }
