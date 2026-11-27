@@ -7,6 +7,7 @@ import '../../nav.dart';
 import '../../theme/lumora_theme.dart';
 import 'future_guard.dart';
 import 'widgets/media_colors.dart';
+import 'widgets/media_scale.dart';
 import 'widgets/state_views.dart';
 
 /// How a detail page starts playback. Defaults to [openPlayer]; tests pass a
@@ -100,6 +101,9 @@ class _MediaDetailPageState extends State<MediaDetailPage> {
     final theme = Theme.of(context);
     final item = detail.item;
     final isSeries = item.kind != MediaKind.movie;
+    final scale = mediaUiScale(context);
+    final logoUrl = detail.logoUrl?.trim() ?? '';
+    final hasLogo = logoUrl.isNotEmpty;
     final seasons = detail.seasons;
     final season = seasons.isEmpty
         ? null
@@ -121,11 +125,15 @@ class _MediaDetailPageState extends State<MediaDetailPage> {
               end: LumoraSpace.lg,
               bottom: LumoraSpace.md,
             ),
-            title: Text(
-              item.title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
+            // The logo below the backdrop takes the title's place when TMDB has
+            // one; the plain title stays in the bar otherwise.
+            title: hasLogo
+                ? null
+                : Text(
+                    item.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
             background: _Backdrop(url: item.backdropUrl),
           ),
         ),
@@ -140,6 +148,10 @@ class _MediaDetailPageState extends State<MediaDetailPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                if (hasLogo) ...[
+                  _TitleLogo(url: logoUrl, title: item.title, scale: scale),
+                  const SizedBox(height: LumoraSpace.md),
+                ],
                 _MetaLine(item: item, runtimeMinutes: detail.runtimeMinutes),
                 const SizedBox(height: LumoraSpace.md),
                 if (item.genres.isNotEmpty)
@@ -230,6 +242,57 @@ class _MediaDetailPageState extends State<MediaDetailPage> {
   static String _seasonLabel(SeasonInfo season) {
     final name = season.name?.trim() ?? '';
     return name.isEmpty ? 'Season ${season.number}' : 'Season ${season.number} · $name';
+  }
+}
+
+/// The title's own logo, with the plain title as the loading and error
+/// fallback. The logo never exceeds 72 dp at scale 1.0 and is left aligned;
+/// its width is bounded by the page, and both are scaled by the interface
+/// setting (never by text scaling, which the app applies globally).
+class _TitleLogo extends StatelessWidget {
+  const _TitleLogo({
+    required this.url,
+    required this.title,
+    required this.scale,
+  });
+
+  final String url;
+  final String title;
+  final double scale;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final factor = scale.isFinite && scale > 0 ? scale : 1.0;
+    final fallback = Text(
+      title,
+      maxLines: 2,
+      overflow: TextOverflow.ellipsis,
+      style: theme.textTheme.headlineSmall,
+    );
+    return Semantics(
+      label: title,
+      image: true,
+      container: true,
+      excludeSemantics: true,
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: 72 * factor),
+          child: Image.network(
+            url,
+            fit: BoxFit.contain,
+            alignment: Alignment.centerLeft,
+            excludeFromSemantics: true,
+            // frameBuilder still runs after the image is ready, so the frame
+            // number is what separates "loading" from "loaded".
+            frameBuilder: (context, child, frame, wasSynchronouslyLoaded) =>
+                frame == null ? fallback : child,
+            errorBuilder: (context, error, stackTrace) => fallback,
+          ),
+        ),
+      ),
+    );
   }
 }
 

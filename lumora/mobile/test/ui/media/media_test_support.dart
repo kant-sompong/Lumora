@@ -30,6 +30,14 @@ const MediaItem tvItem = MediaItem(
   tmdbId: 95396,
 );
 
+const MediaItem adultItem = MediaItem(
+  id: 'movie:adult',
+  title: 'Adult Feature',
+  kind: MediaKind.movie,
+  year: '2023',
+  adult: true,
+);
+
 const MediaItem animeItem = MediaItem(
   id: 'anime:154587',
   title: 'Frieren',
