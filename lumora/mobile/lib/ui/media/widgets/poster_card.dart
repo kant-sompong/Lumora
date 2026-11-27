@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../models/media_item.dart';
 import '../../../theme/lumora_theme.dart';
+import 'adult_badge.dart';
 import 'media_colors.dart';
 
 /// A poster tile: artwork, then title and the year/rating line.
@@ -15,11 +16,16 @@ class PosterCard extends StatelessWidget {
     this.onTap,
     this.compact = false,
     this.width,
+    this.scale = 1.0,
   });
 
   final MediaItem item;
   final VoidCallback? onTap;
   final bool compact;
+
+  /// The interface scale for non-text sizes (the 18+ pill), normally
+  /// [AppSettings.uiScale]. Title text is left to the global text scaler.
+  final double scale;
 
   /// When null the card fills its parent (used by the search grid).
   final double? width;
@@ -46,7 +52,7 @@ class PosterCard extends StatelessWidget {
             borderRadius: BorderRadius.circular(LumoraRadius.md),
             child: AspectRatio(
               aspectRatio: 2 / 3,
-              child: _Poster(item: item),
+              child: _Poster(item: item, scale: scale),
             ),
           ),
           const SizedBox(height: 6),
@@ -69,21 +75,38 @@ class PosterCard extends StatelessWidget {
 }
 
 class _Poster extends StatelessWidget {
-  const _Poster({required this.item});
+  const _Poster({required this.item, required this.scale});
 
   final MediaItem item;
+  final double scale;
 
   @override
   Widget build(BuildContext context) {
     const placeholder = _PosterPlaceholder();
     final url = item.posterUrl?.trim() ?? '';
-    if (url.isEmpty) return placeholder;
-    return Image.network(
-      url,
-      fit: BoxFit.cover,
-      errorBuilder: (_, __, ___) => placeholder,
-      loadingBuilder: (context, child, progress) =>
-          progress == null ? child : placeholder,
+    final artwork = url.isEmpty
+        ? placeholder
+        : Image.network(
+            url,
+            fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) => placeholder,
+            loadingBuilder: (context, child, progress) =>
+                progress == null ? child : placeholder,
+          );
+    if (!item.adult) {
+      return artwork;
+    }
+    final factor = scale.isFinite && scale > 0 ? scale : 1.0;
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        artwork,
+        Positioned(
+          top: 6 * factor,
+          left: 6 * factor,
+          child: AdultBadge(scale: factor),
+        ),
+      ],
     );
   }
 }

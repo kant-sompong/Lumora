@@ -9,6 +9,7 @@ import '../../theme/lumora_theme.dart';
 import 'future_guard.dart';
 import 'media_detail_page.dart';
 import 'media_search_page.dart';
+import 'widgets/media_scale.dart';
 import 'widgets/shelf_row.dart';
 import 'widgets/state_views.dart';
 
@@ -54,6 +55,7 @@ class _MediaHomePageState extends State<MediaHomePage> {
   @override
   Widget build(BuildContext context) {
     final compact = context.watch<AppSettings>().compactCards;
+    final scale = mediaUiScale(context);
     return Scaffold(
       appBar: AppBar(
         title: const Text('Movies & TV'),
@@ -125,6 +127,7 @@ class _MediaHomePageState extends State<MediaHomePage> {
               itemBuilder: (context, index) => ShelfRow(
                 shelf: shelves[index],
                 compact: compact,
+                scale: scale,
                 onItemTap: _open,
               ),
             );

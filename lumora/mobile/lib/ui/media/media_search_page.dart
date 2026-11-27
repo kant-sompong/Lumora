@@ -9,6 +9,7 @@ import '../../models/media_item.dart';
 import '../../theme/lumora_theme.dart';
 import 'future_guard.dart';
 import 'media_detail_page.dart';
+import 'widgets/media_scale.dart';
 import 'widgets/poster_card.dart';
 import 'widgets/state_views.dart';
 
@@ -118,6 +119,7 @@ class _MediaSearchPageState extends State<MediaSearchPage> {
       );
     }
     final compact = context.watch<AppSettings>().compactCards;
+    final scale = mediaUiScale(context);
     return FutureBuilder<List<MediaItem>>(
       future: future,
       builder: (context, snapshot) {
@@ -158,10 +160,10 @@ class _MediaSearchPageState extends State<MediaSearchPage> {
         }
         return GridView.builder(
           padding: const EdgeInsets.all(LumoraSpace.lg),
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: 3,
-            mainAxisSpacing: LumoraSpace.lg,
-            crossAxisSpacing: LumoraSpace.md,
+            mainAxisSpacing: LumoraSpace.lg * scale,
+            crossAxisSpacing: LumoraSpace.md * scale,
             childAspectRatio: 0.46,
           ),
           itemCount: results.length,
@@ -170,6 +172,7 @@ class _MediaSearchPageState extends State<MediaSearchPage> {
             return PosterCard(
               item: item,
               compact: compact,
+              scale: scale,
               onTap: () => _open(item),
             );
           },
