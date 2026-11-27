@@ -1,25 +1,49 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
+import 'package:lumora_mobile/data/anime_identity.dart';
 import 'package:lumora_mobile/data/media_repository.dart';
+import 'package:lumora_mobile/data/provider_health.dart';
 import 'package:lumora_mobile/data/settings_store.dart';
 import 'package:lumora_mobile/models/media_item.dart';
 import 'package:lumora_mobile/nav.dart';
 import 'package:provider/provider.dart';
 
-MediaItem movie() => MediaItem(
-      id: '1',
-      title: 'The Quiet Orbit',
-      kind: MediaKind.movie,
-      tmdbId: 603,
-    );
+MediaItem movie() => const MediaItem(
+  id: '1',
+  title: 'The Quiet Orbit',
+  kind: MediaKind.movie,
+  tmdbId: 603,
+);
 
-MediaItem anime() => MediaItem(
-      id: '2',
-      title: 'Some Anime',
-      kind: MediaKind.anime,
-      tmdbId: 99,
-      anilistId: 4242,
-    );
+MediaItem series() => const MediaItem(
+  id: '2',
+  title: 'Some Show',
+  kind: MediaKind.tv,
+  tmdbId: 1399,
+);
+
+MediaItem anime() => const MediaItem(
+  id: '3',
+  title: 'Some Anime',
+  kind: MediaKind.anime,
+  tmdbId: 99,
+  anilistId: 4242,
+);
+
+/// A health service whose `cinesrc.st` host answers slowly.
+ProviderHealthService slowCineSrc(AppSettings settings) {
+  return ProviderHealthService(
+    settings,
+    client: MockClient((http.Request request) async {
+      if (request.url.host == 'cinesrc.st') {
+        await Future<void>.delayed(const Duration(milliseconds: 40));
+      }
+      return http.Response('', 200);
+    }),
+  );
+}
 
 void main() {
   group('pickProvider', () {
@@ -32,8 +56,9 @@ void main() {
     });
 
     test('falls back to the first enabled provider that supports the kind', () {
-      final settings =
-          AppSettings(enabledProviderIds: <String>['ani', 'cinesrc']);
+      final settings = AppSettings(
+        enabledProviderIds: <String>['ani', 'cinesrc'],
+      );
       expect(pickProvider(settings, movie())?.id, 'cinesrc');
     });
 
@@ -51,16 +76,196 @@ void main() {
       expect(pickProvider(AppSettings(), movie()), isNull);
     });
 
-    test('keeps the user order for anime and the TMDB providers', () {
+    test('starts anime on ani.pm even when it is not first in the order', () {
       final settings = AppSettings(
         enabledProviderIds: <String>['toflix', 'ani'],
+        defaultProviderId: 'toflix',
       );
-      expect(pickProvider(settings, anime())?.id, 'toflix');
+      expect(pickProvider(settings, anime())?.id, 'ani');
+      expect(pickProvider(settings, movie())?.id, 'toflix');
     });
   });
 
-  // The player's switch list is private to nav.dart; it is covered here through
-  // openPlayer, and the URL building itself by agent A's registry tests.
+  group('needsIdentityLookup', () {
+    test('only for non-anime titles with a Client ID', () {
+      expect(needsIdentityLookup(movie(), AppSettings()), isFalse);
+      expect(
+        needsIdentityLookup(movie(), AppSettings(malClientId: 'abc')),
+        isTrue,
+      );
+      expect(
+        needsIdentityLookup(series(), AppSettings(malClientId: 'abc')),
+        isTrue,
+      );
+      expect(
+        needsIdentityLookup(anime(), AppSettings(malClientId: 'abc')),
+        isFalse,
+      );
+      expect(
+        needsIdentityLookup(movie(), AppSettings(malClientId: '  ')),
+        isFalse,
+      );
+    });
+  });
+
+  group('planPlayback', () {
+    test('never looks a title up without a Client ID', () async {
+      var looked = false;
+      final plan = await planPlayback(
+        movie(),
+        AppSettings(),
+        lookup: (MediaItem item, AppSettings settings) async {
+          looked = true;
+          return const AnimeIdentity(
+            status: IdentityStatus.anime,
+            anilistId: 42,
+          );
+        },
+      );
+      expect(looked, isFalse);
+      expect(plan.item.kind, MediaKind.movie);
+      expect(plan.identity, isNull);
+    });
+
+    test('an anime title is not looked up again', () async {
+      var looked = false;
+      final plan = await planPlayback(
+        anime(),
+        AppSettings(malClientId: 'abc'),
+        lookup: (MediaItem item, AppSettings settings) async {
+          looked = true;
+          return const AnimeIdentity(status: IdentityStatus.unverified);
+        },
+      );
+      expect(looked, isFalse);
+      expect(plan.item.anilistId, 4242);
+    });
+
+    test('a verified match becomes anime with the AniList id', () async {
+      final plan = await planPlayback(
+        movie(),
+        AppSettings(malClientId: 'abc'),
+        lookup: (MediaItem item, AppSettings settings) async =>
+            const AnimeIdentity(
+              status: IdentityStatus.anime,
+              malId: 21,
+              anilistId: 42,
+            ),
+      );
+      expect(plan.item.kind, MediaKind.anime);
+      expect(plan.item.anilistId, 42);
+      // The TMDB id is kept: the film providers still work.
+      expect(plan.item.tmdbId, 603);
+      expect(plan.identity?.anilistId, 42);
+    });
+
+    test('unverified and not-anime leave the title alone', () async {
+      for (final status in <IdentityStatus>[
+        IdentityStatus.unverified,
+        IdentityStatus.notAnime,
+      ]) {
+        final plan = await planPlayback(
+          movie(),
+          AppSettings(malClientId: 'abc'),
+          lookup: (MediaItem item, AppSettings settings) async =>
+              AnimeIdentity(status: status),
+        );
+        expect(plan.item.kind, MediaKind.movie);
+        expect(plan.item.anilistId, isNull);
+      }
+    });
+
+    test('a throwing lookup never blocks playback', () async {
+      final plan = await planPlayback(
+        movie(),
+        AppSettings(malClientId: 'abc'),
+        lookup: (MediaItem item, AppSettings settings) async =>
+            throw StateError('offline'),
+      );
+      expect(plan.item.kind, MediaKind.movie);
+    });
+  });
+
+  group('playbackTargets', () {
+    test('anime goes to ani.pm first, then the user order', () {
+      final settings = AppSettings(
+        enabledProviderIds: <String>['toflix', 'ani'],
+      );
+      final targets = playbackTargets(PlaybackPlan(item: anime()), settings);
+      expect(targets.map((t) => t.providerId), <String>['ani', 'toflix']);
+    });
+
+    test('a film uses the default provider', () {
+      final settings = AppSettings(
+        enabledProviderIds: <String>['cinesrc', 'rivestream'],
+        defaultProviderId: 'rivestream',
+      );
+      final targets = playbackTargets(PlaybackPlan(item: movie()), settings);
+      expect(targets.first.providerId, 'rivestream');
+      expect(targets.map((t) => t.providerId), <String>[
+        'rivestream',
+        'cinesrc',
+      ]);
+    });
+
+    test('a verified identity routes a TMDB film to ani.pm', () {
+      final settings = AppSettings(
+        enabledProviderIds: <String>['cinesrc', 'ani'],
+      );
+      final plan = PlaybackPlan(
+        item: movie().copyWith(kind: MediaKind.anime, anilistId: 42),
+        identity: const AnimeIdentity(
+          status: IdentityStatus.anime,
+          anilistId: 42,
+        ),
+      );
+      final targets = playbackTargets(plan, settings);
+      expect(targets.map((t) => t.providerId), <String>['ani']);
+      expect(targets.single.url.path, contains('/42/'));
+    });
+
+    test('automatic choice puts the fastest reachable provider first', () async {
+      final settings = AppSettings(
+        enabledProviderIds: <String>['cinesrc', 'rivestream'],
+        defaultProviderId: 'cinesrc',
+      );
+      final health = slowCineSrc(settings);
+      await health.checkAll();
+      expect(health.fastest(settings.enabledProviderIds), 'rivestream');
+
+      final targets = playbackTargets(
+        PlaybackPlan(item: movie()),
+        settings,
+        health: health,
+      );
+      expect(targets.first.providerId, 'rivestream');
+    });
+
+    test('automatic choice off keeps the default first', () async {
+      final settings = AppSettings(
+        enabledProviderIds: <String>['cinesrc', 'rivestream'],
+        defaultProviderId: 'cinesrc',
+        autoProvider: false,
+      );
+      final health = slowCineSrc(settings);
+      await health.checkAll();
+
+      final targets = playbackTargets(
+        PlaybackPlan(item: movie()),
+        settings,
+        health: health,
+      );
+      expect(targets.first.providerId, 'cinesrc');
+    });
+
+    test('disabled and kind-incompatible providers are never listed', () {
+      final settings = AppSettings(
+        enabledProviderIds: <String>['cinesrc', 'ani'],
+      );
+      final targets = playbackTargets(PlaybackPlan(item: movie()), settings);
+      expect(targets.map((t) => t.providerId), <String>['cinesrc']);
+    });
+  });
 
   testWidgets('openPlayer asks for a provider when none are enabled', (
     WidgetTester tester,

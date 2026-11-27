@@ -4,11 +4,14 @@ import 'package:flutter/material.dart';
 // `provider` also exports a `StreamProvider`; ours is the media model.
 import 'package:provider/provider.dart' hide StreamProvider;
 
+import '../../data/mal_client.dart';
+import '../../data/provider_health.dart';
 import '../../data/providers_registry.dart';
 import '../../data/settings_store.dart';
 import '../../models/media_item.dart';
 import '../../models/stream_provider.dart';
 import '../../theme/lumora_theme.dart';
+import 'provider_health_view.dart';
 import 'provider_order.dart';
 import 'tmdb_key_tester.dart';
 
@@ -36,6 +39,9 @@ const String tmdbAttribution =
 
 /// The desktop release this mobile build follows.
 const String appVersion = '0.6.27';
+
+/// `1.0` as `100`, for the UI-size row.
+int uiScalePercent(double scale) => (scale * 100).round();
 
 /// Settings with exactly two tabs: General and Providers.
 class SettingsPage extends StatelessWidget {
@@ -203,6 +209,69 @@ class _GeneralTab extends StatelessWidget {
           subtitle:
               const Text('Denser rows and smaller covers, for long lists.'),
         ),
+        const _SectionHeader(
+          'Size',
+          'Scales text and touch targets across the app.',
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: LumoraSpace.md),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Row(
+                children: <Widget>[
+                  Expanded(
+                    child: Slider(
+                      value: settings.uiScale,
+                      min: AppSettings.minUiScale,
+                      max: AppSettings.maxUiScale,
+                      divisions: 10,
+                      label: '${uiScalePercent(settings.uiScale)}%',
+                      onChanged: (double value) {
+                        settings.uiScale = value;
+                        unawaited(_save(context));
+                      },
+                    ),
+                  ),
+                  SizedBox(
+                    width: 52,
+                    child: Text(
+                      '${uiScalePercent(settings.uiScale)}%',
+                      textAlign: TextAlign.end,
+                      style: theme.textTheme.bodyMedium,
+                    ),
+                  ),
+                ],
+              ),
+              Text(
+                'UI size: text, buttons and spacing follow this. 100% is the '
+                'design size.',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+              Text(
+                'Live preview: Lumora at '
+                '${uiScalePercent(settings.uiScale)}%.',
+                style: theme.textTheme.titleSmall?.copyWith(
+                  color: theme.colorScheme.primary,
+                ),
+              ),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton(
+                  onPressed: settings.uiScale == 1.0
+                      ? null
+                      : () {
+                          settings.uiScale = 1.0;
+                          unawaited(_save(context));
+                        },
+                  child: const Text('Reset to 100%'),
+                ),
+              ),
+            ],
+          ),
+        ),
         const _SectionHeader('About', tmdbAttribution),
         ListTile(
           title: const Text('This version'),
@@ -279,21 +348,36 @@ class _ProvidersTab extends StatefulWidget {
 
 class _ProvidersTabState extends State<_ProvidersTab> {
   late final TextEditingController _keyField;
+  late final TextEditingController _malField;
+  late final ProviderHealthService _health;
   String _status = '';
   bool _testing = false;
   bool _statusIsError = false;
+  String _malStatus = '';
+  bool _malTesting = false;
+  bool _malStatusIsError = false;
+  bool _checking = false;
+  Map<String, ProviderHealth> _healthResults = <String, ProviderHealth>{};
+  String _healthNote = '';
 
   @override
   void initState() {
     super.initState();
-    _keyField = TextEditingController(
-      text: context.read<AppSettings>().tmdbApiKey,
-    );
+    final settings = context.read<AppSettings>();
+    _keyField = TextEditingController(text: settings.tmdbApiKey);
+    _malField = TextEditingController(text: settings.malClientId);
+    // One checker for the app, so the player's panel sees the same result.
+    try {
+      _health = context.read<ProviderHealthService>();
+    } on ProviderNotFoundException {
+      _health = ProviderHealthService(settings);
+    }
   }
 
   @override
   void dispose() {
     _keyField.dispose();
+    _malField.dispose();
     super.dispose();
   }
 
@@ -324,6 +408,120 @@ class _ProvidersTabState extends State<_ProvidersTab> {
       settings.tmdbApiKey = key;
       await settings.save();
     }
+  }
+
+  Future<void> _saveMalId(String value) async {
+    final settings = context.read<AppSettings>();
+    settings.malClientId = value.trim();
+    await settings.save();
+  }
+
+  /// Tests the pasted Client ID with one small read request.
+  Future<void> _runMalTest() async {
+    final settings = context.read<AppSettings>();
+    final clientId = _malField.text.trim();
+    if (clientId.isEmpty) {
+      setState(() {
+        _malStatus = 'Paste your MyAnimeList Client ID first.';
+        _malStatusIsError = true;
+      });
+      return;
+    }
+    setState(() {
+      _malTesting = true;
+      _malStatus = 'Testing the Client ID…';
+      _malStatusIsError = false;
+    });
+    String message;
+    var failed = false;
+    try {
+      message = await MalClient(clientId: clientId).testConnection();
+    } on MissingMalClientIdException catch (error) {
+      message = error.message;
+      failed = true;
+    } on MalException catch (error) {
+      message = error.retryable
+          ? '${error.message} You can keep using the app meanwhile.'
+          : error.message;
+      failed = true;
+    } catch (error) {
+      message = 'The MyAnimeList test failed: $error';
+      failed = true;
+    }
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _malTesting = false;
+      _malStatus = message;
+      _malStatusIsError = failed;
+    });
+    if (!failed) {
+      settings.malClientId = clientId;
+      await settings.save();
+    }
+  }
+
+  /// Measures every switched-on provider's base host.
+  Future<void> _checkProviders() async {
+    setState(() {
+      _checking = true;
+      _healthNote = 'Contacting the switched-on providers…';
+    });
+    final results = await _health.checkAll(force: true);
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _checking = false;
+      _healthResults = <String, ProviderHealth>{
+        for (final entry in results) entry.providerId: entry,
+      };
+      _healthNote = results.isEmpty
+          ? 'Switch on a provider first.'
+          : 'Checked ${results.length} provider'
+                '${results.length == 1 ? '' : 's'}.';
+    });
+  }
+
+  /// The desktop's "Use fastest": move the quickest reachable provider to the
+  /// front of the order and make it the default. It never starts playback.
+  Future<void> _useFastest() async {
+    final settings = context.read<AppSettings>();
+    if (_healthResults.isEmpty) {
+      setState(() {
+        _healthNote = 'Test the providers first, then Use fastest can pick one.';
+      });
+      return;
+    }
+    final fastest = _health.fastest(settings.enabledProviderIds);
+    if (fastest == null) {
+      setState(() {
+        _healthNote = 'No provider answered. Your order is unchanged.';
+      });
+      return;
+    }
+    settings.setEnabledProviderIds(<String>[
+      fastest,
+      ...settings.enabledProviderIds.where((String id) => id != fastest),
+    ]);
+    settings.defaultProviderId = fastest;
+    await settings.save();
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _healthNote =
+          'Using ${providerById(fastest)?.name ?? fastest} for playback.';
+    });
+  }
+
+  ProviderHealth? _healthOf(StreamProvider provider) =>
+      _healthResults[provider.id] ?? _health.cached(provider.id);
+
+  String _healthText(StreamProvider provider) {
+    final entry = _healthOf(provider);
+    return entry == null ? 'Not checked' : _health.describe(entry);
   }
 
   /// Every provider: the enabled ones in the user's order, then the rest.
@@ -369,6 +567,7 @@ class _ProvidersTabState extends State<_ProvidersTab> {
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: LumoraSpace.md),
           child: TextField(
+            key: const Key('tmdbApiKeyField'),
             controller: _keyField,
             obscureText: true,
             autocorrect: false,
@@ -452,10 +651,143 @@ class _ProvidersTabState extends State<_ProvidersTab> {
             ),
           ),
         const _SectionHeader(
+          'MyAnimeList',
+          'Anime titles, airing dates and episode counts. Only the public read '
+              'API is used, authenticated with your Client ID. It also tells the '
+              'player when a TMDB title is anime, so ani.pm can play it.',
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: LumoraSpace.md),
+          child: TextField(
+            key: const Key('malClientIdField'),
+            controller: _malField,
+            obscureText: true,
+            autocorrect: false,
+            enableSuggestions: false,
+            decoration: const InputDecoration(
+              labelText: 'MyAnimeList Client ID',
+              border: OutlineInputBorder(),
+              helperMaxLines: 3,
+              helperText:
+                  'Optional. Create one at myanimelist.net/apiconfig and paste '
+                  'it here; without it titles still play on the provider you '
+                  'pick. Release dates can change at short notice.',
+            ),
+            onSubmitted: (String value) => unawaited(_saveMalId(value)),
+            onChanged: (String value) {
+              if (_malStatus.isNotEmpty) {
+                setState(() {
+                  _malStatus = '';
+                  _malStatusIsError = false;
+                });
+              }
+            },
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+            LumoraSpace.md,
+            LumoraSpace.sm,
+            LumoraSpace.md,
+            0,
+          ),
+          child: Row(
+            children: <Widget>[
+              FilledButton(
+                onPressed: _malTesting ? null : () => unawaited(_runMalTest()),
+                child: Text(_malTesting ? 'Testing…' : 'Test'),
+              ),
+              const SizedBox(width: LumoraSpace.sm),
+              TextButton(
+                onPressed: _malTesting
+                    ? null
+                    : () {
+                        _malField.clear();
+                        unawaited(_saveMalId(''));
+                        setState(() {
+                          _malStatus = '';
+                          _malStatusIsError = false;
+                        });
+                      },
+                child: const Text('Clear'),
+              ),
+            ],
+          ),
+        ),
+        if (_malStatus.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              LumoraSpace.md,
+              LumoraSpace.sm,
+              LumoraSpace.md,
+              0,
+            ),
+            child: Text(
+              _malStatus,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: _malStatusIsError
+                    ? theme.colorScheme.error
+                    : theme.colorScheme.primary,
+              ),
+            ),
+          ),
+        const _SectionHeader(
           'Playback sources',
           'Streaming providers, in the order the player tries them. Drag to '
               'reorder; pick one as the default.',
         ),
+        SwitchListTile(
+          value: settings.autoProvider,
+          onChanged: (bool value) {
+            settings.autoProvider = value;
+            unawaited(settings.save());
+          },
+          title: const Text('Choose the fastest provider automatically'),
+          subtitle: const Text(
+            'Test the providers at launch and use whichever answers quickest.',
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+            LumoraSpace.md,
+            LumoraSpace.xs,
+            LumoraSpace.md,
+            0,
+          ),
+          child: Wrap(
+            spacing: LumoraSpace.sm,
+            runSpacing: LumoraSpace.sm,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: <Widget>[
+              FilledButton.tonalIcon(
+                onPressed: _checking
+                    ? null
+                    : () => unawaited(_checkProviders()),
+                icon: const Icon(Icons.network_check, size: 18),
+                label: Text(_checking ? 'Checking…' : 'Check providers'),
+              ),
+              OutlinedButton(
+                onPressed: () => unawaited(_useFastest()),
+                child: const Text('Use fastest'),
+              ),
+            ],
+          ),
+        ),
+        if (_healthNote.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              LumoraSpace.md,
+              LumoraSpace.sm,
+              LumoraSpace.md,
+              0,
+            ),
+            child: Text(
+              _healthNote,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
         ReorderableListView.builder(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
@@ -472,6 +804,8 @@ class _ProvidersTabState extends State<_ProvidersTab> {
               index: index,
               enabled: enabled,
               isDefault: settings.defaultProviderId == provider.id,
+              health: _healthOf(provider),
+              healthText: _healthText(provider),
               onToggled: (bool value) {
                 settings.setProviderEnabled(provider.id, value);
                 unawaited(settings.save());
@@ -509,6 +843,8 @@ class _ProviderTile extends StatelessWidget {
     required this.index,
     required this.enabled,
     required this.isDefault,
+    required this.health,
+    required this.healthText,
     required this.onToggled,
     required this.onMakeDefault,
     super.key,
@@ -518,6 +854,12 @@ class _ProviderTile extends StatelessWidget {
   final int index;
   final bool enabled;
   final bool isDefault;
+
+  /// The last measured health, when there is one.
+  final ProviderHealth? health;
+
+  /// [health] as a word and a time (`Fast · 120 ms`), from `describe`.
+  final String healthText;
   final ValueChanged<bool> onToggled;
   final VoidCallback onMakeDefault;
 
@@ -565,6 +907,19 @@ class _ProviderTile extends StatelessWidget {
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: theme.colorScheme.onSurfaceVariant,
                     ),
+                  ),
+                  const SizedBox(height: 2),
+                  Row(
+                    children: <Widget>[
+                      HealthDot(health: health),
+                      const SizedBox(width: LumoraSpace.xs),
+                      Text(
+                        healthText,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),

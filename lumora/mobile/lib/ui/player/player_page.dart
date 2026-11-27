@@ -5,7 +5,9 @@ import 'package:flutter/services.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
 
+import '../../data/provider_health.dart';
 import '../../theme/lumora_theme.dart';
+import 'player_panel.dart';
 import 'player_policy.dart';
 
 /// One provider's ready-to-load playback URL.
@@ -23,48 +25,86 @@ class PlaybackTarget {
 
 /// One full-screen WebView playing a provider's embed.
 ///
-/// There is no browser chrome here on purpose: no address bar, no tabs and no
-/// history list. The overlay carries a back button, the title and a way to
-/// switch to the next enabled provider.
+/// The page is deliberately bare: landscape, immersive, black, and with no
+/// chrome of its own. Providers draw their own controls in the corners, so the
+/// only thing this app adds is a small handle on the LEFT edge that slides a
+/// panel in when tapped. Nothing is ever drawn over the video otherwise.
 class PlayerPage extends StatefulWidget {
   const PlayerPage({
     required this.url,
     required this.title,
     this.targets = const <PlaybackTarget>[],
     this.initialIndex = 0,
+    this.season,
+    this.episode,
+    this.health,
+    this.webViewForTest,
     super.key,
   });
 
   final Uri url;
   final String title;
 
-  /// Every enabled provider that can play the title, in the user's order.
+  /// Every provider that can play the title, best first.
   final List<PlaybackTarget> targets;
 
   /// Which entry of [targets] [url] came from.
   final int initialIndex;
+
+  /// Shown in the panel as `Season 1 · Episode 3`; null for a film.
+  final int? season;
+  final int? episode;
+
+  /// Cached health, so the panel can show a dot and a time per provider.
+  final ProviderHealthService? health;
+
+  /// Replaces the WebView in widget tests, which have no platform view.
+  @visibleForTesting
+  final Widget? webViewForTest;
+
+  /// The left-edge handle tab; tests tap it to open the panel.
+  static const Key handleKey = Key('playerHandle');
+
+  /// The thin left-edge strip, which opens the panel too.
+  static const Key edgeStripKey = Key('playerEdgeStrip');
 
   @override
   State<PlayerPage> createState() => _PlayerPageState();
 }
 
 class _PlayerPageState extends State<PlayerPage> {
-  static const Duration _overlayLinger = Duration(seconds: 4);
+  /// How long the handle stays brighter after the panel closes.
+  static const Duration _handleLinger = Duration(seconds: 3);
 
-  late final WebViewController _controller;
+  /// Width of the panel and of the handle tab.
+  static const double _panelWidth = 280;
+  static const double _handleWidth = 28;
+  static const double _handleHeight = 96;
+
+  /// The thin strip that also opens the panel.
+  static const double _edgeStripWidth = 24;
+
+  WebViewController? _controller;
+  late final Widget _webView;
   late int _index;
   late Uri _url;
-  Timer? _hideTimer;
-  bool _overlayVisible = true;
   bool _loading = true;
   String? _error;
+  bool _panelOpen = false;
+  bool _handleFaded = false;
+  Timer? _handleTimer;
   Route<void>? _fullscreenRoute;
 
-  Uri get _origin => _url;
-
-  PlaybackTarget? get _target => _index >= 0 && _index < widget.targets.length
-      ? widget.targets[_index]
-      : null;
+  String? get _subtitle {
+    final episode = widget.episode;
+    if (episode == null) {
+      return null;
+    }
+    final season = widget.season;
+    return season == null
+        ? 'Episode $episode'
+        : 'Season $season · Episode $episode';
+  }
 
   @override
   void initState() {
@@ -74,36 +114,53 @@ class _PlayerPageState extends State<PlayerPage> {
       widget.targets.isEmpty ? 0 : widget.targets.length - 1,
     );
     _url = widget.url;
-    _enterFullscreenChrome();
-    _controller = WebViewController();
-    unawaited(_configure());
-    _restartHideTimer();
+    // Landscape and immersive before the first frame, so the provider's page
+    // never lays out in portrait and then rotates.
+    unawaited(_enterPlayerChrome());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        unawaited(_enterPlayerChrome());
+      }
+    });
+
+    final controller = widget.webViewForTest == null ? WebViewController() : null;
+    _controller = controller;
+    // Without a WebView (widget tests) there is nothing to load, so no spinner.
+    _loading = controller != null;
+    _webView =
+        widget.webViewForTest ??
+        WebViewWidget(controller: controller!);
+    if (controller != null) {
+      unawaited(_configure(controller));
+    }
+    _restartHandleTimer();
   }
 
   @override
   void dispose() {
-    _hideTimer?.cancel();
-    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-    SystemChrome.setPreferredOrientations(<DeviceOrientation>[
-      DeviceOrientation.portraitUp,
-    ]);
+    _handleTimer?.cancel();
+    // Back to the rest of the app: portrait, normal system UI.
+    unawaited(
+      SystemChrome.setPreferredOrientations(<DeviceOrientation>[
+        DeviceOrientation.portraitUp,
+      ]),
+    );
+    unawaited(SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge));
     super.dispose();
   }
 
-  Future<void> _enterFullscreenChrome() async {
-    await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+  Future<void> _enterPlayerChrome() async {
     await SystemChrome.setPreferredOrientations(<DeviceOrientation>[
-      DeviceOrientation.portraitUp,
-      DeviceOrientation.portraitDown,
       DeviceOrientation.landscapeLeft,
       DeviceOrientation.landscapeRight,
     ]);
+    await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
   }
 
-  Future<void> _configure() async {
-    await _controller.setJavaScriptMode(JavaScriptMode.unrestricted);
-    await _controller.setBackgroundColor(Colors.black);
-    await _controller.setNavigationDelegate(
+  Future<void> _configure(WebViewController controller) async {
+    await controller.setJavaScriptMode(JavaScriptMode.unrestricted);
+    await controller.setBackgroundColor(Colors.black);
+    await controller.setNavigationDelegate(
       NavigationDelegate(
         onNavigationRequest: _onNavigationRequest,
         onPageStarted: (String url) {
@@ -134,16 +191,20 @@ class _PlayerPageState extends State<PlayerPage> {
         },
       ),
     );
-    final platform = _controller.platform;
+    final platform = controller.platform;
     if (platform is AndroidWebViewController) {
-      // Players start unmuted and may go fullscreen in the same window.
+      // Start playing without a tap, inline, and scroll smoothly. Android's
+      // hardware acceleration is switched on in the manifest
+      // (`android:hardwareAccelerated="true"`); webview_flutter exposes no
+      // per-view switch for it.
       await platform.setMediaPlaybackRequiresUserGesture(false);
+      await platform.setOverScrollMode(WebViewOverScrollMode.never);
       await platform.setCustomWidgetCallbacks(
         onShowCustomWidget: _showFullscreenVideo,
         onHideCustomWidget: _hideFullscreenVideo,
       );
     }
-    await _controller.loadRequest(_url);
+    await controller.loadRequest(_url);
   }
 
   NavigationDecision _onNavigationRequest(NavigationRequest request) {
@@ -151,7 +212,7 @@ class _PlayerPageState extends State<PlayerPage> {
     // a video from a CDN or another site, or the player would stay empty.
     if (shouldNavigateRequest(
       request.url,
-      _origin,
+      _url,
       isMainFrame: request.isMainFrame,
     )) {
       return NavigationDecision.navigate;
@@ -161,7 +222,7 @@ class _PlayerPageState extends State<PlayerPage> {
     // this is a player, not a browser.
     debugPrint(
       'Player blocked navigation to ${requested.toString().split('?').first} '
-      '(${blockedNavigationReason(requested, _origin)}).',
+      '(${blockedNavigationReason(requested, _url)}).',
     );
     return NavigationDecision.prevent;
   }
@@ -196,154 +257,203 @@ class _PlayerPageState extends State<PlayerPage> {
     }
   }
 
-  void _restartHideTimer() {
-    _hideTimer?.cancel();
-    _hideTimer = Timer(_overlayLinger, () {
-      if (mounted) {
-        setState(() => _overlayVisible = false);
+  void _restartHandleTimer() {
+    _handleTimer?.cancel();
+    _handleTimer = Timer(_handleLinger, () {
+      if (mounted && !_panelOpen) {
+        setState(() => _handleFaded = true);
       }
     });
   }
 
-  void _showOverlay() {
-    if (!_overlayVisible) {
-      setState(() => _overlayVisible = true);
+  void _openPanel() {
+    _handleTimer?.cancel();
+    if (!_panelOpen || _handleFaded) {
+      setState(() {
+        _panelOpen = true;
+        _handleFaded = false;
+      });
     }
-    _restartHideTimer();
+  }
+
+  void _closePanel() {
+    if (!_panelOpen) {
+      return;
+    }
+    setState(() => _panelOpen = false);
+    _restartHandleTimer();
   }
 
   void _retry() {
+    final controller = _controller;
     setState(() {
       _error = null;
-      _loading = true;
+      _loading = controller != null;
     });
-    unawaited(_controller.loadRequest(_url));
+    if (controller != null) {
+      unawaited(controller.loadRequest(_url));
+    }
   }
 
-  void _switchProvider() {
+  void _load(int index) {
+    if (index < 0 || index >= widget.targets.length) {
+      return;
+    }
+    final controller = _controller;
+    setState(() {
+      _index = index;
+      _url = widget.targets[index].url;
+      _error = null;
+      _loading = controller != null;
+    });
+    if (controller != null) {
+      unawaited(controller.loadRequest(_url));
+    }
+  }
+
+  void _nextProvider() {
     if (widget.targets.length < 2) {
       return;
     }
-    setState(() {
-      _index = (_index + 1) % widget.targets.length;
-      _url = widget.targets[_index].url;
-      _error = null;
-      _loading = true;
-    });
-    _restartHideTimer();
-    unawaited(_controller.loadRequest(_url));
+    _load((_index + 1) % widget.targets.length);
+    _closePanel();
+  }
+
+  void _selectProvider(int index) {
+    _load(index);
+    _closePanel();
   }
 
   @override
   Widget build(BuildContext context) {
-    final target = _target;
-    return Scaffold(
-      backgroundColor: Colors.black,
-      body: Stack(
-        fit: StackFit.expand,
-        children: <Widget>[
-          WebViewWidget(controller: _controller),
-          if (_loading && _error == null)
-            const Center(
-              child: CircularProgressIndicator(color: Colors.white),
-            ),
-          if (_error != null) _buildError(context),
-          // A thin strip at the top brings the overlay back without stealing
-          // taps from the video itself.
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            height: LumoraSpace.xxl + LumoraSpace.sm,
-            child: GestureDetector(
-              behavior: HitTestBehavior.translucent,
-              onTap: _showOverlay,
-            ),
-          ),
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: AnimatedOpacity(
-              opacity: _overlayVisible ? 1 : 0,
-              duration: const Duration(milliseconds: 180),
-              child: IgnorePointer(
-                ignoring: !_overlayVisible,
-                child: _buildOverlay(context, target),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildOverlay(BuildContext context, PlaybackTarget? target) {
-    final canSwitch = widget.targets.length > 1;
-    return SafeArea(
-      bottom: false,
-      child: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: <Color>[Color(0xCC000000), Color(0x00000000)],
-          ),
-        ),
-        padding: const EdgeInsets.symmetric(
-          horizontal: LumoraSpace.sm,
-          vertical: LumoraSpace.xs,
-        ),
-        child: Row(
+    return PopScope(
+      // The system back gesture closes the panel first, then the player.
+      canPop: !_panelOpen,
+      onPopInvokedWithResult: (bool didPop, Object? result) {
+        if (!didPop && _panelOpen) {
+          _closePanel();
+        }
+      },
+      child: Scaffold(
+        backgroundColor: Colors.black,
+        body: Stack(
+          fit: StackFit.expand,
           children: <Widget>[
-            IconButton(
-              onPressed: () => Navigator.of(context).maybePop(),
-              tooltip: 'Back',
-              icon: const Icon(Icons.arrow_back, color: Colors.white),
-            ),
-            const SizedBox(width: LumoraSpace.xs),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  Text(
-                    widget.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  if (target != null)
-                    Text(
-                      target.providerName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Color(0xB3FFFFFF),
-                        fontSize: 11,
-                      ),
-                    ),
-                ],
+            // The one WebView, kept in the tree: opening the panel never
+            // rebuilds or reloads it.
+            _webView,
+            // A black cover until the provider paints, so no white flash.
+            if (_loading && _error == null)
+              const ColoredBox(color: Colors.black),
+            if (_loading && _error == null)
+              const Center(
+                child: CircularProgressIndicator(color: Colors.white),
               ),
-            ),
-            if (canSwitch)
-              IconButton(
-                onPressed: _switchProvider,
-                tooltip: 'Switch provider',
-                icon: const Icon(Icons.swap_horiz, color: Colors.white),
-              ),
+            if (_error != null) _buildError(context),
+            if (!_panelOpen) _buildEdgeStrip(),
+            if (!_panelOpen) _buildHandle(),
+            if (_panelOpen) _buildScrim(),
+            _buildPanel(),
           ],
         ),
       ),
     );
   }
 
+  Widget _buildEdgeStrip() {
+    return Positioned(
+      left: 0,
+      top: 0,
+      bottom: 0,
+      width: _edgeStripWidth,
+      child: Semantics(
+        button: true,
+        label: 'Player menu',
+        child: GestureDetector(
+          key: PlayerPage.edgeStripKey,
+          behavior: HitTestBehavior.opaque,
+          onTap: _openPanel,
+          child: const SizedBox.expand(),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHandle() {
+    return Positioned(
+      left: 0,
+      top: 0,
+      bottom: 0,
+      child: Center(
+        child: AnimatedOpacity(
+          opacity: _handleFaded ? 0.28 : 0.6,
+          duration: const Duration(milliseconds: 250),
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: _openPanel,
+            child: Semantics(
+              button: true,
+              label: 'Player menu',
+              child: Container(
+                key: PlayerPage.handleKey,
+                width: _handleWidth,
+                height: _handleHeight,
+                decoration: const BoxDecoration(
+                  color: Color(0x99000000),
+                  borderRadius: BorderRadius.horizontal(
+                    right: Radius.circular(14),
+                  ),
+                ),
+                child: const Icon(
+                  Icons.chevron_right,
+                  color: Color(0xCCFFFFFF),
+                  size: 20,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildScrim() {
+    return Positioned.fill(
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: _closePanel,
+        child: const ColoredBox(color: Color(0x66000000)),
+      ),
+    );
+  }
+
+  Widget _buildPanel() {
+    return AnimatedPositioned(
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOutCubic,
+      left: _panelOpen ? 0 : -_panelWidth,
+      top: 0,
+      bottom: 0,
+      width: _panelWidth,
+      child: IgnorePointer(
+        ignoring: !_panelOpen,
+        child: PlayerPanel(
+          title: widget.title,
+          subtitle: _subtitle,
+          targets: widget.targets,
+          selectedIndex: _index,
+          health: widget.health,
+          onBack: () => Navigator.of(context).maybePop(),
+          onClose: _closePanel,
+          onNextProvider: _nextProvider,
+          onSelectProvider: _selectProvider,
+          onReload: _retry,
+        ),
+      ),
+    );
+  }
+
   Widget _buildError(BuildContext context) {
-    final theme = LumoraTheme.dark(const Color(0xFF8557EA));
     return Container(
       color: Colors.black,
       alignment: Alignment.center,
@@ -356,7 +466,11 @@ class _PlayerPageState extends State<PlayerPage> {
           Text(
             widget.title,
             textAlign: TextAlign.center,
-            style: theme.textTheme.titleMedium?.copyWith(color: Colors.white),
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+            ),
           ),
           const SizedBox(height: LumoraSpace.sm),
           Text(
@@ -370,13 +484,11 @@ class _PlayerPageState extends State<PlayerPage> {
             icon: const Icon(Icons.refresh),
             label: const Text('Retry'),
           ),
-          if (widget.targets.length > 1) ...<Widget>[
-            const SizedBox(height: LumoraSpace.sm),
+          if (widget.targets.length > 1)
             TextButton(
-              onPressed: _switchProvider,
-              child: const Text('Switch provider'),
+              onPressed: _nextProvider,
+              child: const Text('Next provider'),
             ),
-          ],
         ],
       ),
     );

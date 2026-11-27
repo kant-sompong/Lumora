@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
+import 'package:lumora_mobile/data/provider_health.dart';
 import 'package:lumora_mobile/data/providers_registry.dart';
 import 'package:lumora_mobile/data/settings_store.dart';
 import 'package:lumora_mobile/theme/lumora_theme.dart';
@@ -7,13 +10,38 @@ import 'package:lumora_mobile/ui/settings/settings_page.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-Widget wrap(AppSettings settings) {
-  return ChangeNotifierProvider<AppSettings>.value(
+Widget wrap(AppSettings settings, {ProviderHealthService? health}) {
+  final app = ChangeNotifierProvider<AppSettings>.value(
     value: settings,
     child: MaterialApp(
       theme: LumoraTheme.dark(settings.accent),
       home: const SettingsPage(),
     ),
+  );
+  if (health == null) {
+    return app;
+  }
+  return Provider<ProviderHealthService>.value(value: health, child: app);
+}
+
+/// Pump the page on a surface tall enough that every row is laid out and
+/// tappable without scrolling.
+Future<void> pumpSettings(
+  WidgetTester tester,
+  AppSettings settings, {
+  ProviderHealthService? health,
+}) async {
+  tester.view.physicalSize = const Size(420, 2600);
+  tester.view.devicePixelRatio = 1.0;
+  addTearDown(tester.view.reset);
+  await tester.pumpWidget(wrap(settings, health: health));
+  await tester.pumpAndSettle();
+}
+
+ProviderHealthService instantHealth(AppSettings settings) {
+  return ProviderHealthService(
+    settings,
+    client: MockClient((http.Request request) async => http.Response('', 200)),
   );
 }
 
@@ -26,7 +54,7 @@ void main() {
     WidgetTester tester,
   ) async {
     final settings = AppSettings(enabledProviderIds: <String>['cinesrc']);
-    await tester.pumpWidget(wrap(settings));
+    await pumpSettings(tester, settings);
 
     expect(find.text('Settings'), findsOneWidget);
     final tabs = find.byType(Tab);
@@ -35,10 +63,10 @@ void main() {
     expect(find.text('Providers'), findsOneWidget);
   });
 
-  testWidgets('General shows theme, accent, compact and About', (
+  testWidgets('General shows theme, accent, compact, size and About', (
     WidgetTester tester,
   ) async {
-    await tester.pumpWidget(wrap(AppSettings()));
+    await pumpSettings(tester, AppSettings());
 
     expect(find.text('Theme'), findsOneWidget);
     expect(find.text('System'), findsOneWidget);
@@ -49,6 +77,10 @@ void main() {
       expect(find.byTooltip(choice.label), findsOneWidget);
     }
     expect(find.text('Compact layout'), findsOneWidget);
+    expect(find.text('UI size: text, buttons and spacing follow this. 100% is '
+        'the design size.'), findsOneWidget);
+    expect(find.text('100%'), findsWidgets);
+    expect(find.text('Reset to 100%'), findsOneWidget);
     expect(find.text(appVersion), findsOneWidget);
     expect(find.text(tmdbAttribution), findsOneWidget);
   });
@@ -57,7 +89,7 @@ void main() {
     WidgetTester tester,
   ) async {
     final settings = AppSettings();
-    await tester.pumpWidget(wrap(settings));
+    await pumpSettings(tester, settings);
 
     await tester.tap(find.byTooltip('Teal'));
     await tester.pumpAndSettle();
@@ -67,6 +99,41 @@ void main() {
     expect(reloaded.accent.toARGB32(), 0xFF0F9D8F);
   });
 
+  testWidgets('the UI size slider moves the setting and persists it', (
+    WidgetTester tester,
+  ) async {
+    final settings = AppSettings();
+    await pumpSettings(tester, settings);
+    expect(settings.uiScale, 1.0);
+
+    await tester.drag(find.byType(Slider), const Offset(60, 0));
+    await tester.pumpAndSettle();
+
+    expect(settings.uiScale, greaterThan(1.0));
+    final reloaded = await AppSettings.load();
+    expect(reloaded.uiScale, settings.uiScale);
+
+    // The setter keeps the slider's 80-130% range.
+    settings.uiScale = 4.0;
+    expect(settings.uiScale, AppSettings.maxUiScale);
+    settings.uiScale = 0.1;
+    expect(settings.uiScale, AppSettings.minUiScale);
+  });
+
+  testWidgets('Reset returns the UI size to 100%', (
+    WidgetTester tester,
+  ) async {
+    final settings = AppSettings(uiScale: 1.2);
+    await pumpSettings(tester, settings);
+
+    await tester.tap(find.text('Reset to 100%'));
+    await tester.pumpAndSettle();
+
+    expect(settings.uiScale, 1.0);
+    final reloaded = await AppSettings.load();
+    expect(reloaded.uiScale, 1.0);
+  });
+
   testWidgets('switching a provider off persists it', (
     WidgetTester tester,
   ) async {
@@ -74,7 +141,7 @@ void main() {
       enabledProviderIds: <String>['cinesrc', 'rivestream'],
       defaultProviderId: 'cinesrc',
     );
-    await tester.pumpWidget(wrap(settings));
+    await pumpSettings(tester, settings);
     await tester.tap(find.text('Providers'));
     await tester.pumpAndSettle();
 
@@ -95,7 +162,7 @@ void main() {
     final settings = AppSettings(
       enabledProviderIds: <String>['cinesrc', 'rivestream'],
     );
-    await tester.pumpWidget(wrap(settings));
+    await pumpSettings(tester, settings);
     await tester.tap(find.text('Providers'));
     await tester.pumpAndSettle();
 
@@ -120,7 +187,7 @@ void main() {
     final settings = AppSettings(
       enabledProviderIds: <String>['cinesrc', 'rivestream'],
     );
-    await tester.pumpWidget(wrap(settings));
+    await pumpSettings(tester, settings);
     await tester.tap(find.text('Providers'));
     await tester.pumpAndSettle();
 
@@ -136,12 +203,124 @@ void main() {
   testWidgets('Providers shows the TMDB key field and Test key', (
     WidgetTester tester,
   ) async {
-    await tester.pumpWidget(wrap(AppSettings()));
+    await pumpSettings(tester, AppSettings());
     await tester.tap(find.text('Providers'));
     await tester.pumpAndSettle();
 
     expect(find.text('TMDB API key'), findsOneWidget);
     expect(find.text('Test key'), findsOneWidget);
     expect(find.textContaining('themoviedb.org/settings/api'), findsOneWidget);
+  });
+
+  testWidgets('Providers shows the optional MyAnimeList Client ID row', (
+    WidgetTester tester,
+  ) async {
+    await pumpSettings(tester, AppSettings());
+    await tester.tap(find.text('Providers'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('MyAnimeList Client ID'), findsOneWidget);
+    expect(find.text('Test'), findsOneWidget);
+    expect(find.textContaining('myanimelist.net/apiconfig'), findsOneWidget);
+
+    // It is a secret: the field is obscured and never shown in clear.
+    final field = tester.widget<TextField>(
+      find.byKey(const Key('malClientIdField')),
+    );
+    expect(field.obscureText, isTrue);
+  });
+
+  testWidgets('testing an empty Client ID does not call MyAnimeList', (
+    WidgetTester tester,
+  ) async {
+    final settings = AppSettings();
+    await pumpSettings(tester, settings);
+    await tester.tap(find.text('Providers'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Test'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Paste your MyAnimeList Client ID first.'), findsOneWidget);
+    expect(settings.malClientId, '');
+  });
+
+  testWidgets('the automatic provider switch persists', (
+    WidgetTester tester,
+  ) async {
+    final settings = AppSettings(enabledProviderIds: <String>['cinesrc']);
+    await pumpSettings(tester, settings);
+    await tester.tap(find.text('Providers'));
+    await tester.pumpAndSettle();
+
+    final row = find.ancestor(
+      of: find.text('Choose the fastest provider automatically'),
+      matching: find.byType(SwitchListTile),
+    );
+    expect(row, findsOneWidget);
+    expect(
+      find.text(
+        'Test the providers at launch and use whichever answers quickest.',
+      ),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.descendant(of: row, matching: find.byType(Switch)));
+    await tester.pumpAndSettle();
+
+    expect(settings.autoProvider, isFalse);
+    final reloaded = await AppSettings.load();
+    expect(reloaded.autoProvider, isFalse);
+  });
+
+  testWidgets('Check providers shows a dot, a word and a time per provider', (
+    WidgetTester tester,
+  ) async {
+    final settings = AppSettings(
+      enabledProviderIds: <String>['cinesrc', 'rivestream'],
+    );
+    await pumpSettings(tester, settings, health: instantHealth(settings));
+    await tester.tap(find.text('Providers'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Not checked'), findsWidgets);
+    // The fake HTTP client needs the real event loop, not the test's clock.
+    await tester.runAsync(() async {
+      await tester.tap(find.text('Check providers'));
+      await tester.pump();
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+    });
+    await tester.pumpAndSettle();
+
+    expect(find.text('Checked 2 providers.'), findsOneWidget);
+    expect(find.textContaining('ms'), findsWidgets);
+    // Only the switched-on providers were contacted; the rest stay unknown.
+    expect(find.text('Not checked'), findsWidgets);
+  });
+
+  testWidgets('Use fastest makes the quickest provider the default', (
+    WidgetTester tester,
+  ) async {
+    final settings = AppSettings(
+      enabledProviderIds: <String>['cinesrc', 'rivestream'],
+    );
+    await pumpSettings(tester, settings, health: instantHealth(settings));
+    await tester.tap(find.text('Providers'));
+    await tester.pumpAndSettle();
+
+    await tester.runAsync(() async {
+      await tester.tap(find.text('Check providers'));
+      await tester.pump();
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+    });
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Use fastest'));
+    await tester.pumpAndSettle();
+
+    expect(settings.defaultProviderId, isNotNull);
+    expect(settings.enabledProviderIds.first, settings.defaultProviderId);
+    expect(find.textContaining('Using '), findsOneWidget);
+    final reloaded = await AppSettings.load();
+    expect(reloaded.defaultProviderId, settings.defaultProviderId);
   });
 }
