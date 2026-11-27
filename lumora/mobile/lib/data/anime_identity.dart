@@ -138,6 +138,11 @@ class AnimeIdentityService {
 
   /// A TMDB title's identity, cached in `shared_preferences` for
   /// [verifiedIdentityTtl] when anime and [otherIdentityTtl] otherwise.
+  ///
+  /// Only an answer MAL actually gave is cached. A lookup failure (no Client
+  /// ID, a network error, MAL 403/429/5xx, a timeout) is returned but never
+  /// stored, so fixing the Client ID in Settings takes effect on the next
+  /// lookup instead of being pinned for a day.
   Future<AnimeIdentity> identifyTmdb(MediaItem item) async {
     final key = cacheKeyFor(item);
     final cached = await _readCache(key);
@@ -145,9 +150,15 @@ class AnimeIdentityService {
       return cached;
     }
     final identity = await _identify(item);
-    await _writeCache(key, identity);
+    if (_cachesAnswer(identity)) {
+      await _writeCache(key, identity);
+    }
     return identity;
   }
+
+  /// Whether [identity] is a real MAL answer rather than a failed lookup.
+  static bool _cachesAnswer(AnimeIdentity identity) =>
+      identity.reason != AnimeIdentity.reasonLookupUnavailable;
 
   Future<AnimeIdentity> _identify(MediaItem item) async {
     if (item.kind == MediaKind.anime && item.anilistId != null) {
