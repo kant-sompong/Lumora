@@ -1,0 +1,28 @@
+{
+  "data": {
+    "Page": {
+      "media": [
+        {
+          "id": 9001,
+          "idMal": 5114,
+          "seasonYear": 2009,
+          "format": "TV",
+          "synonyms": ["FMAB"],
+          "title": {
+            "romaji": "Hagane no Renkinjutsushi FULLMETAL ALCHEMIST",
+            "english": "Fullmetal Alchemist: Brotherhood",
+            "native": "鋼の錬金術師"
+          }
+        },
+        {
+          "id": 9002,
+          "idMal": null,
+          "seasonYear": 2009,
+          "format": "TV",
+          "synonyms": [],
+          "title": { "romaji": "Fullmetal Alchemist: Brotherhood Recap" }
+        }
+      ]
+    }
+  }
+}

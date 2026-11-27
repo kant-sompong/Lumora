@@ -1,0 +1,19 @@
+{
+  "results": [
+    {
+      "id": 209867,
+      "media_type": "tv",
+      "name": "Frieren: Beyond Journey's End",
+      "first_air_date": "2023-09-29",
+      "adult": false,
+      "vote_average": 8.9
+    },
+    {
+      "id": 209868,
+      "media_type": "tv",
+      "name": "Frieren: Beyond Journey's End Specials",
+      "first_air_date": "2023-09-29",
+      "adult": false
+    }
+  ]
+}
