@@ -9,6 +9,7 @@ import 'package:lumora_mobile/data/settings_store.dart';
 import 'package:lumora_mobile/models/media_item.dart';
 import 'package:lumora_mobile/nav.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 MediaItem movie() => const MediaItem(
   id: '1',
@@ -45,7 +46,25 @@ ProviderHealthService slowCineSrc(AppSettings settings) {
   );
 }
 
+/// A health service with canned timings, so no request leaves the test.
+ProviderHealthService timedHealth(
+  AppSettings settings,
+  Map<String, int> milliseconds,
+) {
+  return ProviderHealthService(
+    settings,
+    probe: (Uri uri, Duration timeout) async => (
+      statusCode: 200,
+      ms: milliseconds[uri.host] ?? 500,
+    ),
+  );
+}
+
 void main() {
+  setUp(() {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+  });
+
   group('pickProvider', () {
     test('uses the default provider when it is enabled and can play', () {
       final settings = AppSettings(
@@ -74,6 +93,25 @@ void main() {
       final settings = AppSettings(enabledProviderIds: <String>['ani']);
       expect(pickProvider(settings, movie()), isNull);
       expect(pickProvider(AppSettings(), movie()), isNull);
+    });
+
+    test('automatic choice opens the fastest reachable provider', () async {
+      final settings = AppSettings(
+        enabledProviderIds: <String>['cinesrc', 'rivestream'],
+        defaultProviderId: 'cinesrc',
+      );
+      final health = timedHealth(settings, <String, int>{
+        'cinesrc.st': 900,
+        'www.rivestream.app': 120,
+      });
+      await health.checkAll();
+
+      expect(
+        pickProvider(settings, movie(), health: health)?.id,
+        'rivestream',
+      );
+      // Without the health data the saved default still wins.
+      expect(pickProvider(settings, movie())?.id, 'cinesrc');
     });
 
     test('starts anime on ani.pm even when it is not first in the order', () {
@@ -265,6 +303,55 @@ void main() {
       final targets = playbackTargets(PlaybackPlan(item: movie()), settings);
       expect(targets.map((t) => t.providerId), <String>['cinesrc']);
     });
+  });
+
+  testWidgets('the player order comes from the app-level health service', (
+    WidgetTester tester,
+  ) async {
+    final settings = AppSettings(
+      enabledProviderIds: <String>['cinesrc', 'rivestream', 'ani', 'toflix'],
+      defaultProviderId: 'cinesrc',
+    );
+    final health = timedHealth(settings, <String, int>{
+      'cinesrc.st': 900,
+      'www.rivestream.app': 120,
+      'ani.pm': 700,
+      'toflix.co': 80,
+    });
+    await health.checkAll();
+
+    late BuildContext context;
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<AppSettings>.value(value: settings),
+          // The same app-level instance Settings writes its check into.
+          Provider<ProviderHealthService>.value(value: health),
+        ],
+        child: MaterialApp(
+          home: Builder(
+            builder: (BuildContext inner) {
+              context = inner;
+              return const Scaffold(body: SizedBox());
+            },
+          ),
+        ),
+      ),
+    );
+
+    // The function openPlayer uses to build the player's list: the quickest
+    // reachable provider opens, not the saved default (cinesrc).
+    final film = playerTargets(context, PlaybackPlan(item: movie()), settings);
+    expect(film.first.providerId, 'toflix');
+    expect(film.first.providerId, isNot(settings.defaultProviderId));
+
+    // Anime still goes to ani.pm first, even though toflix answered faster.
+    final animated = playerTargets(
+      context,
+      PlaybackPlan(item: anime()),
+      settings,
+    );
+    expect(animated.first.providerId, 'ani');
   });
 
   testWidgets('openPlayer asks for a provider when none are enabled', (

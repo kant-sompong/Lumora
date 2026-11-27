@@ -60,6 +60,11 @@ class LumoraApp extends StatelessWidget {
                 vertical: density,
               ),
             ),
+            // UI size reaches text and touch targets here and nowhere else.
+            // The media widgets scale their own poster/shelf sizes from
+            // `AppSettings.uiScale` themselves and leave text to this scaler,
+            // so neither side is scaled twice: no Transform.scale and no
+            // MediaQuery size override here.
             builder: (BuildContext context, Widget? child) {
               final media = MediaQuery.of(context);
               return MediaQuery(

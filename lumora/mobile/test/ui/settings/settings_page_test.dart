@@ -10,11 +10,22 @@ import 'package:lumora_mobile/ui/settings/settings_page.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-Widget wrap(AppSettings settings, {ProviderHealthService? health}) {
+Widget wrap(
+  AppSettings settings, {
+  ProviderHealthService? health,
+  double systemTextScale = 1.0,
+}) {
   final app = ChangeNotifierProvider<AppSettings>.value(
     value: settings,
     child: MaterialApp(
       theme: LumoraTheme.dark(settings.accent),
+      // A large accessibility text size, as a phone can be set to.
+      builder: (BuildContext context, Widget? child) => MediaQuery(
+        data: MediaQuery.of(context).copyWith(
+          textScaler: TextScaler.linear(systemTextScale),
+        ),
+        child: child ?? const SizedBox.shrink(),
+      ),
       home: const SettingsPage(),
     ),
   );
@@ -30,11 +41,14 @@ Future<void> pumpSettings(
   WidgetTester tester,
   AppSettings settings, {
   ProviderHealthService? health,
+  double systemTextScale = 1.0,
 }) async {
   tester.view.physicalSize = const Size(420, 2600);
   tester.view.devicePixelRatio = 1.0;
   addTearDown(tester.view.reset);
-  await tester.pumpWidget(wrap(settings, health: health));
+  await tester.pumpWidget(
+    wrap(settings, health: health, systemTextScale: systemTextScale),
+  );
   await tester.pumpAndSettle();
 }
 
@@ -292,10 +306,54 @@ void main() {
     });
     await tester.pumpAndSettle();
 
-    expect(find.text('Checked 2 providers.'), findsOneWidget);
+    // The health service measures every provider, switched on or not.
+    expect(
+      find.text('Checked ${allProviders.length} providers.'),
+      findsOneWidget,
+    );
     expect(find.textContaining('ms'), findsWidgets);
-    // Only the switched-on providers were contacted; the rest stay unknown.
-    expect(find.text('Not checked'), findsWidgets);
+    expect(find.text('Not checked'), findsNothing);
+  });
+
+  testWidgets('UI size fits at 0.8, 1.0 and 1.3 with large system text', (
+    WidgetTester tester,
+  ) async {
+    for (final double uiScale in <double>[0.8, 1.0, 1.3]) {
+      final settings = AppSettings(
+        enabledProviderIds: <String>['cinesrc'],
+        uiScale: uiScale,
+      );
+      await pumpSettings(
+        tester,
+        settings,
+        health: instantHealth(settings),
+        systemTextScale: 1.3,
+      );
+
+      // A RenderFlex overflow is reported as an exception during layout.
+      expect(
+        tester.takeException(),
+        isNull,
+        reason: 'General at UI size $uiScale, system text 1.3',
+      );
+
+      // The page receives the app-level text scaler as-is: it never multiplies
+      // the system size by uiScale a second time.
+      final BuildContext page = tester.element(find.byType(SettingsPage));
+      expect(
+        MediaQuery.textScalerOf(page).scale(10),
+        closeTo(13, 0.001),
+        reason: 'double scaling at UI size $uiScale',
+      );
+
+      await tester.tap(find.text('Providers'));
+      await tester.pumpAndSettle();
+      expect(
+        tester.takeException(),
+        isNull,
+        reason: 'Providers at UI size $uiScale, system text 1.3',
+      );
+    }
   });
 
   testWidgets('Use fastest makes the quickest provider the default', (

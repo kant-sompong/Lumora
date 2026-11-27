@@ -28,9 +28,14 @@ List<StreamProvider> enabledProviders(AppSettings settings) {
 
 /// The provider [openPlayer] should try first for [item].
 ///
-/// Null means nothing enabled can play it.
-StreamProvider? pickProvider(AppSettings settings, MediaItem item) {
-  final ids = orderedProviders(item: item, settings: settings);
+/// Pass the app-level [ProviderHealthService] so an automatic choice can pick
+/// the fastest reachable provider. Null means nothing enabled can play it.
+StreamProvider? pickProvider(
+  AppSettings settings,
+  MediaItem item, {
+  ProviderHealthService? health,
+}) {
+  final ids = orderedProviders(item: item, settings: settings, health: health);
   return ids.isEmpty ? null : providerById(ids.first);
 }
 
@@ -146,6 +151,26 @@ ProviderHealthService? _healthService(BuildContext c) {
   }
 }
 
+/// The player's provider list, ordered with the app-level health service.
+///
+/// This is the one place [openPlayer] computes the order, so a health check
+/// run in Settings decides the provider it opens with.
+List<PlaybackTarget> playerTargets(
+  BuildContext c,
+  PlaybackPlan plan,
+  AppSettings settings, {
+  int season = 1,
+  int episode = 1,
+}) {
+  return playbackTargets(
+    plan,
+    settings,
+    health: _healthService(c),
+    season: season,
+    episode: episode,
+  );
+}
+
 /// Open [item] in the full-screen player.
 Future<void> openPlayer(
   BuildContext c,
@@ -175,10 +200,10 @@ Future<void> openPlayer(
     }
   }
 
-  final targets = playbackTargets(
+  final targets = playerTargets(
+    c,
     plan,
     settings,
-    health: health,
     season: season,
     episode: episode,
   );
