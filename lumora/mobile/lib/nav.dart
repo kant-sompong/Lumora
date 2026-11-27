@@ -4,6 +4,9 @@ import 'package:provider/provider.dart' hide StreamProvider;
 
 // The only registry symbols this file is allowed to touch. Providers build
 // their own URLs; nothing here parses `StreamProvider.urlTemplate`.
+import 'data/anime_identity.dart';
+import 'data/provider_choice.dart';
+import 'data/provider_health.dart';
 import 'data/providers_registry.dart' show buildWatchUrl, providerById;
 import 'data/settings_store.dart';
 import 'models/media_item.dart';
@@ -25,46 +28,103 @@ List<StreamProvider> enabledProviders(AppSettings settings) {
 
 /// The provider [openPlayer] should try first for [item].
 ///
-/// The user's default wins when it is enabled and can play the kind; otherwise
-/// the first enabled provider that can. Null means nothing can play it.
-StreamProvider? pickProvider(AppSettings settings, MediaItem item) {
-  final candidates = enabledProviders(settings)
-      .where((StreamProvider p) => p.kinds.contains(item.kind))
-      .toList();
-  if (candidates.isEmpty) {
-    return null;
-  }
-  final defaultId = settings.defaultProviderId;
-  for (final provider in candidates) {
-    if (provider.id == defaultId) {
-      return provider;
-    }
-  }
-  return candidates.first;
-}
-
-/// The provider-switch list for the player: every enabled provider that can
-/// play [item], in the user's order.
-///
-/// [buildWatchUrl] throws [ArgumentError] when the provider cannot play the
-/// kind or the title lacks the id its route needs — agent A's
-/// `MissingMediaIdException` extends [ArgumentError] for exactly this
-/// `on ArgumentError` catch — so that provider is skipped and a film-only id
-/// cannot leave a dead entry in the switch list.
-List<PlaybackTarget> _targetsFor(
+/// Pass the app-level [ProviderHealthService] so an automatic choice can pick
+/// the fastest reachable provider. Null means nothing enabled can play it.
+StreamProvider? pickProvider(
   AppSettings settings,
   MediaItem item, {
+  ProviderHealthService? health,
+}) {
+  final ids = orderedProviders(item: item, settings: settings, health: health);
+  return ids.isEmpty ? null : providerById(ids.first);
+}
+
+/// Whether [item] is worth an identity lookup before playback.
+///
+/// Only titles that are not already anime, have no AniList id, and a saved
+/// MyAnimeList Client ID qualify. Everything else plays immediately.
+bool needsIdentityLookup(MediaItem item, AppSettings settings) =>
+    item.kind != MediaKind.anime &&
+    item.anilistId == null &&
+    settings.malClientId.trim().isNotEmpty;
+
+/// How a lookup answers for one title; replaceable in tests.
+typedef IdentityLookup =
+    Future<AnimeIdentity> Function(MediaItem item, AppSettings settings);
+
+/// What the player should play, after at most one identity lookup.
+class PlaybackPlan {
+  const PlaybackPlan({required this.item, this.identity});
+
+  /// [item], or the same title retyped as anime once MyAnimeList proved it.
+  final MediaItem item;
+
+  /// The verified identity, when that is what made [item] anime.
+  final AnimeIdentity? identity;
+}
+
+/// Resolves [item] to something playable.
+///
+/// A verified anime match with an AniList id is retyped so ani.pm can play it.
+/// Everything else — unverified, not anime, a refused or missing lookup — is
+/// returned untouched: a title is never hidden or blocked because of this.
+Future<PlaybackPlan> planPlayback(
+  MediaItem item,
+  AppSettings settings, {
+  IdentityLookup? lookup,
+}) async {
+  if (!needsIdentityLookup(item, settings)) {
+    return PlaybackPlan(item: item);
+  }
+  final resolve =
+      lookup ?? (MediaItem it, AppSettings s) => AnimeIdentityService(s).identifyTmdb(it);
+  AnimeIdentity identity;
+  try {
+    identity = await resolve(item, settings);
+  } catch (_) {
+    return PlaybackPlan(item: item);
+  }
+  final anilistId = identity.anilistId;
+  if (identity.status == IdentityStatus.anime && anilistId != null) {
+    return PlaybackPlan(
+      item: item.copyWith(kind: MediaKind.anime, anilistId: anilistId),
+      identity: identity,
+    );
+  }
+  return PlaybackPlan(item: item, identity: identity);
+}
+
+/// The player's provider list for [plan], best first.
+///
+/// Ordered by [orderedProviders]; a provider that cannot build a URL for this
+/// title is skipped, so a film-only id cannot leave a dead entry in the list.
+List<PlaybackTarget> playbackTargets(
+  PlaybackPlan plan,
+  AppSettings settings, {
+  ProviderHealthService? health,
   int season = 1,
   int episode = 1,
 }) {
+  final ordered = orderedProviders(
+    item: plan.item,
+    settings: settings,
+    health: health,
+    identity: plan.identity,
+  );
   final targets = <PlaybackTarget>[];
-  for (final provider in enabledProviders(settings)) {
-    if (!provider.kinds.contains(item.kind)) {
+  for (final id in ordered) {
+    final provider = providerById(id);
+    if (provider == null) {
       continue;
     }
     final Uri url;
     try {
-      url = buildWatchUrl(provider, item, season: season, episode: episode);
+      url = buildWatchUrl(
+        provider,
+        plan.item,
+        season: season,
+        episode: episode,
+      );
     } on ArgumentError {
       continue;
     }
@@ -79,7 +139,39 @@ List<PlaybackTarget> _targetsFor(
   return targets;
 }
 
-/// Open [item] in the full-screen player on the user's provider.
+/// The app-level health service, when the widget tree provides one.
+///
+/// Tests and previews build their own trees without it; the player then simply
+/// has no health dots.
+ProviderHealthService? _healthService(BuildContext c) {
+  try {
+    return c.read<ProviderHealthService>();
+  } on ProviderNotFoundException {
+    return null;
+  }
+}
+
+/// The player's provider list, ordered with the app-level health service.
+///
+/// This is the one place [openPlayer] computes the order, so a health check
+/// run in Settings decides the provider it opens with.
+List<PlaybackTarget> playerTargets(
+  BuildContext c,
+  PlaybackPlan plan,
+  AppSettings settings, {
+  int season = 1,
+  int episode = 1,
+}) {
+  return playbackTargets(
+    plan,
+    settings,
+    health: _healthService(c),
+    season: season,
+    episode: episode,
+  );
+}
+
+/// Open [item] in the full-screen player.
 Future<void> openPlayer(
   BuildContext c,
   MediaItem item, {
@@ -87,15 +179,35 @@ Future<void> openPlayer(
   int episode = 1,
 }) async {
   final settings = c.read<AppSettings>();
-  final provider = pickProvider(settings, item);
-  final targets = _targetsFor(
+  final health = _healthService(c);
+  final messenger = ScaffoldMessenger.maybeOf(c);
+
+  var plan = PlaybackPlan(item: item);
+  if (needsIdentityLookup(item, settings)) {
+    // A short, cancellable-looking note while one lookup runs; playback never
+    // waits for anything else.
+    messenger?.hideCurrentSnackBar();
+    messenger?.showSnackBar(
+      const SnackBar(
+        content: Text('Checking…'),
+        duration: Duration(seconds: 20),
+      ),
+    );
+    plan = await planPlayback(item, settings);
+    messenger?.hideCurrentSnackBar();
+    if (!c.mounted) {
+      return;
+    }
+  }
+
+  final targets = playerTargets(
+    c,
+    plan,
     settings,
-    item,
     season: season,
     episode: episode,
   );
-  if (provider == null || targets.isEmpty) {
-    final messenger = ScaffoldMessenger.maybeOf(c);
+  if (targets.isEmpty) {
     messenger?.hideCurrentSnackBar();
     messenger?.showSnackBar(
       SnackBar(
@@ -108,20 +220,18 @@ Future<void> openPlayer(
     );
     return;
   }
-  var index = 0;
-  for (var i = 0; i < targets.length; i++) {
-    if (targets[i].providerId == provider.id) {
-      index = i;
-      break;
-    }
-  }
+
+  final isMovie = plan.item.kind == MediaKind.movie;
   await Navigator.of(c).push(
     MaterialPageRoute<void>(
       builder: (_) => PlayerPage(
-        url: targets[index].url,
-        title: item.title,
+        url: targets.first.url,
+        title: plan.item.title,
         targets: targets,
-        initialIndex: index,
+        initialIndex: 0,
+        season: isMovie ? null : season,
+        episode: isMovie ? null : episode,
+        health: health,
       ),
     ),
   );
