@@ -12,36 +12,52 @@ import 'providers_registry.dart';
 class AppSettings extends ChangeNotifier {
   AppSettings({
     String tmdbApiKey = '',
+    String malClientId = '',
     List<String>? enabledProviderIds,
     String? defaultProviderId,
     ThemeMode themeMode = ThemeMode.system,
     Color accent = const Color(0xFF8557EA),
     bool compactCards = false,
+    bool autoProvider = true,
+    double uiScale = 1.0,
   }) : _tmdbApiKey = tmdbApiKey,
+       _malClientId = malClientId.trim(),
        _enabledProviderIds = _sanitize(enabledProviderIds ?? const <String>[]),
        _defaultProviderId = defaultProviderId,
        _themeMode = themeMode,
        _accent = accent,
-       _compactCards = compactCards;
+       _compactCards = compactCards,
+       _autoProvider = autoProvider,
+       _uiScale = clampUiScale(uiScale);
 
   /// Keys are the snake_case names agent C's contract fixes.
   static const String keyTmdbApiKey = 'tmdb_api_key';
+  static const String keyMalClientId = 'mal_client_id';
   static const String keyEnabledProviderIds = 'enabled_provider_ids';
   static const String keyDefaultProviderId = 'default_provider_id';
   static const String keyThemeMode = 'theme_mode';
   static const String keyAccentColor = 'accent_color';
   static const String keyCompactCards = 'compact_cards';
+  static const String keyAutoProvider = 'auto_provider';
+  static const String keyUiScale = 'ui_scale';
+
+  /// The range [uiScale] is kept in (contract v3).
+  static const double minUiScale = 0.8;
+  static const double maxUiScale = 1.3;
 
   /// Every provider id, in PC order.
   static List<String> get defaultProviderIds =>
       allProviders.map((provider) => provider.id).toList(growable: false);
 
   String _tmdbApiKey;
+  String _malClientId;
   List<String> _enabledProviderIds;
   String? _defaultProviderId;
   ThemeMode _themeMode;
   Color _accent;
   bool _compactCards;
+  bool _autoProvider;
+  double _uiScale;
 
   String get tmdbApiKey => _tmdbApiKey;
 
@@ -52,6 +68,57 @@ class AppSettings extends ChangeNotifier {
     }
     _tmdbApiKey = trimmed;
     notifyListeners();
+  }
+
+  /// The MyAnimeList Client ID, trimmed. Never logged and never shown in the
+  /// clear; [MalClient] sends it only in the `X-MAL-CLIENT-ID` header.
+  String get malClientId => _malClientId;
+
+  set malClientId(String value) {
+    final trimmed = value.trim();
+    if (_malClientId == trimmed) {
+      return;
+    }
+    _malClientId = trimmed;
+    notifyListeners();
+  }
+
+  /// Whether a reached provider may be chosen automatically (PC setting
+  /// `provider_auto_select`, default on).
+  bool get autoProvider => _autoProvider;
+
+  set autoProvider(bool value) {
+    if (_autoProvider == value) {
+      return;
+    }
+    _autoProvider = value;
+    notifyListeners();
+  }
+
+  /// Interface scale factor, clamped to [minUiScale]-[maxUiScale].
+  double get uiScale => _uiScale;
+
+  set uiScale(double value) {
+    final next = clampUiScale(value);
+    if (_uiScale == next) {
+      return;
+    }
+    _uiScale = next;
+    notifyListeners();
+  }
+
+  /// Clamps a stored or requested scale to the contract's 0.8-1.3 range.
+  static double clampUiScale(double value) {
+    if (value.isNaN) {
+      return 1.0;
+    }
+    if (value < minUiScale) {
+      return minUiScale;
+    }
+    if (value > maxUiScale) {
+      return maxUiScale;
+    }
+    return value;
   }
 
   /// Enabled providers in the user's order.
@@ -161,17 +228,23 @@ class AppSettings extends ChangeNotifier {
     final rawAccent = prefs.get(keyAccentColor);
     final rawKey = prefs.get(keyTmdbApiKey);
     final rawCompact = prefs.get(keyCompactCards);
+    final rawMal = prefs.get(keyMalClientId);
+    final rawAuto = prefs.get(keyAutoProvider);
+    final rawScale = prefs.get(keyUiScale);
 
     final themeText = rawTheme is String ? rawTheme : null;
     final shortKey = rawKey is String ? rawKey : '';
 
     return AppSettings(
       tmdbApiKey: shortKey,
+      malClientId: rawMal is String ? rawMal : '',
       enabledProviderIds: enabled,
       defaultProviderId: rawDefault is String ? rawDefault : null,
       themeMode: parseThemeMode(themeText),
       accent: rawAccent is int ? Color(rawAccent) : const Color(0xFF8557EA),
       compactCards: rawCompact is bool ? rawCompact : false,
+      autoProvider: rawAuto is bool ? rawAuto : true,
+      uiScale: rawScale is num ? rawScale.toDouble() : 1.0,
     );
   }
 
@@ -179,11 +252,14 @@ class AppSettings extends ChangeNotifier {
   Future<void> save() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(keyTmdbApiKey, _tmdbApiKey);
+    await prefs.setString(keyMalClientId, _malClientId);
     await prefs.setStringList(keyEnabledProviderIds, _enabledProviderIds);
     await prefs.setString(keyDefaultProviderId, _defaultProviderId ?? '');
     await prefs.setString(keyThemeMode, themeModeName(_themeMode));
     await prefs.setInt(keyAccentColor, _accent.toARGB32());
     await prefs.setBool(keyCompactCards, _compactCards);
+    await prefs.setBool(keyAutoProvider, _autoProvider);
+    await prefs.setDouble(keyUiScale, _uiScale);
   }
 
   /// `system` for anything unrecognised, as `lgl/theme.py` does.

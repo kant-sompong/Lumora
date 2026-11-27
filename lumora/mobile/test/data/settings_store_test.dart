@@ -18,6 +18,9 @@ void main() {
     expect(settings.themeMode, ThemeMode.system);
     expect(settings.accent.toARGB32(), 0xFF8557EA);
     expect(settings.compactCards, isFalse);
+    expect(settings.malClientId, '');
+    expect(settings.autoProvider, isTrue);
+    expect(settings.uiScale, 1.0);
   });
 
   test('drops unknown and duplicate provider ids but keeps the order', () {
@@ -148,5 +151,73 @@ void main() {
     }
     expect(AppSettings.parseThemeMode(null), ThemeMode.system);
     expect(AppSettings.parseThemeMode('nonsense'), ThemeMode.system);
+  });
+
+  test('the MAL Client ID is trimmed and never compared in the clear', () {
+    final settings = AppSettings();
+    var notifications = 0;
+    settings.addListener(() => notifications++);
+
+    settings.malClientId = '  abc123  ';
+    expect(settings.malClientId, 'abc123');
+    settings.malClientId = 'abc123';
+    expect(notifications, 1);
+  });
+
+  test('the UI scale is clamped to 0.8-1.3', () {
+    final settings = AppSettings();
+    var notifications = 0;
+    settings.addListener(() => notifications++);
+
+    settings.uiScale = 0.5;
+    expect(settings.uiScale, AppSettings.minUiScale);
+    settings.uiScale = 2.0;
+    expect(settings.uiScale, AppSettings.maxUiScale);
+    settings.uiScale = 1.15;
+    expect(settings.uiScale, 1.15);
+    settings.uiScale = 1.15;
+    expect(notifications, 3);
+    expect(AppSettings(uiScale: 9).uiScale, AppSettings.maxUiScale);
+  });
+
+  test('the new settings save and load with their snake_case keys', () async {
+    final settings = AppSettings(
+      malClientId: ' mal-client ',
+      autoProvider: false,
+      uiScale: 1.2,
+    );
+    await settings.save();
+
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getString(AppSettings.keyMalClientId), 'mal-client');
+    expect(prefs.getBool(AppSettings.keyAutoProvider), isFalse);
+    expect(prefs.getDouble(AppSettings.keyUiScale), 1.2);
+
+    final reloaded = await AppSettings.load();
+    expect(reloaded.malClientId, 'mal-client');
+    expect(reloaded.autoProvider, isFalse);
+    expect(reloaded.uiScale, 1.2);
+  });
+
+  test('junk stored values fall back to the new defaults', () async {
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      AppSettings.keyMalClientId: 7,
+      AppSettings.keyAutoProvider: 'yes',
+      AppSettings.keyUiScale: 'big',
+    });
+
+    final settings = await AppSettings.load();
+    expect(settings.malClientId, '');
+    expect(settings.autoProvider, isTrue);
+    expect(settings.uiScale, 1.0);
+  });
+
+  test('an out-of-range stored scale is clamped on load', () async {
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      AppSettings.keyUiScale: 4.2,
+    });
+
+    final settings = await AppSettings.load();
+    expect(settings.uiScale, AppSettings.maxUiScale);
   });
 }
