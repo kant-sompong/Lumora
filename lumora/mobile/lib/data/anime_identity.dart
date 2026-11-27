@@ -68,6 +68,7 @@ class AnimeIdentity {
   static const String reasonAniListAmbiguous = 'anilist-ambiguous';
   static const String reasonAniListUnvalidated = 'anilist-unvalidated';
   static const String reasonAniListLookupFailed = 'anilist-lookup-failed';
+  static const String reasonAniListTitle = 'anilist-title';
 
   /// Whether MAL verified the title as anime.
   bool get verified => status == IdentityStatus.anime;
@@ -120,6 +121,13 @@ class AnimeIdentityService {
   /// MAL media types that can sit behind a catalogue kind (`_KIND_TYPES`).
   static const Map<String, Set<String>> _kindTypes = <String, Set<String>>{
     'tv': <String>{'tv', 'ona', 'ova'},
+    'movie': <String>{'movie', 'special'},
+  };
+
+  /// The AniList formats that fit each catalogue kind, in AniList's spelling
+  /// (`lgl/anime_identity.py` `_ANILIST_KINDS`).
+  static const Map<String, Set<String>> _anilistKinds = <String, Set<String>>{
+    'tv': <String>{'tv', 'tv_short', 'ona', 'ova'},
     'movie': <String>{'movie', 'special'},
   };
 
@@ -201,21 +209,34 @@ class AnimeIdentityService {
       }
     }
 
-    if (matches.isEmpty) {
-      return const AnimeIdentity(
-        status: IdentityStatus.unverified,
-        reason: AnimeIdentity.reasonNoMalMatch,
+    if (matches.length != 1) {
+      // MAL has no single answer. AniList can still name the entry exactly and
+      // carry its own `idMal` link, which MAL then has to confirm
+      // (`lgl/anime_identity.py` `search_anilist_title`), so a title MAL's
+      // title search cannot find is not silently "not anime".
+      final rescued = await _verifyThroughAniList(
+        title: title,
+        year: item.year ?? '',
+        kind: kind,
       );
-    }
-    if (matches.length > 1) {
-      return const AnimeIdentity(
+      if (rescued != null) {
+        return rescued;
+      }
+      return AnimeIdentity(
         status: IdentityStatus.unverified,
-        reason: AnimeIdentity.reasonAmbiguousMalMatch,
+        reason: matches.isEmpty
+            ? AnimeIdentity.reasonNoMalMatch
+            : AnimeIdentity.reasonAmbiguousMalMatch,
       );
     }
 
     final match = matches.single;
-    final resolution = await _resolveAniList(match.id, match.title);
+    final resolution = await _resolveAniList(
+      match.id,
+      title: title,
+      malTitle: match.title,
+      kind: kind,
+    );
     // MAL is the authority: a matching entry is anime even when AniList could
     // not resolve an id. `anilistId` stays null so ani.pm is never handed a
     // MAL id, and provider_choice only forces ani.pm when an id exists.
@@ -261,49 +282,109 @@ class AnimeIdentityService {
     }
   }
 
-  /// AniList's own `Media(idMal:)` link first, then a crosswalk candidate that
-  /// AniList's `idMal` confirms. A MAL id is never used as an AniList id.
+  /// AniList's own `Media(idMal:)` link first, then a search hit that carries
+  /// that exact MAL link. The PC app reads its bundled Fribb crosswalk between
+  /// the two; the mobile app has no bundled map, so it asks AniList by the
+  /// catalogue title and then by MAL's own primary title
+  /// (`lgl/anime_identity.py` `resolve_anilist` then `anilist_link_for_mal`).
+  /// A MAL id is never used as an AniList id.
   Future<({int? anilistId, String reason})> _resolveAniList(
-    int malId,
-    String title,
-  ) async {
+    int malId, {
+    required String title,
+    required String malTitle,
+    required String kind,
+  }) async {
     final linked = await _anilistIdForMal(malId);
     if (linked.id != null) {
       return (anilistId: linked.id, reason: AnimeIdentity.reasonAniListIdMal);
     }
 
-    final candidates = await _crosswalkCandidates(malId, title);
+    var reason = linked.failed
+        ? AnimeIdentity.reasonAniListLookupFailed
+        : AnimeIdentity.reasonAniListMissing;
+
+    // AniList's own search of the catalogue title, keeping only hits whose
+    // `idMal` is this MAL entry; the matches are still candidates until
+    // AniList's reverse link confirms one.
+    final candidates = await _linkedCandidates(malId, title);
     if (candidates.failed) {
-      return (
-        anilistId: null,
-        reason: AnimeIdentity.reasonAniListLookupFailed,
-      );
+      reason = AnimeIdentity.reasonAniListLookupFailed;
+    } else if (candidates.ids.length > 1) {
+      reason = AnimeIdentity.reasonAniListAmbiguous;
+    } else if (candidates.ids.length == 1) {
+      final candidate = candidates.ids.single;
+      final confirmed = await _malIdForAniList(candidate);
+      if (confirmed.id == malId) {
+        return (
+          anilistId: candidate,
+          reason: AnimeIdentity.reasonAniListCrosswalk,
+        );
+      }
+      reason = AnimeIdentity.reasonAniListUnvalidated;
     }
-    if (candidates.ids.isEmpty) {
-      return (
-        anilistId: null,
-        reason: linked.failed
-            ? AnimeIdentity.reasonAniListLookupFailed
-            : AnimeIdentity.reasonAniListMissing,
-      );
+
+    // The PC app's last resort: search AniList by the MAL entry's own primary
+    // title, where the catalogue title was a translation or a synonym.
+    final malName = malTitle.trim();
+    if (!candidates.failed &&
+        malName.isNotEmpty &&
+        normaliseTitle(malName) != normaliseTitle(title)) {
+      final byMalTitle = await _linkedCandidates(malId, malName);
+      if (byMalTitle.ids.length > 1) {
+        reason = AnimeIdentity.reasonAniListAmbiguous;
+      } else if (byMalTitle.ids.length == 1) {
+        return (
+          anilistId: byMalTitle.ids.single,
+          reason: AnimeIdentity.reasonAniListTitle,
+        );
+      }
     }
-    if (candidates.ids.length > 1) {
-      return (
-        anilistId: null,
-        reason: AnimeIdentity.reasonAniListAmbiguous,
-      );
+    return (anilistId: null, reason: reason);
+  }
+
+  /// MAL's title search gave no single answer, so AniList's exact name match
+  /// gets to nominate one entry - and MAL still has to confirm that entry as an
+  /// anime of the catalogue's kind (`lgl/anime_identity.py`
+  /// `_verified_through_anilist`).
+  Future<AnimeIdentity?> _verifyThroughAniList({
+    required String title,
+    required String year,
+    required String kind,
+  }) async {
+    final search = await _searchAniList(title);
+    if (search.failed) {
+      return null;
     }
-    final candidate = candidates.ids.single;
-    final confirmed = await _malIdForAniList(candidate);
-    if (confirmed.id == malId) {
-      return (
-        anilistId: candidate,
-        reason: AnimeIdentity.reasonAniListCrosswalk,
-      );
+    final exact = <int, AniListTitle>{};
+    for (final entry in search.entries) {
+      if (entry.malId == null) {
+        continue;
+      }
+      if (!matchesAniListTitle(entry, title: title, year: year, kind: kind)) {
+        continue;
+      }
+      exact[entry.anilistId] = entry;
     }
-    return (
-      anilistId: null,
-      reason: AnimeIdentity.reasonAniListUnvalidated,
+    if (exact.length != 1) {
+      return null;
+    }
+    final entry = exact.values.single;
+    final MalAnime details;
+    try {
+      details = await _malDetails(entry.malId!);
+    } on MalException {
+      return null;
+    }
+    final media = details.mediaType.trim().toLowerCase();
+    final allowed = _kindTypes[kind] ?? _kindTypes['tv']!;
+    if (media.isNotEmpty && !allowed.contains(media)) {
+      return null;
+    }
+    return AnimeIdentity(
+      status: IdentityStatus.anime,
+      malId: details.id,
+      anilistId: entry.anilistId,
+      reason: AnimeIdentity.reasonAniListTitle,
     );
   }
 
@@ -429,42 +510,89 @@ class AnimeIdentityService {
     return _AniListAnswer(id: _asInt(media['idMal']));
   }
 
-  /// Crosswalk candidates: AniList search hits that carry this exact MAL link.
-  /// The PC app reads its bundled Fribb crosswalk here; the mobile app has no
-  /// bundled map, so it asks AniList by the matched MAL title instead. Either
-  /// way the candidate is only a candidate until `idMal` confirms it.
-  Future<_AniListCandidates> _crosswalkCandidates(
+  /// AniList search hits that carry this exact MAL link, by title.
+  Future<_AniListCandidates> _linkedCandidates(
     int malId,
     String title,
   ) async {
+    final search = await _searchAniList(title);
+    if (search.failed) {
+      return const _AniListCandidates(<int>[], failed: true);
+    }
+    final ids = <int>[];
+    for (final entry in search.entries) {
+      if (entry.malId != malId) {
+        continue;
+      }
+      if (entry.anilistId != malId && !ids.contains(entry.anilistId)) {
+        ids.add(entry.anilistId);
+      }
+    }
+    return _AniListCandidates(ids, failed: false);
+  }
+
+  /// AniList's catalogue search for [title], most relevant first, with every
+  /// name each hit goes by (`lgl/anime_identity.py` `search_titles`).
+  Future<({List<AniListTitle> entries, bool failed})> _searchAniList(
+    String title,
+  ) async {
+    final text = title.trim();
+    if (text.isEmpty) {
+      return (entries: const <AniListTitle>[], failed: false);
+    }
     final data = await _anilist(_searchQuery, <String, dynamic>{
-      'search': title,
+      'search': text,
     });
     if (data == null) {
-      return const _AniListCandidates(<int>[], failed: true);
+      return (entries: const <AniListTitle>[], failed: true);
     }
     final page = data['Page'];
     if (page is! Map) {
-      return const _AniListCandidates(<int>[], failed: true);
+      return (entries: const <AniListTitle>[], failed: true);
     }
     final rows = page['media'];
     if (rows is! List) {
-      return const _AniListCandidates(<int>[], failed: false);
+      return (entries: const <AniListTitle>[], failed: false);
     }
-    final ids = <int>[];
+    final entries = <AniListTitle>[];
     for (final row in rows) {
       if (row is! Map) {
         continue;
       }
-      if (_asInt(row['idMal']) != malId) {
+      final anilistId = _asInt(row['id']);
+      if (anilistId == null) {
         continue;
       }
-      final id = _asInt(row['id']);
-      if (id != null && id != malId && !ids.contains(id)) {
-        ids.add(id);
+      final names = <String>[];
+      final titles = row['title'];
+      if (titles is Map) {
+        for (final key in <String>['romaji', 'english', 'native']) {
+          final name = titles[key];
+          if (name is String && name.trim().isNotEmpty) {
+            names.add(name);
+          }
+        }
       }
+      final synonyms = row['synonyms'];
+      if (synonyms is List) {
+        for (final name in synonyms) {
+          if (name is String && name.trim().isNotEmpty) {
+            names.add(name);
+          }
+        }
+      }
+      entries.add(
+        AniListTitle(
+          anilistId: anilistId,
+          malId: _asInt(row['idMal']),
+          titles: List<String>.unmodifiable(names),
+          year: int.tryParse(yearOf(row['seasonYear']?.toString() ?? '')),
+          format: (row['format'] is String ? row['format'] as String : '')
+              .trim(),
+        ),
+      );
     }
-    return _AniListCandidates(ids, failed: false);
+    return (entries: entries, failed: false);
   }
 
   static Map<String, dynamic>? _media(Map<String, dynamic> payload) {
@@ -548,6 +676,60 @@ class _AniListCandidates {
   final bool failed;
 }
 
+/// One AniList search hit: its id, its MAL link and the names it goes by
+/// (`lgl/anime_identity.py` `AniListTitle`).
+class AniListTitle {
+  const AniListTitle({
+    required this.anilistId,
+    this.malId,
+    this.titles = const <String>[],
+    this.year,
+    this.format = '',
+  });
+
+  final int anilistId;
+  final int? malId;
+
+  /// Romaji, English, native and synonym names, as AniList spells them.
+  final List<String> titles;
+  final int? year;
+  final String format;
+}
+
+/// Is [entry] the same title as the catalogue row, under exactly that name?
+///
+/// The same discipline as [malMatchesCatalogue]
+/// (`lgl/anime_identity.py` `matches_anilist_title`): the normalised catalogue
+/// title must equal one of AniList's own names, the years must agree when both
+/// are known, and the format must fit the catalogue kind.
+bool matchesAniListTitle(
+  AniListTitle entry, {
+  required String title,
+  String year = '',
+  required String kind,
+}) {
+  final wanted = normaliseTitle(title);
+  if (wanted.isEmpty) {
+    return false;
+  }
+  if (!entry.titles.map(normaliseTitle).contains(wanted)) {
+    return false;
+  }
+  final wantedYear = yearOf(year);
+  final entryYear = entry.year ?? 0;
+  if (wantedYear.isNotEmpty && entryYear > 0 && wantedYear != '$entryYear') {
+    return false;
+  }
+  final shape = entry.format.trim().toUpperCase();
+  if (shape.isEmpty) {
+    return true;
+  }
+  final allowed =
+      AnimeIdentityService._anilistKinds[kind.toLowerCase()] ??
+      AnimeIdentityService._anilistKinds['tv']!;
+  return allowed.contains(shape.toLowerCase());
+}
+
 /// Is [match] the same title as the catalogue entry?
 ///
 /// Exactness is the point (`lgl/anime_identity.py` `matches_catalogue`): the
@@ -585,18 +767,23 @@ bool malMatchesCatalogue(
   return allowed.contains(media);
 }
 
+/// Letters and digits of every script; everything else separates words.
+final RegExp _nonWords = RegExp(r'[^\p{L}\p{N}]+', unicode: true);
+
 /// Casefolded, accent-free, punctuation-free, single-spaced words
-/// (`lgl/anime_identity.py` `_normalise`, without a full Unicode NFKD table).
+/// (`lgl/anime_identity.py` `_normalise`).
+///
+/// Every script's letters are kept, not just ASCII: Japanese, Cyrillic and
+/// other names only match when they survive normalisation, and the PC app's
+/// `str.isalnum()` keeps them too. `_diacritics` stands in for NFKD's Latin
+/// decomposition, so `Shōgun` still matches `Shogun`.
 String normaliseTitle(String value) {
   final buffer = StringBuffer();
   for (final rune in value.toLowerCase().runes) {
     final character = String.fromCharCode(rune);
     buffer.write(_diacritics[character] ?? character);
   }
-  final words = buffer
-      .toString()
-      .replaceAll(RegExp('[^0-9a-z]+'), ' ')
-      .trim();
+  final words = buffer.toString().replaceAll(_nonWords, ' ').trim();
   return words.split(RegExp(r'\s+')).where((word) => word.isNotEmpty).join(' ');
 }
 

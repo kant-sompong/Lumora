@@ -53,6 +53,7 @@ MockClient aniListClient({
   Map<int, String> idmal = const <int, String>{},
   Map<int, String> reverse = const <int, String>{},
   String search = 'anilist_search_fmab.json',
+  Map<String, String> searches = const <String, String>{},
   bool unavailable = false,
   List<Map<String, dynamic>>? log,
 }) {
@@ -65,7 +66,7 @@ MockClient aniListClient({
     final variables = body['variables'] as Map<String, dynamic>;
     log?.add(<String, dynamic>{'query': query, 'variables': variables});
     if (query.contains('Page(')) {
-      return jsonResponse(search);
+      return jsonResponse(searches[variables['search']] ?? search);
     }
     if (query.contains('idMal:')) {
       final id = variables['malId'] as int;
@@ -249,6 +250,98 @@ void main() {
     });
   });
 
+  group('AniList title rescue', () {
+    const frieren = MediaItem(
+      id: 'tmdb:209867',
+      title: "Frieren: Beyond Journey's End",
+      kind: MediaKind.tv,
+      tmdbId: 209867,
+      year: '2023',
+    );
+
+    test('MAL finds no title, AniList names it and MAL confirms', () async {
+      final identity = await service(
+        mal: MalClient(
+          clientId: 'id',
+          client: malClient(
+            search: 'mal_search_empty.json',
+            details: <int, String>{52991: 'mal_anime_52991.json'},
+          ),
+        ),
+        anilist: aniListClient(search: 'anilist_search_frieren.json'),
+      ).identifyTmdb(frieren);
+
+      expect(identity.status, IdentityStatus.anime);
+      expect(identity.malId, 52991);
+      expect(identity.anilistId, 154587);
+      expect(identity.reason, AnimeIdentity.reasonAniListTitle);
+      expect(identity.playableAnilistId, 154587);
+    });
+
+    test('a rescuable title is cached as verified for a week', () async {
+      final clock = DateTime.utc(2026, 1, 1, 12);
+      await service(
+        clock: () => clock,
+        mal: MalClient(
+          clientId: 'id',
+          client: malClient(
+            search: 'mal_search_empty.json',
+            details: <int, String>{52991: 'mal_anime_52991.json'},
+          ),
+        ),
+        anilist: aniListClient(search: 'anilist_search_frieren.json'),
+      ).identifyTmdb(frieren);
+
+      final record = await storedRecord('tv:tmdb:209867');
+      expect(record['reason'], AnimeIdentity.reasonAniListTitle);
+      expect(
+        record['expires_at'],
+        clock.add(verifiedIdentityTtl).millisecondsSinceEpoch,
+      );
+    });
+
+    test('a format that does not fit the kind is not a rescue', () async {
+      final identity = await service(
+        mal: MalClient(
+          clientId: 'id',
+          client: malClient(search: 'mal_search_empty.json'),
+        ),
+        anilist: aniListClient(search: 'anilist_search_frieren_movie.json'),
+      ).identifyTmdb(frieren);
+
+      expect(identity.status, IdentityStatus.unverified);
+      expect(identity.reason, AnimeIdentity.reasonNoMalMatch);
+      expect(identity.anilistId, isNull);
+    });
+
+    test('two exact AniList names are ambiguous, never a coin toss', () async {
+      final identity = await service(
+        mal: MalClient(
+          clientId: 'id',
+          client: malClient(search: 'mal_search_empty.json'),
+        ),
+        anilist: aniListClient(search: 'anilist_search_two_exact.json'),
+      ).identifyTmdb(frieren);
+
+      expect(identity.status, IdentityStatus.unverified);
+      expect(identity.reason, AnimeIdentity.reasonNoMalMatch);
+      expect(identity.anilistId, isNull);
+    });
+
+    test('an entry MAL cannot fetch is not proof', () async {
+      final identity = await service(
+        mal: MalClient(
+          clientId: 'id',
+          client: malClient(search: 'mal_search_empty.json'),
+        ),
+        anilist: aniListClient(search: 'anilist_search_frieren.json'),
+      ).identifyTmdb(frieren);
+
+      expect(identity.status, IdentityStatus.unverified);
+      expect(identity.anilistId, isNull);
+    });
+  });
+
   group('AniList resolution', () {
     test('a conflicting idMal answer falls back to a validated crosswalk', () async {
       final requests = <Map<String, dynamic>>[];
@@ -349,6 +442,41 @@ void main() {
       expect(identity.status, IdentityStatus.anime);
       expect(identity.anilistId, isNull);
       expect(identity.reason, AnimeIdentity.reasonAniListLookupFailed);
+    });
+
+    test('a catalogue synonym resolves through MAL\'s own title', () async {
+      final identity = await service(
+        mal: MalClient(
+          clientId: 'id',
+          client: malClient(
+            search: 'mal_search_fullmetal.json',
+            details: <int, String>{
+              5114: 'mal_anime_5114.json',
+              121: 'mal_anime_121.json',
+            },
+          ),
+        ),
+        anilist: aniListClient(
+          idmal: <int, String>{5114: 'anilist_idmal_none.json'},
+          searches: <String, String>{
+            'FMAB': 'anilist_search_none.json',
+            'Fullmetal Alchemist: Brotherhood': 'anilist_search_fmab.json',
+          },
+        ),
+      ).identifyTmdb(
+        const MediaItem(
+          id: 'tmdb:5',
+          title: 'FMAB',
+          kind: MediaKind.tv,
+          tmdbId: 5,
+          year: '2009',
+        ),
+      );
+
+      expect(identity.status, IdentityStatus.anime);
+      expect(identity.malId, 5114);
+      expect(identity.anilistId, 9001);
+      expect(identity.reason, AnimeIdentity.reasonAniListTitle);
     });
 
     test('an AniList detail page verifies through its own idMal link', () async {
@@ -632,5 +760,71 @@ void main() {
   test('titles are normalised without accents or punctuation', () {
     expect(normaliseTitle('Shōgun: Part 1'), 'shogun part 1');
     expect(normaliseTitle('Frieren: Beyond Journey’s End'), 'frieren beyond journey s end');
+  });
+
+  test('every script\'s letters survive normalisation', () {
+    expect(normaliseTitle('葬送のフリーレン'), '葬送のフリーレン');
+    expect(normaliseTitle('Привет, мир!'), 'привет мир');
+    expect(normaliseTitle('鬼滅の刃：無限列車編'), '鬼滅の刃 無限列車編');
+  });
+
+  test('a Japanese catalogue title matches a Japanese MAL name', () {
+    const anime = MalAnime(
+      id: 52991,
+      title: '葬送のフリーレン',
+      mediaType: 'tv',
+      startDate: '2023-09-29',
+    );
+
+    expect(
+      malMatchesCatalogue(anime, title: '葬送のフリーレン', year: '2023', kind: 'tv'),
+      isTrue,
+    );
+    expect(
+      malMatchesCatalogue(anime, title: 'Frieren', year: '2023', kind: 'tv'),
+      isFalse,
+    );
+  });
+
+  test('AniList name, year and format follow the same rules', () {
+    const entry = AniListTitle(
+      anilistId: 154587,
+      malId: 52991,
+      titles: <String>['葬送のフリーレン', "Frieren: Beyond Journey's End"],
+      year: 2023,
+      format: 'TV',
+    );
+
+    expect(
+      matchesAniListTitle(
+        entry,
+        title: "Frieren: Beyond Journey's End",
+        year: '2023',
+        kind: 'tv',
+      ),
+      isTrue,
+    );
+    expect(
+      matchesAniListTitle(
+        entry,
+        title: '葬送のフリーレン',
+        year: '2023',
+        kind: 'movie',
+      ),
+      isFalse,
+    );
+    expect(
+      matchesAniListTitle(
+        entry,
+        title: "Frieren: Beyond Journey's End",
+        year: '2024',
+        kind: 'tv',
+      ),
+      isFalse,
+    );
+    expect(
+      matchesAniListTitle(entry, title: 'Frieren', year: '2023', kind: 'tv'),
+      isFalse,
+    );
   });
 }

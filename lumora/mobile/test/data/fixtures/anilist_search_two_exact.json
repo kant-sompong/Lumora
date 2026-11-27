@@ -1,0 +1,32 @@
+{
+  "data": {
+    "Page": {
+      "media": [
+        {
+          "id": 154587,
+          "idMal": 52991,
+          "seasonYear": 2023,
+          "format": "TV",
+          "synonyms": [],
+          "title": {
+            "romaji": "Sousou no Frieren",
+            "english": "Frieren: Beyond Journey's End",
+            "native": "葬送のフリーレン"
+          }
+        },
+        {
+          "id": 154589,
+          "idMal": 52992,
+          "seasonYear": 2023,
+          "format": "TV",
+          "synonyms": [],
+          "title": {
+            "romaji": "Sousou no Frieren",
+            "english": "Frieren: Beyond Journey's End",
+            "native": "葬送のフリーレン"
+          }
+        }
+      ]
+    }
+  }
+}

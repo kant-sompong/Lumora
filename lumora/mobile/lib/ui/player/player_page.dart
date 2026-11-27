@@ -6,7 +6,9 @@ import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
 
 import '../../data/provider_health.dart';
+import '../../models/media_item.dart';
 import '../../theme/lumora_theme.dart';
+import '../media/media_detail_page.dart';
 import 'player_panel.dart';
 import 'player_policy.dart';
 
@@ -33,6 +35,7 @@ class PlayerPage extends StatefulWidget {
   const PlayerPage({
     required this.url,
     required this.title,
+    this.item,
     this.targets = const <PlaybackTarget>[],
     this.initialIndex = 0,
     this.season,
@@ -44,6 +47,11 @@ class PlayerPage extends StatefulWidget {
 
   final Uri url;
   final String title;
+
+  /// The catalogue entry being played, so the panel can open its own page.
+  /// Null when the caller has no entry (tests, a bare URL): the panel's back
+  /// arrow then leaves the player as before.
+  final MediaItem? item;
 
   /// Every provider that can play the title, best first.
   final List<PlaybackTarget> targets;
@@ -324,6 +332,25 @@ class _PlayerPageState extends State<PlayerPage> {
     _closePanel();
   }
 
+  /// The panel's back arrow: the playing title's own page, or the way back
+  /// when the player was opened without a catalogue entry.
+  ///
+  /// `Navigator.maybePop()` cannot be used here: with the panel open the page's
+  /// [PopScope] refuses the pop and closes the panel instead, which is exactly
+  /// what the X already does. `pop()` is unconditional, so the fallback leaves
+  /// the player even while the panel is open.
+  void _openDetails() {
+    final item = widget.item;
+    final navigator = Navigator.of(context);
+    if (item == null) {
+      navigator.pop();
+      return;
+    }
+    navigator.pushReplacement(
+      MaterialPageRoute<void>(builder: (_) => MediaDetailPage(item: item)),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return PopScope(
@@ -443,7 +470,7 @@ class _PlayerPageState extends State<PlayerPage> {
           targets: widget.targets,
           selectedIndex: _index,
           health: widget.health,
-          onBack: () => Navigator.of(context).maybePop(),
+          onBack: _openDetails,
           onClose: _closePanel,
           onNextProvider: _nextProvider,
           onSelectProvider: _selectProvider,
