@@ -1,0 +1,22 @@
+{
+  "id": 52991,
+  "title": "Sousou no Frieren",
+  "synopsis": "[b]An elf[/b] retraces a journey she once took with her party.",
+  "start_date": "2023-09-29",
+  "media_type": "tv",
+  "num_episodes": 28,
+  "mean": 9.3,
+  "status": "finished_airing",
+  "main_picture": {
+    "large": "https://cdn.myanimelist.net/images/anime/1015/138006l.jpg"
+  },
+  "genres": [
+    { "id": 2, "name": "Adventure" },
+    { "id": 8, "name": "Drama" }
+  ],
+  "alternative_titles": {
+    "en": "Frieren: Beyond Journey's End",
+    "ja": "葬送のフリーレン",
+    "synonyms": ["Frieren at the Funeral"]
+  }
+}
