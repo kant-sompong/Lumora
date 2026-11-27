@@ -1,0 +1,19 @@
+{
+  "page": 1,
+  "results": [
+    {
+      "id": 1429,
+      "media_type": "tv",
+      "name": "Attack on Titan",
+      "original_name": "Shingeki no Kyojin",
+      "poster_path": "/hTP1DtLGFamjfu8WqjnuQdP1n4i.jpg",
+      "backdrop_path": "/rqbCbjB19amtOtFQbb3K2lgm2zv.jpg",
+      "first_air_date": "2013-04-07",
+      "vote_average": 8.7,
+      "overview": "Several hundred years ago, humans were nearly exterminated by titans.",
+      "adult": false
+    }
+  ],
+  "total_pages": 1,
+  "total_results": 1
+}

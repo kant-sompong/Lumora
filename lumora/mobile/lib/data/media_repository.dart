@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 
 import '../models/media_item.dart';
 import '../models/stream_provider.dart';
+import 'search_collapse.dart';
 import 'settings_store.dart';
 
 /// The TMDB key is empty, so movies/TV metadata cannot be loaded.
@@ -414,6 +415,14 @@ class TmdbAniListRepository implements MediaRepository {
     format
   ''';
 
+  /// Search also asks for the relations, which say whether an entry is a
+  /// sequel of another anime.
+  static const String _anilistSearchFields =
+      '''
+    $_anilistFields
+    relations { edges { relationType node { id type format } } }
+  ''';
+
   bool get _hasTmdbKey => settings.tmdbApiKey.trim().isNotEmpty;
 
   /// True when no key is configured and canned data should answer instead.
@@ -469,25 +478,27 @@ class TmdbAniListRepository implements MediaRepository {
       return fallback!.search(needle);
     }
 
-    var moviesAndTv = const <MediaItem>[];
+    var tmdbHits = const <SearchCandidate>[];
     Object? tmdbError;
     if (_hasTmdbKey) {
       try {
-        moviesAndTv = await _searchTmdb(needle);
+        tmdbHits = await _searchTmdb(needle);
       } catch (error) {
         tmdbError = error;
       }
     }
 
-    var anime = const <MediaItem>[];
+    var animeHits = const <SearchCandidate>[];
     Object? animeError;
     try {
-      anime = await _searchAniList(needle);
+      animeHits = await _searchAniList(needle);
     } catch (error) {
       animeError = error;
     }
 
-    final results = <MediaItem>[...moviesAndTv, ...anime];
+    // AniList lists each season, film and OVA separately, so the merged list
+    // is collapsed to one entry per series before it reaches the UI.
+    final results = collapseSearchResults(tmdb: tmdbHits, anime: animeHits);
     if (results.isEmpty) {
       if (tmdbError != null) {
         throw tmdbError;
@@ -667,7 +678,7 @@ class TmdbAniListRepository implements MediaRepository {
     return MediaShelf(title: title, items: parseAniListPage(data));
   }
 
-  Future<List<MediaItem>> _searchTmdb(String query) async {
+  Future<List<SearchCandidate>> _searchTmdb(String query) async {
     final json = await _getJson(
       _tmdbUri('/search/multi', <String, String>{
         'query': query,
@@ -677,17 +688,17 @@ class TmdbAniListRepository implements MediaRepository {
         'page': '1',
       }),
     );
-    return parseTmdbResults(json);
+    return tmdbSearchCandidates(json);
   }
 
-  Future<List<MediaItem>> _searchAniList(String query) async {
+  Future<List<SearchCandidate>> _searchAniList(String query) async {
     final data = await _postAniList(
       'query (\$search: String) { Page(page: 1, perPage: 24) { '
       'media(type: ANIME, search: \$search, sort: SEARCH_MATCH, '
-      'isAdult: false) { $_anilistFields } } }',
+      'isAdult: false) { $_anilistSearchFields } } }',
       <String, dynamic>{'search': query},
     );
-    return parseAniListPage(data);
+    return aniListSearchCandidates(data);
   }
 
   Uri _tmdbUri(String path, [Map<String, String>? extra]) {
@@ -857,6 +868,40 @@ List<MediaItem> parseTmdbResults(
   return out;
 }
 
+/// TMDB search hits with every name TMDB knows them by, so a duplicate of an
+/// AniList entry can be spotted by either spelling.
+List<SearchCandidate> tmdbSearchCandidates(Map<String, dynamic> json) {
+  final raw = json['results'];
+  if (raw is! List) {
+    return const <SearchCandidate>[];
+  }
+  final out = <SearchCandidate>[];
+  for (final entry in raw) {
+    if (entry is! Map) {
+      continue;
+    }
+    final map = _asMap(entry);
+    final item = parseTmdbItem(map);
+    if (item == null) {
+      continue;
+    }
+    final titles = <String>[item.title];
+    for (final key in const <String>[
+      'name',
+      'original_name',
+      'title',
+      'original_title',
+    ]) {
+      final title = _asString(map[key]);
+      if (title != null) {
+        titles.add(title);
+      }
+    }
+    out.add(SearchCandidate(item: item, titles: titles));
+  }
+  return out;
+}
+
 MediaItem? parseTmdbItem(Map<String, dynamic> raw, {MediaKind? kindOverride}) {
   // Multi-search mixes people in; never render them as titles, even when the
   // caller forces a kind for an endpoint.
@@ -910,7 +955,8 @@ MediaDetail? parseTmdbDetail(
     return null;
   }
 
-  final runtime = _asInt(json['runtime']) ?? _firstInt(json['episode_run_time']);
+  final runtime =
+      _asInt(json['runtime']) ?? _firstInt(json['episode_run_time']);
   final tagline = _asString(json['tagline']);
   return MediaDetail(
     item: item,
@@ -940,6 +986,77 @@ List<MediaItem> parseAniListPage(Map<String, dynamic> data) {
     }
   }
   return out;
+}
+
+/// AniList search hits with their format and whether another anime is their
+/// prequel (the search query asks for `relations`).
+List<SearchCandidate> aniListSearchCandidates(Map<String, dynamic> data) {
+  final page = data['Page'];
+  if (page is! Map) {
+    return const <SearchCandidate>[];
+  }
+  final raw = _asMap(page)['media'];
+  if (raw is! List) {
+    return const <SearchCandidate>[];
+  }
+  final out = <SearchCandidate>[];
+  for (final entry in raw) {
+    if (entry is! Map) {
+      continue;
+    }
+    final map = _asMap(entry);
+    final item = parseAniListMedia(map);
+    if (item == null) {
+      continue;
+    }
+    final titles = <String>[item.title];
+    final titleMap = map['title'];
+    if (titleMap is Map) {
+      final names = _asMap(titleMap);
+      for (final key in const <String>['romaji', 'english', 'native']) {
+        final title = _asString(names[key]);
+        if (title != null) {
+          titles.add(title);
+        }
+      }
+    }
+    out.add(
+      SearchCandidate(
+        item: item,
+        titles: titles,
+        format: _asString(map['format']),
+        hasPrequel: _hasAnimePrequel(map['relations']),
+      ),
+    );
+  }
+  return out;
+}
+
+/// True when any relation edge points at an anime that came before this one.
+bool _hasAnimePrequel(dynamic relations) {
+  if (relations is! Map) {
+    return false;
+  }
+  final edges = _asMap(relations)['edges'];
+  if (edges is! List) {
+    return false;
+  }
+  for (final edge in edges) {
+    if (edge is! Map) {
+      continue;
+    }
+    final map = _asMap(edge);
+    final type = (_asString(map['relationType']) ?? '').toUpperCase();
+    if (type != 'PREQUEL') {
+      continue;
+    }
+    final node = map['node'];
+    if (node is Map &&
+        (_asString(_asMap(node)['type']) ?? '').toUpperCase() == 'ANIME') {
+      return true;
+    }
+  }
+  return false;
 }
 
 MediaItem? parseAniListMedia(Map<String, dynamic> raw) {
@@ -1078,10 +1195,12 @@ Map<String, dynamic> _bestLogoEntry(List<Map<String, dynamic>> entries) {
 }
 
 bool _logoPreferred(Map<String, dynamic> candidate, Map<String, dynamic> best) {
-  final candidatePng =
-      (_asString(candidate['file_path']) ?? '').toLowerCase().endsWith('.png');
-  final bestPng =
-      (_asString(best['file_path']) ?? '').toLowerCase().endsWith('.png');
+  final candidatePng = (_asString(candidate['file_path']) ?? '')
+      .toLowerCase()
+      .endsWith('.png');
+  final bestPng = (_asString(best['file_path']) ?? '').toLowerCase().endsWith(
+    '.png',
+  );
   if (candidatePng != bestPng) {
     return candidatePng;
   }
