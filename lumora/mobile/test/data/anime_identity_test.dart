@@ -407,6 +407,63 @@ void main() {
   });
 
   group('cache', () {
+    test('a failed lookup is not cached and is asked again', () async {
+      final requests = <http.Request>[];
+      final lookup = service(
+        mal: MalClient(
+          clientId: 'id',
+          client: malClient(status: 500, log: requests),
+        ),
+      );
+
+      final first = await lookup.identifyTmdb(_brotherhood);
+      expect(first.status, IdentityStatus.unverified);
+      expect(first.reason, AnimeIdentity.reasonLookupUnavailable);
+
+      final second = await lookup.identifyTmdb(_brotherhood);
+      expect(second.reason, AnimeIdentity.reasonLookupUnavailable);
+      // A cached failure would have answered without asking MAL.
+      expect(requests, hasLength(2));
+
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getString('anime_identity:tv:tmdb:1'), isNull);
+    });
+
+    test('a failure does not stop a working client verifying the title', () async {
+      final clock = DateTime.utc(2026, 1, 1, 12);
+      final failing = await service(
+        clock: () => clock,
+        mal: MalClient(
+          clientId: 'id',
+          client: malClient(status: 503),
+        ),
+      ).identifyTmdb(_brotherhood);
+      expect(failing.reason, AnimeIdentity.reasonLookupUnavailable);
+
+      // The next lookup, now that the Client ID works, must ask MAL instead of
+      // serving the failure cached for one day.
+      final identity = await service(
+        clock: () => clock,
+        mal: MalClient(
+          clientId: 'id',
+          client: malClient(
+            search: 'mal_search_fullmetal.json',
+            details: <int, String>{
+              5114: 'mal_anime_5114.json',
+              121: 'mal_anime_121.json',
+            },
+          ),
+        ),
+        anilist: aniListClient(
+          idmal: <int, String>{5114: 'anilist_idmal_fmab.json'},
+        ),
+      ).identifyTmdb(_brotherhood);
+
+      expect(identity.status, IdentityStatus.anime);
+      expect(identity.malId, 5114);
+      expect(identity.anilistId, 9001);
+    });
+
     test('a verified answer is cached for seven days', () async {
       final clock = DateTime.utc(2026, 1, 1, 12);
       final identity = await service(
