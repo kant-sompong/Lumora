@@ -9989,7 +9989,7 @@ class MainWindow(Gtk.ApplicationWindow):
         )
         dialog.set_website("https://archive.org/details/native-linux-games-collection")
         dialog.set_website_label("Collection on archive.org")
-        dialog.set_logo_icon_name("applications-games")
+        dialog.set_logo_icon_name("io.github.lumora.Lumora")
         polish_message(dialog)
         dialog.run()
         dialog.destroy()
@@ -12772,7 +12772,7 @@ class Application(Gtk.Application):
         if hasattr(Gdk, "set_program_class"):
             Gdk.set_program_class("Lumora")
         GLib.set_application_name(APP_NAME)
-        Gtk.Window.set_default_icon_name("applications-games")
+        Gtk.Window.set_default_icon_name("io.github.lumora.Lumora")
         load_css()
 
         # Copy pre-0.6.0 folders across before anything reads or writes
