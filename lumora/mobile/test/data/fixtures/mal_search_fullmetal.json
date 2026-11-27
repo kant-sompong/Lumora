@@ -1,0 +1,34 @@
+{
+  "data": [
+    {
+      "node": {
+        "id": 5114,
+        "title": "Fullmetal Alchemist: Brotherhood",
+        "start_date": "2009-04-05",
+        "media_type": "tv",
+        "num_episodes": 64,
+        "mean": 9.09,
+        "status": "finished_airing",
+        "main_picture": {
+          "large": "https://cdn.myanimelist.net/images/anime/1208/94745l.jpg",
+          "medium": "https://cdn.myanimelist.net/images/anime/1208/94745.jpg"
+        },
+        "alternative_titles": {
+          "en": "Fullmetal Alchemist: Brotherhood",
+          "ja": "鋼の錬金術師 FULLMETAL ALCHEMIST",
+          "synonyms": ["Hagane no Renkinjutsushi: Fullmetal Alchemist", "FMAB"]
+        }
+      }
+    },
+    {
+      "node": {
+        "id": 121,
+        "title": "Fullmetal Alchemist",
+        "start_date": "2003-10-04",
+        "media_type": "tv",
+        "num_episodes": 51,
+        "mean": 8.12
+      }
+    }
+  ]
+}

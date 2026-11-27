@@ -1,0 +1,20 @@
+{
+  "Media": {
+    "id": 154587,
+    "title": {
+      "romaji": "Sousou no Frieren",
+      "english": "Frieren: Beyond Journey's End"
+    },
+    "coverImage": {
+      "extraLarge": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx154587-qQTzQnEJJ3jP.jpg"
+    },
+    "bannerImage": null,
+    "startDate": { "year": 2023 },
+    "averageScore": 93,
+    "description": "An elf mage retraces her party's journey.",
+    "genres": ["Adventure", "Drama", "Fantasy"],
+    "episodes": 28,
+    "duration": 24,
+    "format": "TV"
+  }
+}
