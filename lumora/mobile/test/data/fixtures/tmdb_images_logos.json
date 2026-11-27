@@ -1,0 +1,12 @@
+{
+  "id": 693134,
+  "logos": [
+    { "file_path": "/en.jpg", "iso_639_1": "en", "vote_average": 9.0 },
+    { "file_path": "/en.svg", "iso_639_1": "en", "vote_average": 9.5 },
+    { "file_path": "/en.png", "iso_639_1": "en", "vote_average": 5.0 },
+    { "file_path": "/ja.png", "iso_639_1": "ja", "vote_average": 10.0 },
+    { "file_path": "/neutral.png", "iso_639_1": null, "vote_average": 8.0 },
+    { "file_path": "/not-a-logo.txt", "iso_639_1": "en", "vote_average": 10.0 }
+  ],
+  "backdrops": []
+}

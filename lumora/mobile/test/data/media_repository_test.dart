@@ -345,4 +345,133 @@ void main() {
       expect(body, contains('"id":16498'));
     });
   });
+
+  group('adult flag and logos', () {
+    test('TMDB search keeps adult titles and reads its own flag', () async {
+      final requests = <http.Request>[];
+      final client = MockClient((request) async {
+        requests.add(request);
+        if (request.url.host == 'graphql.anilist.co') {
+          return graphqlResponse('anilist_trending.json');
+        }
+        return jsonResponse('tmdb_search_adult.json');
+      });
+      final repo = TmdbAniListRepository(
+        AppSettings(tmdbApiKey: 'key123'),
+        client: client,
+      );
+
+      final results = await repo.search('anything');
+
+      final tmdb = requests.firstWhere(
+        (request) => request.url.host == 'api.themoviedb.org',
+      );
+      expect(tmdb.url.queryParameters['include_adult'], 'true');
+
+      final adult = results.firstWhere((item) => item.tmdbId == 900);
+      final family = results.firstWhere((item) => item.tmdbId == 901);
+      expect(adult.adult, isTrue);
+      expect(family.adult, isFalse);
+      expect(results.any((item) => item.title == 'Someone'), isFalse);
+    });
+
+    test('_best_logo prefers a PNG in the wanted language', () {
+      final logos = fixtureJson('tmdb_images_logos.json')['logos'];
+
+      expect(
+        bestTmdbLogo(logos),
+        'https://image.tmdb.org/t/p/w500/en.png',
+      );
+      expect(
+        bestTmdbLogo(logos, language: 'ja'),
+        'https://image.tmdb.org/t/p/w500/ja.png',
+      );
+      expect(
+        bestTmdbLogo(logos, language: 'fr'),
+        'https://image.tmdb.org/t/p/w500/en.png',
+      );
+      expect(bestTmdbLogo(null), isNull);
+      expect(bestTmdbLogo(<dynamic>[]), isNull);
+    });
+
+    test('a TMDB detail fills logoUrl and caches it per title', () async {
+      final requests = <http.Request>[];
+      final client = MockClient((request) async {
+        requests.add(request);
+        if (request.url.path == '/3/movie/693134/images') {
+          return jsonResponse('tmdb_images_logos.json');
+        }
+        if (request.url.path == '/3/movie/693134') {
+          return jsonResponse('tmdb_movie_detail.json');
+        }
+        return http.Response('{}', 404);
+      });
+      final repo = TmdbAniListRepository(
+        AppSettings(tmdbApiKey: 'key123'),
+        client: client,
+      );
+      const item = MediaItem(
+        id: 'tmdb:693134',
+        title: 'Dune: Part Two',
+        kind: MediaKind.movie,
+        tmdbId: 693134,
+        year: '2024',
+      );
+
+      final detail = await repo.detail(item);
+
+      expect(
+        detail.logoUrl,
+        'https://image.tmdb.org/t/p/w500/en.png',
+      );
+      final images = requests
+          .where((request) => request.url.path.endsWith('/images'))
+          .toList();
+      expect(images, hasLength(1));
+      // `/images` asks for no language filter at all.
+      expect(images.single.url.queryParameters.containsKey('language'), isFalse);
+      expect(images.single.url.queryParameters['api_key'], 'key123');
+
+      await repo.detail(item);
+      expect(
+        requests.where((request) => request.url.path.endsWith('/images')).length,
+        1,
+      );
+    });
+
+    test('an AniList title gets the logo of its exact TMDB title', () async {
+      final client = MockClient((request) async {
+        if (request.url.host == 'graphql.anilist.co') {
+          return graphqlResponse('anilist_frieren_detail.json');
+        }
+        if (request.url.path == '/3/search/multi') {
+          return jsonResponse('tmdb_search_anime_logo.json');
+        }
+        if (request.url.path == '/3/tv/209867/images') {
+          return jsonResponse('tmdb_images_anime_logo.json');
+        }
+        return http.Response('{}', 404);
+      });
+      final repo = TmdbAniListRepository(
+        AppSettings(tmdbApiKey: 'key123'),
+        client: client,
+      );
+
+      final detail = await repo.detail(
+        const MediaItem(
+          id: 'anilist:154587',
+          title: "Frieren: Beyond Journey's End",
+          kind: MediaKind.anime,
+          anilistId: 154587,
+          year: '2023',
+        ),
+      );
+
+      expect(detail.seasons.single.episodeCount, 28);
+      expect(
+        detail.logoUrl,
+        'https://image.tmdb.org/t/p/w500/frieren.png',
+      );
+    });
+  });
 }
