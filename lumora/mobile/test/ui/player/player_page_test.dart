@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:lumora_mobile/ui/media/media_detail_page.dart';
 import 'package:lumora_mobile/ui/player/player_page.dart';
 import 'package:lumora_mobile/ui/player/player_panel.dart';
+
+import '../media/media_test_support.dart';
 
 PlaybackTarget target(String id, String name) => PlaybackTarget(
   providerId: id,
@@ -194,6 +197,87 @@ void main() {
           .arguments,
       'SystemUiMode.edgeToEdge',
     );
+  });
+
+  testWidgets('the panel back arrow opens a movie\'s details page', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      mediaApp(
+        PlayerPage(
+          url: target('cinesrc', 'CineSrc').url,
+          title: movieItem.title,
+          item: movieItem,
+          targets: <PlaybackTarget>[target('cinesrc', 'CineSrc')],
+          webViewForTest: const ColoredBox(color: Colors.black),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.byKey(PlayerPage.handleKey));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Back'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(MediaDetailPage), findsOneWidget);
+    expect(find.byType(PlayerPage), findsNothing);
+    expect(find.text(movieItem.title), findsWidgets);
+  });
+
+  testWidgets('the panel back arrow opens a TV show\'s details page', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      mediaApp(
+        PlayerPage(
+          url: target('cinesrc', 'CineSrc').url,
+          title: tvItem.title,
+          item: tvItem,
+          season: 1,
+          episode: 2,
+          targets: <PlaybackTarget>[target('cinesrc', 'CineSrc')],
+          webViewForTest: const ColoredBox(color: Colors.black),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.byKey(PlayerPage.handleKey));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Back'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(MediaDetailPage), findsOneWidget);
+    expect(find.byType(PlayerPage), findsNothing);
+    // The season picker proves the TV details page, not a film page.
+    expect(find.text('Episodes'), findsOneWidget);
+  });
+
+  testWidgets('the X still only closes the panel', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      mediaApp(
+        PlayerPage(
+          url: target('cinesrc', 'CineSrc').url,
+          title: movieItem.title,
+          item: movieItem,
+          targets: <PlaybackTarget>[target('cinesrc', 'CineSrc')],
+          webViewForTest: const ColoredBox(color: Colors.black),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.byKey(PlayerPage.handleKey));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Close menu'));
+    await tester.pumpAndSettle();
+
+    expect(panelLeft(tester), lessThan(0));
+    expect(find.byType(PlayerPage), findsOneWidget);
+    expect(find.byType(MediaDetailPage), findsNothing);
   });
 
   testWidgets('Next provider moves the panel selection and closes it', (

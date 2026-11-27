@@ -227,6 +227,7 @@ Future<void> openPlayer(
       builder: (_) => PlayerPage(
         url: targets.first.url,
         title: plan.item.title,
+        item: plan.item,
         targets: targets,
         initialIndex: 0,
         season: isMovie ? null : season,
