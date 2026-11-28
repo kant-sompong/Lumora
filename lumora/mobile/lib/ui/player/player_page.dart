@@ -9,6 +9,7 @@ import '../../data/provider_health.dart';
 import '../../models/media_item.dart';
 import '../../theme/lumora_theme.dart';
 import '../media/media_detail_page.dart';
+import 'embed_frame.dart';
 import 'player_panel.dart';
 import 'player_policy.dart';
 
@@ -212,10 +213,39 @@ class _PlayerPageState extends State<PlayerPage> {
         onHideCustomWidget: _hideFullscreenVideo,
       );
     }
-    await controller.loadRequest(_url);
+    await _loadUrl(controller, _url);
+  }
+
+  /// The provider on screen, when the caller listed its providers.
+  String? get _providerId {
+    if (_index < 0 || _index >= widget.targets.length) {
+      return null;
+    }
+    return widget.targets[_index].providerId;
+  }
+
+  /// Loads [url] the way its provider expects.
+  ///
+  /// anipm.pk redirects an embed opened as a page, so its embed goes inside a
+  /// small framing document; every other provider is loaded directly.
+  Future<void> _loadUrl(WebViewController controller, Uri url) {
+    if (needsEmbedFrame(_providerId ?? '')) {
+      return controller.loadHtmlString(
+        buildEmbedFrameHtml(url),
+        baseUrl: embedFrameBaseUrl,
+      );
+    }
+    return controller.loadRequest(url);
   }
 
   NavigationDecision _onNavigationRequest(NavigationRequest request) {
+    // The framing document itself is not the provider's page, so its own load
+    // is allowed before the host rule applies to anything else.
+    if (needsEmbedFrame(_providerId ?? '') &&
+        request.isMainFrame &&
+        isEmbedFrameDocumentUrl(request.url)) {
+      return NavigationDecision.navigate;
+    }
     // Only the page itself is held to the provider's host; a sub-frame may load
     // a video from a CDN or another site, or the player would stay empty.
     if (shouldNavigateRequest(
@@ -299,7 +329,7 @@ class _PlayerPageState extends State<PlayerPage> {
       _loading = controller != null;
     });
     if (controller != null) {
-      unawaited(controller.loadRequest(_url));
+      unawaited(_loadUrl(controller, _url));
     }
   }
 
@@ -315,7 +345,7 @@ class _PlayerPageState extends State<PlayerPage> {
       _loading = controller != null;
     });
     if (controller != null) {
-      unawaited(controller.loadRequest(_url));
+      unawaited(_loadUrl(controller, _url));
     }
   }
 

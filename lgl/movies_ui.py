@@ -40,7 +40,7 @@ from gi.repository import (  # noqa: E402
 
 from . import artwork_background, platform_support, recently_viewed  # noqa: E402
 from . import gtk_feed_home  # noqa: E402
-from . import media_tabs  # noqa: E402
+from . import embed_frame, media_tabs  # noqa: E402
 from . import (  # noqa: E402
     anipm,
     framextv,
@@ -6303,6 +6303,9 @@ class MoviesWindow(Gtk.Box):
         self._playback_index = known.index(url) if url in known else 0
         # A tab resumed from a saved position opens the stream there.
         load_url = media_tabs.with_start(url, start)
+        # ani.pm redirects an embed opened as a page, so it is framed instead.
+        # Every other provider keeps loading its embed directly.
+        framed = embed_frame.frame_html_for(load_url, provider)
         self._playback_url = url
         self._playback_provider = provider
         self._playback_title = title
@@ -6373,6 +6376,16 @@ class MoviesWindow(Gtk.Box):
                 elif event in (finished, None):
                     loading.hide()
 
+            def load_content() -> None:
+                """Load the embed, framed for ani.pm and directly otherwise."""
+                if framed:
+                    try:
+                        view.load_html(framed, embed_frame.EMBED_FRAME_BASE)
+                        return
+                    except (AttributeError, TypeError):
+                        pass
+                view.load_uri(load_url)
+
             def on_load_failed(_view, _event, _uri, error) -> bool:
                 loading.hide()
                 # A blocked or unavailable provider falls through to the next
@@ -6384,7 +6397,7 @@ class MoviesWindow(Gtk.Box):
                         f"{spec.label} could not load this title: "
                         f"{getattr(error, 'message', error)}",
                         url,
-                        retry=lambda: view.load_uri(load_url),
+                        retry=load_content,
                     )
                 )
                 overlay.show_all()
@@ -6395,7 +6408,7 @@ class MoviesWindow(Gtk.Box):
                 view.connect("load-failed", on_load_failed)
             except (TypeError, AttributeError):
                 loading.hide()
-            view.load_uri(load_url)
+            load_content()
             frame.add(overlay)
         else:
             frame.add(
