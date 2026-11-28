@@ -10,6 +10,7 @@ except (ValueError, ImportError):  # pragma: no cover
     pytest.skip("GTK 3 is not installed", allow_module_level=True)
 
 from lgl import anime_calendar as cal
+from lgl import episode_calendar
 from lgl import release_feed as feed
 
 NOW = 1_800_000_000.0
@@ -99,4 +100,37 @@ def test_calendar_shows_days_and_follows(monkeypatch):
     find(window)
     toggles[0].set_active(True)
     assert cal.follows(settings) == ["anilist:1"]
+    window.destroy()
+
+
+def test_search_shows_grouped_airings(monkeypatch):
+    if not Gtk.init_check()[0]:
+        pytest.skip("no display")
+    from lgl import gtk_calendar
+
+    result = feed.FeedResult(entries=[], fetched_at=NOW)
+    monkeypatch.setattr(feed, "load_feed", lambda *a, **k: result)
+    monkeypatch.setattr(feed, "tmdb_getter", lambda settings=None: None)
+
+    def loader(query):
+        return episode_calendar.CalendarResult(
+            query=query,
+            groups=[episode_calendar.SeriesGroup(
+                "Alpha",
+                "TMDB",
+                (
+                    episode_calendar.Airing("Alpha", 4, NOW + 86400, True, "TMDB", 2, True),
+                    episode_calendar.Airing("Alpha", 5, NOW + 8 * 86400, False, "TMDB", 2, True),
+                    episode_calendar.Airing("Alpha", 6, None, False, "TMDB", 2, True),
+                ),
+            )],
+        )
+
+    window = gtk_calendar.CalendarWindow(Memory(), search_loader=loader)
+    window.search("alpha")
+    assert wait_for_text(window, "Alpha · TMDB"), "search results never arrived"
+    labels = labels_in(window)
+    assert any("S2E4" in text for text in labels)
+    assert any("Estimated" in text for text in labels)
+    assert any("Air date unknown" in text for text in labels)
     window.destroy()

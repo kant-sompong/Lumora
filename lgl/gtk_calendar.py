@@ -17,13 +17,15 @@ gi.require_version("Gtk", "3.0")
 from gi.repository import GLib, Gtk  # noqa: E402
 
 from . import anime_calendar as cal  # noqa: E402
+from . import episode_calendar  # noqa: E402
 from . import release_feed  # noqa: E402
 
 TZ = "local"
 
 
 class CalendarWindow(Gtk.Window):
-    def __init__(self, settings: Any, *, transient_for: Gtk.Window | None = None, days: int = 14):
+    def __init__(self, settings: Any, *, transient_for: Gtk.Window | None = None, days: int = 14,
+                 search_loader: Any = None):
         super().__init__(title="Release calendar")
         self.set_default_size(720, 640)
         if transient_for is not None:
@@ -33,6 +35,9 @@ class CalendarWindow(Gtk.Window):
         self._result = release_feed.FeedResult()
         self._choice = "all"
         self._busy = False
+        self._search_loader = search_loader
+        self._search_result: episode_calendar.CalendarResult | None = None
+        self._searching = False
 
         outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         for side in ("top", "bottom", "start", "end"):
@@ -49,6 +54,16 @@ class CalendarWindow(Gtk.Window):
         self._refresh.connect("clicked", lambda *_: self.reload(force=True))
         bar.pack_end(self._refresh, False, False, 0)
         outer.pack_start(bar, False, False, 0)
+
+        find = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        self._query = Gtk.Entry()
+        self._query.set_placeholder_text("Search a series for its next episodes…")
+        self._query.connect("activate", lambda *_: self.search())
+        find.pack_start(self._query, True, True, 0)
+        self._find = Gtk.Button(label="Search")
+        self._find.connect("clicked", lambda *_: self.search())
+        find.pack_start(self._find, False, False, 0)
+        outer.pack_start(find, False, False, 0)
 
         self._status = Gtk.Label(label="", xalign=0)
         self._status.set_line_wrap(True)
@@ -101,6 +116,51 @@ class CalendarWindow(Gtk.Window):
         release_feed.notify_due(self.settings, result.entries, notify=_announce)
         return False
 
+    def search(self, query: str | None = None) -> None:
+        """Look up the next episodes of the series matching ``query``.
+
+        A blank query leaves the search and shows the release feed again.
+        """
+        text = (self._query.get_text() if query is None else str(query)).strip()
+        if not text:
+            self._search_result = None
+            self._render()
+            return
+        if self._searching:
+            return
+        self._searching = True
+        self._find.set_sensitive(False)
+        self._status.set_text(f"Searching for {text}…")
+        loader = self._search_loader or self._default_search
+
+        def work() -> None:
+            try:
+                result = loader(text)
+            except Exception as exc:  # noqa: BLE001
+                result = episode_calendar.CalendarResult(
+                    query=text, errors=[f"Could not search: {exc}"]
+                )
+            GLib.idle_add(self._searched, result)
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _default_search(self, query: str) -> episode_calendar.CalendarResult:
+        return episode_calendar.search(
+            query, tmdb_get=release_feed.tmdb_getter(self.settings)
+        )
+
+    def _searched(self, result: object) -> bool:
+        self._searching = False
+        self._find.set_sensitive(True)
+        if isinstance(result, episode_calendar.CalendarResult):
+            self._search_result = result
+        else:
+            self._search_result = episode_calendar.CalendarResult(
+                errors=["Could not search the episode calendar."]
+            )
+        self._render()
+        return False
+
     # -- drawing --------------------------------------------------------
     def _on_filter(self, combo: Gtk.ComboBoxText) -> None:
         self._choice = combo.get_active_id() or "all"
@@ -109,6 +169,9 @@ class CalendarWindow(Gtk.Window):
     def _render(self) -> None:
         for child in self._list.get_children():
             self._list.remove(child)
+        if self._search_result is not None:
+            self._render_search(self._search_result)
+            return
         followed = cal.follows(self.settings)
         entries = release_feed.select(self._result.entries, self._choice, followed)
         for heading, group in cal.grouped(entries, TZ):
@@ -126,6 +189,40 @@ class CalendarWindow(Gtk.Window):
         if not entries:
             notes.append("Nothing in this view." if self._result.entries else "No release dates yet.")
         self._status.set_text(" ".join(notes))
+
+    def _render_search(self, result: episode_calendar.CalendarResult) -> None:
+        for group in result.groups:
+            title = Gtk.Label(xalign=0)
+            title.set_markup(
+                f"<b>{GLib.markup_escape_text(group.title + ' · ' + group.source)}</b>"
+            )
+            title.set_margin_top(10)
+            self._list.pack_start(title, False, False, 0)
+            for airing in group.airings:
+                self._list.pack_start(self._airing_row(airing), False, False, 0)
+        self._list.show_all()
+
+        notes = list(result.errors)
+        if not result.groups:
+            notes.append(f"No upcoming episodes found for “{result.query}”.")
+        self._status.set_text(" ".join(notes))
+
+    def _airing_row(self, airing: episode_calendar.Airing) -> Gtk.Widget:
+        line = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        label = Gtk.Label(label=airing.label or airing.series, xalign=0)
+        label.set_line_wrap(True)
+        line.pack_start(label, True, True, 0)
+        when = Gtk.Label(
+            label=episode_calendar.format_date(airing, TZ), xalign=1
+        )
+        when.get_style_context().add_class("dim-label")
+        line.pack_start(when, False, False, 0)
+        status = episode_calendar.status_label(airing)
+        if status:
+            badge = Gtk.Label(label=status, xalign=1)
+            badge.get_style_context().add_class("dim-label")
+            line.pack_start(badge, False, False, 0)
+        return line
 
     def _row(self, entry: cal.Entry, following: bool) -> Gtk.Widget:
         line = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)

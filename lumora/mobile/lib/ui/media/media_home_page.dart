@@ -6,6 +6,7 @@ import '../../data/settings_store.dart';
 import '../../models/media_item.dart';
 import '../../nav.dart';
 import '../../theme/lumora_theme.dart';
+import '../calendar/calendar_page.dart';
 import 'future_guard.dart';
 import 'media_detail_page.dart';
 import 'media_search_page.dart';
@@ -60,6 +61,13 @@ class _MediaHomePageState extends State<MediaHomePage> {
       appBar: AppBar(
         title: const Text('Movies & TV'),
         actions: [
+          IconButton(
+            tooltip: 'Episode calendar',
+            icon: const Icon(Icons.calendar_month_outlined),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const CalendarPage()),
+            ),
+          ),
           IconButton(
             tooltip: 'Search',
             icon: const Icon(Icons.search),

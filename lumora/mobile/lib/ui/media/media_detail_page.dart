@@ -38,6 +38,11 @@ class _MediaDetailPageState extends State<MediaDetailPage> {
   late Future<MediaDetail> _future;
   int _season = 1;
 
+  /// One episode request per season, memoised so rebuilding the page or
+  /// scrolling never asks the provider twice.
+  final Map<int, Future<List<EpisodeInfo>>> _episodeFutures =
+      <int, Future<List<EpisodeInfo>>>{};
+
   @override
   void initState() {
     super.initState();
@@ -49,8 +54,20 @@ class _MediaDetailPageState extends State<MediaDetailPage> {
 
   void _retry() {
     setState(() {
+      _episodeFutures.clear();
       _future = _fetch();
     });
+  }
+
+  /// The episodes of [season]; a failed request falls back to the episode
+  /// count so playback is never lost to decoration.
+  Future<List<EpisodeInfo>> _episodesFor(SeasonInfo season) {
+    return _episodeFutures.putIfAbsent(
+      season.number,
+      () => guarded(
+        context.read<MediaRepository>().episodes(widget.item, season),
+      ),
+    );
   }
 
   void _play({int episode = 1}) {
@@ -197,39 +214,17 @@ class _MediaDetailPageState extends State<MediaDetailPage> {
                         ?.copyWith(fontWeight: FontWeight.w700),
                   ),
                   const SizedBox(height: LumoraSpace.sm),
-                  DropdownButtonHideUnderline(
-                    child: DropdownButton<int>(
-                      isExpanded: true,
-                      value: season!.number,
-                      items: [
-                        for (final s in seasons)
-                          DropdownMenuItem<int>(
-                            value: s.number,
-                            child: Text(_seasonLabel(s)),
-                          ),
-                      ],
-                      onChanged: (value) {
-                        if (value == null) return;
-                        setState(() => _season = value);
-                      },
-                    ),
+                  _SeasonHeader(
+                    season: season!,
+                    seasons: seasons,
+                    onChanged: (value) => setState(() => _season = value),
                   ),
-                  const SizedBox(height: LumoraSpace.sm),
-                  if (season.episodeCount <= 0)
-                    Text(
-                      'No episodes listed for this season.',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    )
-                  else
-                    for (var number = 1;
-                        number <= season.episodeCount;
-                        number++)
-                      _EpisodeTile(
-                        number: number,
-                        onTap: () => _play(episode: number),
-                      ),
+                  const SizedBox(height: LumoraSpace.md),
+                  _EpisodeList(
+                    episodes: _episodesFor(season),
+                    season: season,
+                    onPlay: (number) => _play(episode: number),
+                  ),
                 ],
               ],
             ),
@@ -408,15 +403,176 @@ class _GenreChip extends StatelessWidget {
   }
 }
 
-class _EpisodeTile extends StatelessWidget {
-  const _EpisodeTile({required this.number, required this.onTap});
+/// The season's own poster beside the picker, as the desktop season picker
+/// shows it (`lgl/qt_season_picker.py`). No poster at all is a labelled box,
+/// not a hole in the layout.
+class _SeasonHeader extends StatelessWidget {
+  const _SeasonHeader({
+    required this.season,
+    required this.seasons,
+    required this.onChanged,
+  });
 
-  final int number;
+  final SeasonInfo season;
+  final List<SeasonInfo> seasons;
+  final ValueChanged<int> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _SeasonPoster(season: season),
+        const SizedBox(width: LumoraSpace.md),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              DropdownButtonHideUnderline(
+                child: DropdownButton<int>(
+                  isExpanded: true,
+                  value: season.number,
+                  items: [
+                    for (final s in seasons)
+                      DropdownMenuItem<int>(
+                        value: s.number,
+                        child: Text(_MediaDetailPageState._seasonLabel(s)),
+                      ),
+                  ],
+                  onChanged: (value) {
+                    if (value == null) return;
+                    onChanged(value);
+                  },
+                ),
+              ),
+              if (season.episodeCount > 0)
+                Text(
+                  '${season.episodeCount} episodes',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _SeasonPoster extends StatelessWidget {
+  const _SeasonPoster({required this.season});
+
+  final SeasonInfo season;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final fallback = ColoredBox(
+      color: theme.colorScheme.surfaceContainerHighest,
+      child: Center(
+        child: Text(
+          'S${season.number}',
+          style: theme.textTheme.titleMedium?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+      ),
+    );
+    final url = season.posterUrl?.trim() ?? '';
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(LumoraRadius.md),
+      child: SizedBox(
+        width: 84,
+        child: AspectRatio(
+          aspectRatio: 2 / 3,
+          child: url.isEmpty
+              ? fallback
+              : Image.network(
+                  url,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => fallback,
+                  loadingBuilder: (context, child, progress) =>
+                      progress == null ? child : fallback,
+                ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The episode rows of one season: provider previews when they load, and the
+/// plain numbered list when they do not.
+class _EpisodeList extends StatelessWidget {
+  const _EpisodeList({
+    required this.episodes,
+    required this.season,
+    required this.onPlay,
+  });
+
+  final Future<List<EpisodeInfo>> episodes;
+  final SeasonInfo season;
+  final ValueChanged<int> onPlay;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return FutureBuilder<List<EpisodeInfo>>(
+      future: episodes,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting &&
+            !snapshot.hasData) {
+          return Text(
+            'Loading episodes…',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          );
+        }
+        var rows = snapshot.data ?? const <EpisodeInfo>[];
+        if (rows.isEmpty) {
+          rows = <EpisodeInfo>[
+            for (var number = 1; number <= season.episodeCount; number++)
+              EpisodeInfo(number: number),
+          ];
+        }
+        if (rows.isEmpty) {
+          return Text(
+            'No episodes listed for this season.',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          );
+        }
+        return Column(
+          children: [
+            for (final episode in rows)
+              _EpisodeTile(
+                episode: episode,
+                onTap: () => onPlay(episode.number),
+              ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _EpisodeTile extends StatelessWidget {
+  const _EpisodeTile({required this.episode, required this.onTap});
+
+  final EpisodeInfo episode;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final name = episode.name?.trim() ?? '';
+    final title = name.isEmpty
+        ? 'Episode ${episode.number}'
+        : '${episode.number}. $name';
+    final overview = episode.overview?.trim() ?? '';
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
       child: Material(
@@ -427,29 +583,84 @@ class _EpisodeTile extends StatelessWidget {
           onTap: onTap,
           borderRadius: BorderRadius.circular(LumoraRadius.md),
           child: Container(
-            constraints: const BoxConstraints(minHeight: 48),
-            padding: const EdgeInsets.symmetric(horizontal: LumoraSpace.md),
+            constraints: const BoxConstraints(minHeight: 56),
+            padding: const EdgeInsets.all(8),
             child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                SizedBox(
-                  width: 28,
-                  child: Text(
-                    '$number',
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ),
+                _EpisodeStill(url: episode.stillUrl),
+                const SizedBox(width: LumoraSpace.md),
                 Expanded(
-                  child: Text(
-                    'Episode $number',
-                    style: theme.textTheme.bodyMedium,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.bodyMedium,
+                      ),
+                      if (overview.isNotEmpty) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          overview,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                 ),
-                const Icon(Icons.play_arrow_rounded, size: 20),
+                const Padding(
+                  padding: EdgeInsets.only(top: 4, left: 6),
+                  child: Icon(Icons.play_arrow_rounded, size: 20),
+                ),
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A 16:9 preview still, or a quiet block when the provider has no art.
+class _EpisodeStill extends StatelessWidget {
+  const _EpisodeStill({this.url});
+
+  final String? url;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final fallback = Container(
+      color: theme.colorScheme.surfaceContainerHighest,
+      alignment: Alignment.center,
+      child: Icon(
+        Icons.movie_outlined,
+        size: 18,
+        color: theme.colorScheme.onSurfaceVariant,
+      ),
+    );
+    final image = url?.trim() ?? '';
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(LumoraRadius.sm),
+      child: SizedBox(
+        width: 104,
+        child: AspectRatio(
+          aspectRatio: 16 / 9,
+          child: image.isEmpty
+              ? fallback
+              : Image.network(
+                  image,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => fallback,
+                  loadingBuilder: (context, child, progress) =>
+                      progress == null ? child : fallback,
+                ),
         ),
       ),
     );
