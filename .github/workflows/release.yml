@@ -186,10 +186,55 @@ jobs:
           name: linux-tarball
           path: dist/Lumora-*-linux-*.tar.gz
 
+  android:
+    name: Android APK
+    # The phone app is a release asset like the zips: a pull request has nothing
+    # to publish, and the APK is only built for a v* tag.
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: lumora/mobile
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          # The same pinned version mobile.yml tests against.
+          flutter-version: "3.35.7"
+          channel: stable
+          cache: true
+      - name: Dependencies
+        run: flutter pub get
+      - name: Build release APK
+        run: flutter build apk --release
+      # The APK is named after the release so the download says which version it
+      # is; the version is read the way the publish job reads it.
+      - name: Name the APK after the release
+        working-directory: .
+        run: |
+          version=$(sed -n 's/^__version__ *= *"\([^"]*\)".*/\1/p' lgl/__init__.py)
+          if [ -z "$version" ]; then
+            echo "::error::lgl/__init__.py has no __version__"
+            exit 1
+          fi
+          mv "lumora/mobile/build/app/outputs/flutter-apk/app-release.apk" "Lumora-$version-android.apk"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-apk
+          path: Lumora-*-android.apk
+          if-no-files-found: error
+
   publish:
     name: Publish release
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [test, linux-tests, windows, linux]
+    needs: [test, linux-tests, windows, linux, android]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
