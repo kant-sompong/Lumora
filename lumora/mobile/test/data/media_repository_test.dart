@@ -506,5 +506,186 @@ void main() {
       expect(detail.seasons.single.episodeCount, 28);
       expect(detail.logoUrl, 'https://image.tmdb.org/t/p/w500/frieren.png');
     });
+
+    test('a season carries its own poster when TMDB lists one', () {
+      final detail = parseTmdbDetail(
+        <String, dynamic>{
+          'id': 95396,
+          'name': 'Severance',
+          'seasons': [
+            {
+              'season_number': 1,
+              'name': 'Season 1',
+              'episode_count': 9,
+              'poster_path': '/season-one.jpg',
+            },
+            {'season_number': 2, 'episode_count': 10},
+          ],
+        },
+        kind: MediaKind.tv,
+      );
+
+      expect(
+        detail!.seasons.first.posterUrl,
+        'https://image.tmdb.org/t/p/w342/season-one.jpg',
+      );
+      expect(detail.seasons.last.posterUrl, isNull);
+    });
+
+    test('episodes keep their still, name, description and runtime', () {
+      final episodes = parseTmdbEpisodes(<String, dynamic>{
+        'episodes': [
+          {
+            'episode_number': 2,
+            'name': 'Half Loop',
+            'overview': 'The team settles in.',
+            'still_path': '/still-two.jpg',
+            'air_date': '2022-02-24',
+            'runtime': 48,
+          },
+          {'episode_number': 1, 'name': 'Good News About Hell'},
+          {'episode_number': 0, 'name': 'No number'},
+          'junk',
+        ],
+      });
+
+      expect(episodes.map((e) => e.number), <int>[1, 2]);
+      final second = episodes.last;
+      expect(second.name, 'Half Loop');
+      expect(second.overview, 'The team settles in.');
+      expect(
+        second.stillUrl,
+        'https://image.tmdb.org/t/p/w300/still-two.jpg',
+      );
+      expect(second.airDate, '2022-02-24');
+      expect(second.runtimeMinutes, 48);
+      expect(episodes.first.stillUrl, isNull);
+    });
+
+    test('AniList streaming episodes take their number from the title', () {
+      final episodes = parseAniListEpisodes(<String, dynamic>{
+        'streamingEpisodes': [
+          {
+            'title': 'Episode 5 - The Journey Ends',
+            'thumbnail': 'https://img.example/5.jpg',
+          },
+          {'title': 'Episode 3', 'thumbnail': 'https://img.example/3.jpg'},
+          {'thumbnail': 'https://img.example/numberless.jpg'},
+        ],
+      });
+
+      expect(episodes.map((e) => e.number), <int>[1, 3, 5]);
+      final fifth = episodes.firstWhere((e) => e.number == 5);
+      expect(fifth.name, 'The Journey Ends');
+      expect(fifth.stillUrl, 'https://img.example/5.jpg');
+      expect(episodes.first.name, isNull);
+      expect(parseAniListEpisodes(<String, dynamic>{}), isEmpty);
+    });
+
+    test('episodes fetch a TV season from TMDB', () async {
+      Uri? called;
+      final repo = TmdbAniListRepository(
+        AppSettings(tmdbApiKey: 'key123'),
+        client: MockClient((request) async {
+          called = request.url;
+          return http.Response.bytes(
+            utf8.encode(
+              jsonEncode(<String, dynamic>{
+                'episodes': [
+                  {'episode_number': 1, 'name': 'Pilot'},
+                ],
+              }),
+            ),
+            200,
+            headers: <String, String>{
+              'content-type': 'application/json; charset=utf-8',
+            },
+          );
+        }),
+      );
+
+      final episodes = await repo.episodes(
+        const MediaItem(
+          id: 'tmdb:95396',
+          title: 'Severance',
+          kind: MediaKind.tv,
+          tmdbId: 95396,
+        ),
+        const SeasonInfo(number: 2, episodeCount: 10),
+      );
+
+      expect(called!.path, '/3/tv/95396/season/2');
+      expect(episodes.single.name, 'Pilot');
+    });
+
+    test('anime episodes come from AniList and need no TMDB key', () async {
+      String? body;
+      final repo = TmdbAniListRepository(
+        AppSettings(),
+        client: MockClient((request) async {
+          body = request.body;
+          return http.Response.bytes(
+            utf8.encode(
+              jsonEncode(<String, dynamic>{
+                'data': <String, dynamic>{
+                  'Media': <String, dynamic>{
+                    'streamingEpisodes': [
+                      {
+                        'title': 'Episode 1 - The Journey Ends',
+                        'thumbnail': 'https://img.example/1.jpg',
+                      },
+                    ],
+                  },
+                },
+              }),
+            ),
+            200,
+            headers: <String, String>{
+              'content-type': 'application/json; charset=utf-8',
+            },
+          );
+        }),
+      );
+
+      final episodes = await repo.episodes(
+        const MediaItem(
+          id: 'anilist:154587',
+          title: 'Frieren',
+          kind: MediaKind.anime,
+          anilistId: 154587,
+        ),
+        const SeasonInfo(number: 1, episodeCount: 28),
+      );
+
+      expect(body, contains('streamingEpisodes'));
+      expect(episodes.single.name, 'The Journey Ends');
+      expect(episodes.single.stillUrl, 'https://img.example/1.jpg');
+    });
+
+    test('TV episodes without a key ask for one', () {
+      final repo = TmdbAniListRepository(AppSettings());
+      expect(
+        repo.episodes(
+          const MediaItem(
+            id: 'tmdb:95396',
+            title: 'Severance',
+            kind: MediaKind.tv,
+            tmdbId: 95396,
+          ),
+          const SeasonInfo(number: 1, episodeCount: 9),
+        ),
+        throwsA(isA<MissingApiKeyException>()),
+      );
+    });
+
+    test('the fake repository numbers a season without art', () async {
+      const repo = FakeMediaRepository();
+      final episodes = await repo.episodes(
+        FakeMediaRepository.items.firstWhere((i) => i.id == 'tmdb:95396'),
+        const SeasonInfo(number: 1, episodeCount: 4),
+      );
+      expect(episodes.map((e) => e.number), <int>[1, 2, 3, 4]);
+      expect(episodes.every((e) => e.stillUrl == null), isTrue);
+    });
   });
 }

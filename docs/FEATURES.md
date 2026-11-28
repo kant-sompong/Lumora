@@ -147,6 +147,11 @@ be empty until data is available.
 - Season comparison to group and compare episodes across seasons
 - Release calendar for upcoming anime and TV episodes, with notifications for
   followed titles when supported data is available
+- Searchable episode calendar for any series (desktop and phone): series name,
+  season, episode and air date, with confirmed dates distinguished from
+  estimated ones and undated episodes shown as unknown rather than guessed
+- Season poster artwork and per-episode previews (still, title, description)
+  on TV and anime detail pages, on both desktop and phone
 
 ## Library tools
 

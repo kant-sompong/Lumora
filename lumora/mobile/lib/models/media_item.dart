@@ -96,11 +96,38 @@ class SeasonInfo {
     required this.number,
     this.name,
     required this.episodeCount,
+    this.posterUrl,
   });
 
   final int number;
   final String? name;
   final int episodeCount;
+
+  /// The season's own poster from TMDB's `poster_path`, or null when the
+  /// provider has none. Anime seasons come from AniList and never carry one.
+  final String? posterUrl;
+}
+
+/// One episode row: its preview still and its own title, when the provider has
+/// them. A row without either still plays — the tile falls back to the number.
+class EpisodeInfo {
+  const EpisodeInfo({
+    required this.number,
+    this.name,
+    this.overview,
+    this.stillUrl,
+    this.airDate,
+    this.runtimeMinutes,
+  });
+
+  final int number;
+  final String? name;
+  final String? overview;
+
+  /// Episode preview art (TMDB `still_path`, AniList's streaming thumbnail).
+  final String? stillUrl;
+  final String? airDate;
+  final int? runtimeMinutes;
 }
 
 /// A title plus the detail-only fields.

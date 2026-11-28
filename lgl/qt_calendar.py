@@ -7,7 +7,7 @@ Fetching runs through :func:`run_async` so the dialog never freezes.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Callable
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QDialog,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QPushButton,
     QScrollArea,
     QVBoxLayout,
@@ -22,6 +23,7 @@ from PySide6.QtWidgets import (
 )
 
 from . import anime_calendar as cal
+from . import episode_calendar
 from . import release_feed
 from .qt_widgets import run_async, style_dialog
 
@@ -30,7 +32,8 @@ TZ = "local"
 
 class CalendarDialog(QDialog):
     def __init__(self, settings: Any, parent: QWidget | None = None, *, days: int = 14,
-                 autoload: bool = True, embedded: bool = False):
+                 autoload: bool = True, embedded: bool = False,
+                 search_loader: Callable[[str], Any] | None = None):
         super().__init__(parent)
         self.embedded = embedded
         if embedded:
@@ -41,6 +44,9 @@ class CalendarDialog(QDialog):
         self._days = days
         self._result = release_feed.FeedResult()
         self._busy = False
+        self._search_loader = search_loader
+        self._search_result: episode_calendar.CalendarResult | None = None
+        self._searching = False
 
         layout = QVBoxLayout(self)
 
@@ -56,6 +62,17 @@ class CalendarDialog(QDialog):
         self._refresh.clicked.connect(lambda: self.reload(force=True))
         bar.addWidget(self._refresh)
         layout.addLayout(bar)
+
+        find = QHBoxLayout()
+        self._query = QLineEdit()
+        self._query.setPlaceholderText("Search a series for its next episodes…")
+        self._query.setClearButtonEnabled(True)
+        self._query.returnPressed.connect(lambda: self.search())
+        find.addWidget(self._query, 1)
+        self._find = QPushButton("Search")
+        self._find.clicked.connect(lambda: self.search())
+        find.addWidget(self._find)
+        layout.addLayout(find)
 
         self._status = QLabel("")
         self._status.setWordWrap(True)
@@ -108,14 +125,60 @@ class CalendarDialog(QDialog):
         """Show ``result`` without fetching (used by tests and screenshots)."""
         self._loaded(result)
 
+    def search(self, query: str | None = None) -> None:
+        """Look up the next episodes of the series matching ``query``.
+
+        A blank query leaves the search and shows the release feed again.
+        """
+        text = (self._query.text() if query is None else str(query)).strip()
+        if not text:
+            self._search_result = None
+            self._render()
+            return
+        if self._searching:
+            return
+        self._searching = True
+        self._find.setEnabled(False)
+        self._status.setText(f"Searching for {text}…")
+        loader = self._search_loader or self._default_search
+        run_async(
+            lambda: loader(text),
+            self._searched,
+            lambda error: self._searched(episode_calendar.CalendarResult(
+                query=text, errors=[f"Could not search: {error}"]
+            )),
+        )
+
+    def _default_search(self, query: str) -> episode_calendar.CalendarResult:
+        return episode_calendar.search(
+            query, tmdb_get=release_feed.tmdb_getter(self.settings)
+        )
+
+    def _searched(self, result: object) -> None:
+        self._searching = False
+        self._find.setEnabled(True)
+        if isinstance(result, episode_calendar.CalendarResult):
+            self._search_result = result
+        else:
+            self._search_result = episode_calendar.CalendarResult(
+                errors=["Could not search the episode calendar."]
+            )
+        self._render()
+
     # -- drawing --------------------------------------------------------
-    def _render(self) -> None:
+    def _clear_rows(self) -> None:
         while self._rows.count():
             item = self._rows.takeAt(0)
             widget = item.widget()
             if widget is not None:
                 widget.setParent(None)
                 widget.deleteLater()
+
+    def _render(self) -> None:
+        self._clear_rows()
+        if self._search_result is not None:
+            self._render_search(self._search_result)
+            return
         followed = cal.follows(self.settings)
         choice = self._filter.currentData() or "all"
         entries = release_feed.select(self._result.entries, choice, followed)
@@ -134,6 +197,38 @@ class CalendarDialog(QDialog):
         if not entries:
             notes.append("Nothing in this view." if self._result.entries else "No release dates yet.")
         self._status.setText(" ".join(notes))
+
+    def _render_search(self, result: episode_calendar.CalendarResult) -> None:
+        for group in result.groups:
+            title = QLabel(f"{group.title} · {group.source}")
+            title.setObjectName("filter-head")
+            title.setStyleSheet("font-weight: 700; margin-top: 10px;")
+            self._rows.addWidget(title)
+            for airing in group.airings:
+                self._rows.addWidget(self._airing_row(airing))
+        self._rows.addStretch(1)
+
+        notes = list(result.errors)
+        if not result.groups:
+            notes.append(f"No upcoming episodes found for “{result.query}”.")
+        self._status.setText(" ".join(notes))
+
+    def _airing_row(self, airing: episode_calendar.Airing) -> QWidget:
+        row = QWidget()
+        line = QHBoxLayout(row)
+        line.setContentsMargins(0, 2, 0, 2)
+        name = QLabel(airing.label or airing.series)
+        name.setWordWrap(True)
+        line.addWidget(name, 1)
+        when = QLabel(episode_calendar.format_date(airing, TZ))
+        when.setObjectName("detail-note")
+        line.addWidget(when)
+        status = episode_calendar.status_label(airing)
+        if status:
+            badge = QLabel(status)
+            badge.setObjectName("detail-note")
+            line.addWidget(badge)
+        return row
 
     def _row(self, entry: cal.Entry, following: bool) -> QWidget:
         row = QWidget()

@@ -40,6 +40,9 @@ abstract class MediaRepository {
 
   /// Full detail for [item], including seasons for TV/anime.
   Future<MediaDetail> detail(MediaItem item);
+
+  /// The episodes of [season], with preview art when the provider has it.
+  Future<List<EpisodeInfo>> episodes(MediaItem item, SeasonInfo season);
 }
 
 /// Canned catalog so the UI can be built and tested offline.
@@ -366,6 +369,14 @@ class FakeMediaRepository implements MediaRepository {
     );
   }
 
+  @override
+  Future<List<EpisodeInfo>> episodes(MediaItem item, SeasonInfo season) async {
+    return <EpisodeInfo>[
+      for (var number = 1; number <= season.episodeCount; number++)
+        EpisodeInfo(number: number),
+    ];
+  }
+
   static List<MediaItem> _pick(List<String> ids) {
     return <MediaItem>[
       for (final id in ids) items.firstWhere((item) => item.id == id),
@@ -533,6 +544,48 @@ class TmdbAniListRepository implements MediaRepository {
       tagline: detail.tagline,
       logoUrl: await _tmdbLogo(item.kind, id),
     );
+  }
+
+  @override
+  Future<List<EpisodeInfo>> episodes(MediaItem item, SeasonInfo season) async {
+    if (_usesFallback) {
+      return fallback!.episodes(item, season);
+    }
+    // AniList needs no key, so anime keeps its previews without one.
+    if (item.kind == MediaKind.anime) {
+      return _animeEpisodes(item);
+    }
+    if (!_hasTmdbKey) {
+      throw const MissingApiKeyException();
+    }
+    final id = item.tmdbId ?? _idFromString(item.id);
+    if (id == null || id <= 0) {
+      throw MissingMediaIdException('TMDB', item.title, 'TMDB');
+    }
+    final json = await _getJson(
+      _tmdbUri('/tv/$id/season/${season.number}'),
+    );
+    return parseTmdbEpisodes(json);
+  }
+
+  /// AniList lists each episode's streaming thumbnail and a title that starts
+  /// with its number (`lgl/tmdb.py` has no anime equivalent: the desktop anime
+  /// rows have no stills, so this is phone-only).
+  Future<List<EpisodeInfo>> _animeEpisodes(MediaItem item) async {
+    final id = item.anilistId ?? _idFromString(item.id);
+    if (id == null || id <= 0) {
+      throw MissingMediaIdException('AniList', item.title, 'AniList');
+    }
+    final data = await _postAniList(
+      'query (\$id: Int) { Media(id: \$id, type: ANIME) { '
+      'streamingEpisodes { title thumbnail } } }',
+      <String, dynamic>{'id': id},
+    );
+    final media = data['Media'];
+    if (media is! Map) {
+      return const <EpisodeInfo>[];
+    }
+    return parseAniListEpisodes(_asMap(media));
   }
 
   /// The title's own logo from TMDB's `/images` (best effort: wide art is
@@ -1118,11 +1171,109 @@ List<SeasonInfo> _seasons(dynamic raw) {
         number: number,
         name: _asString(season['name']),
         episodeCount: _asInt(season['episode_count']) ?? 0,
+        posterUrl: _tmdbImage(season['poster_path'], 'w342'),
       ),
     );
   }
   seasons.sort((a, b) => a.number.compareTo(b.number));
   return seasons;
+}
+
+/// Episodes of one TMDB season (`/tv/{id}/season/{n}`).
+///
+/// A row without a number is skipped: the tile is built around it.
+List<EpisodeInfo> parseTmdbEpisodes(Map<String, dynamic> json) {
+  final raw = json['episodes'];
+  if (raw is! List) {
+    return const <EpisodeInfo>[];
+  }
+  final out = <EpisodeInfo>[];
+  for (final entry in raw) {
+    if (entry is! Map) {
+      continue;
+    }
+    final map = _asMap(entry);
+    final number = _asInt(map['episode_number']);
+    if (number == null || number <= 0) {
+      continue;
+    }
+    out.add(
+      EpisodeInfo(
+        number: number,
+        name: _asString(map['name']),
+        overview: _asString(map['overview']),
+        stillUrl: _tmdbImage(map['still_path'], 'w300'),
+        airDate: _asString(map['air_date']),
+        runtimeMinutes: _asInt(map['runtime']),
+      ),
+    );
+  }
+  out.sort((a, b) => a.number.compareTo(b.number));
+  return out;
+}
+
+/// AniList's `streamingEpisodes` as episode rows.
+///
+/// The list has no episode number field, so the number comes from the title
+/// (`Episode 5 - ...`) or, failing that, the row's position.
+List<EpisodeInfo> parseAniListEpisodes(Map<String, dynamic> media) {
+  final raw = media['streamingEpisodes'];
+  if (raw is! List) {
+    return const <EpisodeInfo>[];
+  }
+  final out = <EpisodeInfo>[];
+  final seen = <int>{};
+  for (final entry in raw) {
+    if (entry is! Map) {
+      continue;
+    }
+    final map = _asMap(entry);
+    final title = _asString(map['title']);
+    final still = _asString(map['thumbnail']);
+    if (title == null && still == null) {
+      continue;
+    }
+    // The list has no number field: read it from the title, or take the first
+    // unused number so two numberless rows cannot collapse into one.
+    final fromTitle = _animeEpisodeNumber(title);
+    var number = fromTitle ?? 1;
+    if (fromTitle == null) {
+      while (seen.contains(number)) {
+        number += 1;
+      }
+    }
+    if (!seen.add(number)) {
+      continue;
+    }
+    out.add(
+      EpisodeInfo(
+        number: number,
+        name: _animeEpisodeName(title),
+        stillUrl: still,
+      ),
+    );
+  }
+  out.sort((a, b) => a.number.compareTo(b.number));
+  return out;
+}
+
+int? _animeEpisodeNumber(String? title) {
+  if (title == null) {
+    return null;
+  }
+  final match = RegExp(r'[Ee]pisode\s+(\d+)').firstMatch(title);
+  final digits = match?.group(1);
+  return digits == null ? null : int.tryParse(digits);
+}
+
+String? _animeEpisodeName(String? title) {
+  if (title == null) {
+    return null;
+  }
+  final cleaned = title
+      .replaceFirst(RegExp(r'^\s*[Ee]pisode\s+\d+\s*[-–—:]?\s*'), '')
+      .trim();
+  return cleaned.isEmpty ? null : cleaned;
 }
 
 String? _tmdbImage(dynamic path, String size) {

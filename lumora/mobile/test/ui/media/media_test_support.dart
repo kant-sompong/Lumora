@@ -57,6 +57,8 @@ class TestRepository implements MediaRepository {
     ],
     this.results = const <MediaItem>[movieItem, tvItem, animeItem],
     this.detailOverride,
+    this.episodeOverride,
+    this.episodesFailWith,
   });
 
   final Object? failWith;
@@ -64,9 +66,16 @@ class TestRepository implements MediaRepository {
   final List<MediaItem> results;
   final MediaDetail? detailOverride;
 
+  /// Replaces every season's episodes when set; null lets the tests get the
+  /// plain numbered list their season says it has.
+  final List<EpisodeInfo>? episodeOverride;
+  final Object? episodesFailWith;
+
   final List<String> queries = <String>[];
+  final List<int> episodeSeasons = <int>[];
   int homeCalls = 0;
   int detailCalls = 0;
+  int episodeCalls = 0;
 
   @override
   Future<List<MediaShelf>> home() async {
@@ -100,6 +109,19 @@ class TestRepository implements MediaRepository {
         SeasonInfo(number: 2, name: 'Season Two', episodeCount: 2),
       ],
     );
+  }
+
+  @override
+  Future<List<EpisodeInfo>> episodes(MediaItem item, SeasonInfo season) async {
+    episodeCalls++;
+    episodeSeasons.add(season.number);
+    if (episodesFailWith != null) throw episodesFailWith!;
+    final override = episodeOverride;
+    if (override != null) return override;
+    return <EpisodeInfo>[
+      for (var number = 1; number <= season.episodeCount; number++)
+        EpisodeInfo(number: number),
+    ];
   }
 }
 
