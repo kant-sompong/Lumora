@@ -45,13 +45,15 @@ framed so it plays instead of redirecting.
 - **Both desktop calendars have a search field.** The GTK and Qt calendars can
   be searched for a series instead of only showing the days around today, and a
   result lists the next episodes it can confirm.
-- **The phone gets the same calendar.** A Calendar page opened from the Movies &
-  TV app bar shows this week's releases for the titles on screen and searches
-  the same sources with the same rules.
-- **Season posters and episode previews.** A season now carries its own TMDB
-  poster, and each episode row can show a still, its title and its description —
-  AniList streaming thumbnails for anime, and a plain numbered row when the
-  artwork request fails, so playback never waits on art.
+- **The phone gets the same calendar:** a page opened from the Movies & TV app
+  bar, where you search a series and see its next episodes.
+
+### Season posters and episode previews
+
+- **A season now carries its own TMDB poster,** and each episode row can show a
+  still, its title and its description — AniList streaming thumbnails for
+  anime, and a plain numbered row when the artwork request fails, so playback
+  never waits on art.
 
 ### Anime provider
 
@@ -86,6 +88,10 @@ framed so it plays instead of redirecting.
 - **MAL verification still needs a Client ID** for anime identification, as on
   the desktop: set `MAL_CLIENT_ID` or add it in Settings → Providers. Without a
   key, anime titles are unverified and play on the selected provider.
+- **The anime player's default engine (Ani.pm player) starts slower than the
+  Vidstack engine in its menu, and the player does not remember the engine you
+  pick;** both are limits of anipm.pk's player.
+- **On Linux, anime playback needs the GStreamer plugins installed.**
 
 ## Install
 
