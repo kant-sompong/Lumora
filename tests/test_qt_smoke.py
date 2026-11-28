@@ -226,7 +226,7 @@ def test_media_lookup_lives_in_the_search_bar(app):
     qt_main.apply_theme(app, "dark")
     page = MediaPage(None)
     assert not hasattr(page, "lookup_btn")
-    # The search no longer offers an ani.pm/AniList button at all.
+    # The search no longer offers an anipm.pk/AniList button at all.
     assert not hasattr(page, "anilist_btn")
     page.deleteLater()
 

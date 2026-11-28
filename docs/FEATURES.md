@@ -53,8 +53,8 @@ Browse → Download → Library → Play
 - Search results come from TMDB, plus MyAnimeList on the Qt frontend: the Qt
   Search page combines TMDB and MyAnimeList rows, while the GTK Search page
   queries TMDB only
-- ani.pm is a player, not a catalogue: a title is verified against
-  MyAnimeList first, and verified anime then starts on ani.pm whatever anime
+- anipm.pk is a player, not a catalogue: a title is verified against
+  MyAnimeList first, and verified anime then starts on anipm.pk whatever anime
   provider is saved, including a title opened from a TMDB catalogue card; the
   header menu on both frontends, or the GTK player's Try another provider
   button, switches it for the current playback only, so the saved preference

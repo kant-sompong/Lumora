@@ -1,4 +1,4 @@
-"""MAL-authoritative anime identity, and the AniList id that ani.pm plays.
+"""MAL-authoritative anime identity, and the AniList id that anipm.pk plays.
 
 MyAnimeList is the only authority this module trusts for "is this catalogue
 title anime".  Nothing else is used as proof: not the original language, not
@@ -12,7 +12,7 @@ Two identifiers live here and never cross:
 
 * ``mal_id`` - the MyAnimeList id of the matched entry (MyAnimeList authority).
 * ``anilist_id`` - the AniList id, resolved **separately** after MAL verifies
-  the title, because ani.pm keys playback by AniList id.
+  the title, because anipm.pk keys playback by AniList id.
 
 AniList resolution is evidence-based and validated: either AniList's own
 ``Media(idMal:)`` link, or a crosswalk candidate that is then checked against
@@ -230,7 +230,7 @@ class AnimeIdentity:
 
     @property
     def playable_anilist_id(self) -> int | None:
-        """The id ani.pm may receive: an AniList id, never a MAL id."""
+        """The id anipm.pk may receive: an AniList id, never a MAL id."""
         return self.anilist_id if self.verified else None
 
 

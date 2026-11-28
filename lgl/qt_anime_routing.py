@@ -1,4 +1,4 @@
-"""Forced ani.pm routing for verified anime, in the Qt frontend.
+"""Forced anipm.pk routing for verified anime, in the Qt frontend.
 
 Identity is Agent A's shared module, ``lgl.anime_identity``.  This module is
 the one seam between it and the Qt page: it calls the published entry points,
@@ -15,14 +15,14 @@ and the answer's fields ``verified``, ``playable_anilist_id`` and
 ``resolution_failed`` (plus ``is_anime``/``reason`` when present).
 
 Identifier discipline: a MAL id is only ever passed as ``mal_id``, an AniList
-id only as ``anilist_id``, and the id that reaches ani.pm is always
+id only as ``anilist_id``, and the id that reaches anipm.pk is always
 ``playable_anilist_id``.  A module that is missing, raising or answering
 ``None`` means "cannot say", which is never verified anime: the user's own
 provider keeps the play.
 
 Routing rules, identical to the GTK frontend's:
 
-* verified anime plays on ani.pm, whatever provider is selected or saved;
+* verified anime plays on anipm.pk, whatever provider is selected or saved;
 * a verified anime whose AniList entry could not be resolved
   (``resolution_failed``, or no ``playable_anilist_id``) is an error, never
   another provider and never a title search;
@@ -39,7 +39,7 @@ from . import anipm, streaming
 #: Agent A's shared identity module.
 IDENTITY_MODULE = "lgl.anime_identity"
 
-#: Tracks ani.pm can only play when its API hands back an embed URL.
+#: Tracks anipm.pk can only play when its API hands back an embed URL.
 HARD_TRACKS: tuple[str, ...] = ("subHard", "dubHard")
 
 #: What each shared-core resolution reason means for the person watching.
@@ -57,7 +57,7 @@ REASON_TEXT: dict[str, str] = {
 #: Said instead of playing somewhere else when a verified anime has no AniList id.
 UNRESOLVED = (
     "“{title}” is verified anime on MyAnimeList, but its AniList entry could "
-    "not be resolved (missing or ambiguous), so ani.pm cannot play it. "
+    "not be resolved (missing or ambiguous), so anipm.pk cannot play it. "
     "Pick another provider from the menu to watch it there; Lumora will not "
     "switch on its own."
 )
@@ -91,7 +91,7 @@ class Route:
     """Where one verified-anime play should go.
 
     ``forced`` marks a verified anime: the caller must use ``provider`` (always
-    ani.pm), must not fall back anywhere, and must show ``error`` when no
+    anipm.pk), must not fall back anywhere, and must show ``error`` when no
     AniList id is available instead of playing the title.
     """
 
@@ -286,11 +286,11 @@ def _name(title: str) -> str:
 
 def embed_url(anilist_id: object, episode: object = 1, *, language=None,
               api_embed: object = None) -> str:
-    """The ani.pm URL for one AniList id and track; never from a MAL id.
+    """The anipm.pk URL for one AniList id and track; never from a MAL id.
 
     A hard track (``subHard``/``dubHard``) has no documented route to build,
     so it plays only when the API returned an embed URL: that URL is validated
-    against the pinned ani.pm origin before use, and a missing or invalid one
+    against the pinned anipm.pk origin before use, and a missing or invalid one
     raises instead of quietly falling back to Sub or Dub.  Ordinary tracks
     keep the constructed route that has always been used.
     """

@@ -113,11 +113,11 @@ const List<StreamProvider> allProviders = <StreamProvider>[
         'https://player.moonflix.website/tv/{id}/{season}/{episode}',
     kinds: <MediaKind>{MediaKind.movie, MediaKind.tv},
   ),
-  // ani.pm (https://ani.pm/developers) is anime-only and keyed by AniList id.
+  // anipm.pk (https://anipm.pk/developers) is anime-only and keyed by AniList id.
   StreamProvider(
     id: 'ani',
-    name: 'ani.pm (anime)',
-    urlTemplate: 'https://ani.pm/embed/ani/{anilist}/{episode}/sub',
+    name: 'anipm.pk (anime)',
+    urlTemplate: 'https://anipm.pk/embed/ani/{anilist}/{episode}/sub',
     kinds: <MediaKind>{MediaKind.anime},
   ),
 ];

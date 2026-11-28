@@ -972,7 +972,7 @@ class AniListTile(Gtk.FlowBoxChild):
     """One AniList-sourced anime poster in a grid: art, title, meta, 18+ badge.
 
     The title is an :class:`anipm.AniTitle` used as the anime card model, but
-    every field here comes from AniList (Hidden Gems) rather than an ani.pm
+    every field here comes from AniList (Hidden Gems) rather than an anipm.pk
     catalogue search, which no surface performs any more.
     """
 
@@ -1840,7 +1840,7 @@ class MoviesWindow(Gtk.Box):
         """Providers that can play what the open section shows.
 
         The anime menu only lists providers with a route for an anime title:
-        ani.pm by AniList id, and the providers that document one.
+        anipm.pk by AniList id, and the providers that document one.
         """
         if self._provider_section() == "anime":
             return tuple(
@@ -2291,7 +2291,7 @@ class MoviesWindow(Gtk.Box):
             payload["details"] = self._current_details
         if self._season_cache:
             payload["seasons"] = dict(self._season_cache)
-        # A returning anime tab keeps the ani.pm series, its episode list and
+        # A returning anime tab keeps the anipm.pk series, its episode list and
         # its MAL details, so the verified route and its tracks still work.
         if getattr(self, "_current_ani_series", None) is not None:
             payload["ani_series"] = self._current_ani_series
@@ -2680,7 +2680,7 @@ class MoviesWindow(Gtk.Box):
             return streaming.DEFAULT_PROVIDER
 
     def _anime_provider_choice(self) -> str:
-        """The anime provider the owner picked, or ani.pm when they have not."""
+        """The anime provider the owner picked, or anipm.pk when they have not."""
         try:
             stored = str(self._settings.get("anime_streaming_provider", "") or "")
         except Exception:  # noqa: BLE001 - a bad setting is no choice
@@ -3672,7 +3672,7 @@ class MoviesWindow(Gtk.Box):
     def _run_search(self, text: str, token: int) -> None:
         """Search TMDB on a worker; a stale token drops a late arrival.
 
-        The ani.pm catalogue is not queried here: search shows TMDB results.
+        The anipm.pk catalogue is not queried here: search shows TMDB results.
         """
         results: dict[str, object] = {}
 
@@ -4042,7 +4042,7 @@ class MoviesWindow(Gtk.Box):
         cached_episodes = restore.payload.get("ani_episodes") if restore is not None else None
         cached_anime = restore.payload.get("anime_details") if restore is not None else None
         if cached_series is not None:
-            # A returning tab keeps the ani.pm series and episode list it had:
+            # A returning tab keeps the anipm.pk series and episode list it had:
             # the verified route reads that list, so it must not be lost.
             self._current_ani_series = cached_series
             self._current_ani_episodes = list(cached_episodes or ())
@@ -4158,15 +4158,15 @@ class MoviesWindow(Gtk.Box):
             # anime providers join the fallback chain with the same id.
             note.set_label(
                 "Anime metadata from AniList. Watch plays the "
-                "ani.pm player in the app using this title's AniList id "
+                "anipm.pk player in the app using this title's AniList id "
                 "(never the MAL id or page slug); the episode list below "
-                "shows exactly which tracks ani.pm offers."
+                "shows exactly which tracks anipm.pk offers."
             )
         else:
             note.set_label(
                 "This is anime metadata from MyAnimeList. Watch opens the "
                 f"{streaming.LABELS.get(provider, provider)} player in the "
-                "app: ani.pm plays straight from the MAL id (no key needed); "
+                "app: anipm.pk plays straight from the MAL id (no key needed); "
                 "the other providers need a TMDB match by title. "
                 f"Tracks: {', '.join(streaming.LANGUAGE_LABELS.get(item, item) for item in languages)}."
             )
@@ -4209,7 +4209,7 @@ class MoviesWindow(Gtk.Box):
     def _load_anime_details(self, item, token: int) -> None:
         if isinstance(item, anipm.AniTitle):
             # An AniList-sourced anime: series metadata, availability and the
-            # episode list all come from ani.pm, keyed by the AniList id.
+            # episode list all come from anipm.pk, keyed by the AniList id.
             def work_ani() -> None:
                 series = None
                 episodes: list = []
@@ -4278,7 +4278,7 @@ class MoviesWindow(Gtk.Box):
         return False
 
     def _build_ani_episode_section(self, body: Gtk.Box, item) -> None:
-        """The episode list for an ani.pm title, filled once data arrives."""
+        """The episode list for an anipm.pk title, filled once data arrives."""
         self._current_ani_series = None
         self._current_ani_episodes = []
         head = Gtk.Label(label="Episodes", xalign=0)
@@ -4290,7 +4290,7 @@ class MoviesWindow(Gtk.Box):
             hint.set_line_wrap(True)
             hint.get_style_context().add_class("movie-meta")
             body.pack_start(hint, False, False, 0)
-        status = Gtk.Label(label="Loading episodes from ani.pm…", xalign=0)
+        status = Gtk.Label(label="Loading episodes from anipm.pk…", xalign=0)
         status.set_line_wrap(True)
         status.get_style_context().add_class("movie-status")
         body.pack_start(status, False, False, 0)
@@ -4327,7 +4327,7 @@ class MoviesWindow(Gtk.Box):
         if status is not None:
             if episodes:
                 tracks = series.available.languages if series is not None else ()
-                text = f"{len(episodes)} episodes from ani.pm"
+                text = f"{len(episodes)} episodes from anipm.pk"
                 if tracks:
                     text += " · tracks: " + ", ".join(
                         anipm.LANGUAGE_LABELS.get(name, name) for name in tracks
@@ -4335,11 +4335,11 @@ class MoviesWindow(Gtk.Box):
                 status.set_text(text)
             elif series is None:
                 status.set_text(
-                    "Could not load the episode list from ani.pm. "
-                    "Watch still tries the documented ani.pm route."
+                    "Could not load the episode list from anipm.pk. "
+                    "Watch still tries the documented anipm.pk route."
                 )
             else:
-                status.set_text("ani.pm lists no episodes for this title yet.")
+                status.set_text("anipm.pk lists no episodes for this title yet.")
         available = series.available if series is not None else None
         self._render_ani_episodes(
             getattr(self, "_current_item", None), episodes, available
@@ -4379,7 +4379,7 @@ class MoviesWindow(Gtk.Box):
                 button.get_style_context().add_class("movie-btn-small")
                 if language in playable:
                     button.set_tooltip_text(
-                        f"Play episode {ep.number} ({label}) via ani.pm"
+                        f"Play episode {ep.number} ({label}) via anipm.pk"
                     )
                     button.connect(
                         "clicked", self._on_ani_episode_play, item, ep.number,
@@ -4388,7 +4388,7 @@ class MoviesWindow(Gtk.Box):
                 else:
                     button.set_sensitive(False)
                     button.set_tooltip_text(
-                        f"ani.pm does not offer {label} for this episode"
+                        f"anipm.pk does not offer {label} for this episode"
                     )
                 row.pack_start(button, False, False, 0)
             box.pack_start(row, False, False, 0)
@@ -4456,7 +4456,7 @@ class MoviesWindow(Gtk.Box):
         same watch state the player's own Next button reads, and the anime
         page records which title that number belongs to.  So a title whose
         episode was played from its page resumes one episode later, as far as
-        the title's episode count (or ani.pm's list) allows; a fresh title, a
+        the title's episode count (or anipm.pk's list) allows; a fresh title, a
         different title, or one past its last episode starts at episode 1.
         History cannot answer this: it stores a title and a timestamp, never
         an episode number, and anime keys are not history keys at all.
@@ -4480,9 +4480,9 @@ class MoviesWindow(Gtk.Box):
 
     # -- anime-page playback ------------------------------------------------
     #
-    # Anime detail pages (MAL and ani.pm/AniList) carry no TMDB identity, so
+    # Anime detail pages (MAL and anipm.pk/AniList) carry no TMDB identity, so
     # the same MAL verification is asked with what the page holds.  An AniList
-    # id alone does not bypass it: a verified title plays on ani.pm,
+    # id alone does not bypass it: a verified title plays on anipm.pk,
     # an unverified one keeps the selected normal provider, and a verified
     # title whose AniList entry cannot be resolved is an error.
 
@@ -4566,9 +4566,9 @@ class MoviesWindow(Gtk.Box):
     def _play_ani_verified(
         self, item, title, number, language, route, preferred=None
     ) -> None:
-        """Play a MAL-verified anime on ani.pm first, the rest behind it.
+        """Play a MAL-verified anime on anipm.pk first, the rest behind it.
 
-        ani.pm is the first attempt whatever anime provider is saved; the
+        anipm.pk is the first attempt whatever anime provider is saved; the
         other AniList-keyed providers are kept behind it, so the player's Try
         another provider button and the automatic load-failure walk both work.
         ``preferred`` starts the chain on a manually picked provider; the saved
@@ -4582,7 +4582,7 @@ class MoviesWindow(Gtk.Box):
         if track not in anipm.CONSTRUCTABLE_LANGUAGES and not api_embed:
             label = anipm.LANGUAGE_LABELS.get(track, track)
             message = (
-                f"ani.pm does not offer the {label} track for “{title[:60]}” "
+                f"anipm.pk does not offer the {label} track for “{title[:60]}” "
                 f"episode {number}. Pick Sub or Dub."
             )
             # This play failed: whatever verified anime was playing before it
@@ -4602,11 +4602,11 @@ class MoviesWindow(Gtk.Box):
                 ),
             )
         except (streaming.EmbedUrlError, ValueError) as error:
-            # ani.pm could not build this play, so the session it replaced is
+            # anipm.pk could not build this play, so the session it replaced is
             # over; it must not come back on a later tab switch.
             self._end_verified_session()
             self._anime_status.set_text(str(error))
-            # ani.pm could not build this play: say so, and leave another
+            # anipm.pk could not build this play: say so, and leave another
             # provider to an explicit click rather than switching on its own.
             self._open_player_message(
                 title,
@@ -4631,9 +4631,9 @@ class MoviesWindow(Gtk.Box):
             str(getattr(item, "year", "") or ""),
         )
         self._anime_status.set_text(
-            f"Playing “{title[:60]}” via ani.pm (episode {number})."
+            f"Playing “{title[:60]}” via anipm.pk (episode {number})."
         )
-        # ani.pm stays first; the other AniList-keyed providers follow it, the
+        # anipm.pk stays first; the other AniList-keyed providers follow it, the
         # owner's saved pick only ordering that tail for a manual switch.
         chosen = preferred or self._anime_provider_choice()
         ani_attempt = [(streaming.ANI_PROVIDER, url)]
@@ -5906,7 +5906,7 @@ class MoviesWindow(Gtk.Box):
 
     # -- identity routing ---------------------------------------------------
     #
-    # MAL-verified anime plays on ani.pm and nowhere else: the selected normal
+    # MAL-verified anime plays on anipm.pk and nowhere else: the selected normal
     # provider and any saved anime-provider preference are ignored, and a
     # failure to resolve the AniList entry is an error rather than a fall back
     # to another provider.  Unverified guesses and confirmed non-anime keep
@@ -5987,7 +5987,7 @@ class MoviesWindow(Gtk.Box):
     def _alternative_attempts(self, item, season, episode) -> list[tuple[str, str]]:
         """Other providers that can play this title, for an explicit pick.
 
-        ani.pm is never one of them: this is what an error screen or a manual
+        anipm.pk is never one of them: this is what an error screen or a manual
         switch offers instead, for the same title and the same episode.
         """
         title = self._playback_label(item, season, episode)
@@ -6010,7 +6010,7 @@ class MoviesWindow(Gtk.Box):
     def _switch_forced_provider(self, provider: str) -> bool:
         """Play the verified anime on screen on ``provider``, this session only.
 
-        A verified anime starts on ani.pm whatever is saved.  Picking another
+        A verified anime starts on anipm.pk whatever is saved.  Picking another
         provider while it plays switches *this* play: the saved
         ``anime_streaming_provider`` is left exactly as it was, and the title
         and season/episode already playing are kept, so Next episode and
@@ -6041,7 +6041,7 @@ class MoviesWindow(Gtk.Box):
             self._play_forced_ani(item, season, episode, route)
             return True
         playing["provider"] = provider
-        # Still the same verified session, so picking ani.pm goes back to it.
+        # Still the same verified session, so picking anipm.pk goes back to it.
         self._forced_playback = playing
         self._play_with_providers(
             item, season, episode, preferred=provider, keep_session=True,
@@ -6058,7 +6058,7 @@ class MoviesWindow(Gtk.Box):
         return title
 
     def _ani_playback_language(self) -> str:
-        """The sub/dub track the owner chose, in ani.pm's own spelling."""
+        """The sub/dub track the owner chose, in anipm.pk's own spelling."""
         try:
             chosen = self._settings.get("anime_language", "") or (
                 "dub" if self._settings.get("anime_dub", False) else "sub"
@@ -6073,13 +6073,13 @@ class MoviesWindow(Gtk.Box):
         return "dub" if self._settings.get("anime_dub", False) else "sub"
 
     def _play_forced_ani(self, item, season, episode, route) -> None:
-        """Play a verified anime on ani.pm first, with the rest still reachable.
+        """Play a verified anime on anipm.pk first, with the rest still reachable.
 
-        ani.pm is the first attempt for every MAL-verified anime, whatever
+        anipm.pk is the first attempt for every MAL-verified anime, whatever
         anime provider is saved; the saved pick only orders the chain kept
         behind it, so the player's Try another provider button and the
-        automatic load-failure walk both continue from ani.pm.  Switching away
-        from ani.pm is a manual, session-only choice: see
+        automatic load-failure walk both continue from anipm.pk.  Switching away
+        from anipm.pk is a manual, session-only choice: see
         :meth:`_switch_forced_provider`.
         """
         title = self._playback_label(item, season, episode)
@@ -6095,7 +6095,7 @@ class MoviesWindow(Gtk.Box):
             )
         chosen = self._anime_provider_choice()
         # The saved anime pick only orders the providers offered *behind*
-        # ani.pm; it never takes the first attempt away from a verified anime.
+        # anipm.pk; it never takes the first attempt away from a verified anime.
         others = [
             pair for pair in self._provider_attempts(build, preferred=chosen)
             if pair[0] != streaming.ANI_PROVIDER
@@ -6111,11 +6111,11 @@ class MoviesWindow(Gtk.Box):
             # This play failed: a previous anime's verified session must not
             # stay active behind the error screen.
             self._end_verified_session()
-            # Never a silent fall back to another provider: say ani.pm could
+            # Never a silent fall back to another provider: say anipm.pk could
             # not build the play, and leave the rest to an explicit choice.
             self._open_player_message(
                 title,
-                f"ani.pm could not play this title: {error} "
+                f"anipm.pk could not play this title: {error} "
                 "Pick another provider yourself to watch it there.",
                 alternatives=others,
             )

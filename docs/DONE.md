@@ -29,7 +29,7 @@ Last updated: 2026-11-10 (`main` after PR #55). What is still open is in [TODO.m
 ### Still in progress
 
 - Agent 1's GTK Feed Slice 2 is not included in these completed items. Its approved scope is seven poster rows plus the three-column block and schedule strip below the existing hero, with the 32 `feed-*` rules in `_CINEMATIC_CSS` in `movies_ui.py`. Review and merge are still pending.
-- Ani.pm iframe playback has been investigated but not implemented. The player URL must be loaded inside an iframe; opening it as a top-level WebKit/WebEngine URL redirects to the Ani.pm title page.
+- anipm.pk iframe playback has been investigated but not implemented. The player URL must be loaded inside an iframe; opening it as a top-level WebKit/WebEngine URL redirects to the anipm.pk title page.
 
 ## Background
 - The Linux GTK app is the main one. The owner wanted the Windows app to look and feel the same.

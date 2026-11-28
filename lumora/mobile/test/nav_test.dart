@@ -114,7 +114,7 @@ void main() {
       expect(pickProvider(settings, movie())?.id, 'cinesrc');
     });
 
-    test('starts anime on ani.pm even when it is not first in the order', () {
+    test('starts anime on anipm.pk even when it is not first in the order', () {
       final settings = AppSettings(
         enabledProviderIds: <String>['toflix', 'ani'],
         defaultProviderId: 'toflix',
@@ -225,7 +225,7 @@ void main() {
   });
 
   group('playbackTargets', () {
-    test('anime goes to ani.pm first, then the user order', () {
+    test('anime goes to anipm.pk first, then the user order', () {
       final settings = AppSettings(
         enabledProviderIds: <String>['toflix', 'ani'],
       );
@@ -246,7 +246,7 @@ void main() {
       ]);
     });
 
-    test('a verified identity routes a TMDB film to ani.pm', () {
+    test('a verified identity routes a TMDB film to anipm.pk', () {
       final settings = AppSettings(
         enabledProviderIds: <String>['cinesrc', 'ani'],
       );
@@ -315,7 +315,7 @@ void main() {
     final health = timedHealth(settings, <String, int>{
       'cinesrc.st': 900,
       'www.rivestream.app': 120,
-      'ani.pm': 700,
+      'anipm.pk': 700,
       'toflix.co': 80,
     });
     await health.checkAll();
@@ -345,7 +345,7 @@ void main() {
     expect(film.first.providerId, 'toflix');
     expect(film.first.providerId, isNot(settings.defaultProviderId));
 
-    // Anime still goes to ani.pm first, even though toflix answered faster.
+    // Anime still goes to anipm.pk first, even though toflix answered faster.
     final animated = playerTargets(
       context,
       PlaybackPlan(item: anime()),

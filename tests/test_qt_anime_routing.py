@@ -400,7 +400,7 @@ def test_the_verdict_runs_for_any_provider_but_a_guess_never_reroutes(app, stubb
     page.close()
 
 
-# -- a verified anime plays on ani.pm ---------------------------------------
+# -- a verified anime plays on anipm.pk ---------------------------------------
 
 def test_a_verified_anime_plays_on_anipm_without_saving_a_setting(app, stubbed, tmp_path):
     _calls, state = stubbed
@@ -428,7 +428,7 @@ def test_a_verified_anime_plays_on_anipm_without_saving_a_setting(app, stubbed, 
 def test_a_verified_anime_plays_on_anipm_without_an_anime_choice(
     app, stubbed, tmp_path, general, saved
 ):
-    """Verified anime uses ani.pm until an anime provider is picked."""
+    """Verified anime uses anipm.pk until an anime provider is picked."""
     calls, state = stubbed
     state["verdict"] = Verdict(is_anime=True, verified=True)
     settings = Settings(tmp_path / "settings.json", keyring=False)
@@ -656,7 +656,7 @@ def test_identity_runs_without_a_tmdb_client(app, stubbed):
     assert wait_for(app, lambda: page.urls)
 
     assert page.urls == [streaming.ani_url(42, 5, language="sub")]
-    assert page.plain == [], "a verified anime still plays on ani.pm"
+    assert page.plain == [], "a verified anime still plays on anipm.pk"
     page.close()
 
 

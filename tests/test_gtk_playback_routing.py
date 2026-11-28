@@ -6,7 +6,7 @@ shared cache), with only the two *network* adapters replaced by in-memory
 fakes.  The episode-mapping layer is ``lgl.anime_map``'s ``PlayTarget``.
 
 The rule under test:
-* VERIFIED_ANIME -> ani.pm only;
+* VERIFIED_ANIME -> anipm.pk only;
 * UNVERIFIED (no MAL match, MAL lookup unavailable, confirmed non-anime) ->
   the selected normal provider;
 * RESOLUTION_FAILURE -> error, no fallback;

@@ -1,6 +1,6 @@
-"""The Qt Search page asks TMDB and MyAnimeList, never ani.pm.
+"""The Qt Search page asks TMDB and MyAnimeList, never anipm.pk.
 
-ani.pm is a player on this frontend too: its series and episode reads stay in
+anipm.pk is a player on this frontend too: its series and episode reads stay in
 use for verified anime, but ``AniPmClient.search`` is not a catalogue source.
 The test replaces that method with a recorder that fails if it is reached and
 drives the real search worker.
@@ -79,12 +79,12 @@ def page(app):
 
 @pytest.fixture
 def anipm_search_calls(monkeypatch):
-    """Any ani.pm catalogue search is a failure, recorded for the assertion."""
+    """Any anipm.pk catalogue search is a failure, recorded for the assertion."""
     calls: list[str] = []
 
     def refused(self, query, **_kwargs):
         calls.append(str(query))
-        raise AssertionError("ani.pm must never be searched for catalogue rows")
+        raise AssertionError("anipm.pk must never be searched for catalogue rows")
 
     monkeypatch.setattr(anipm.AniPmClient, "search", refused)
     return calls
@@ -108,18 +108,18 @@ def test_the_search_page_shows_tmdb_rows_and_never_queries_anipm(
     search(page, "matrix")
 
     assert wait_for(app, lambda: page._search_grid.cards())
-    assert anipm_search_calls == [], "ani.pm was asked for catalogue rows"
+    assert anipm_search_calls == [], "anipm.pk was asked for catalogue rows"
     titles = [poster.card.title for poster in page._search_grid.cards()]
     assert titles == ["The Matrix"]
     note = page.search_note.text()
     assert "1 result" in note
-    assert "ani.pm" not in note
+    assert "anipm.pk" not in note
 
 
 def test_the_search_page_still_asks_mal_and_shows_its_rows(
     app, page, anipm_search_calls
 ):
-    """Removing ani.pm must not remove MAL, Qt's other catalogue source."""
+    """Removing anipm.pk must not remove MAL, Qt's other catalogue source."""
     page._tmdb = Results([
         tmdb.MediaItem(kind="movie", tmdb_id=603, title="The Matrix"),
     ])
@@ -143,7 +143,7 @@ def test_the_search_page_still_asks_mal_and_shows_its_rows(
     assert titles == ["The Matrix", "Attack on Titan"]
     note = page.search_note.text()
     assert "2 results" in note
-    assert "ani.pm" not in note
+    assert "anipm.pk" not in note
 
 
 def test_an_empty_search_result_still_never_queries_anipm(
@@ -156,4 +156,4 @@ def test_an_empty_search_result_still_never_queries_anipm(
     assert wait_for(app, lambda: "No results" in page.search_note.text())
     assert anipm_search_calls == []
     assert page._search_grid.cards() == []
-    assert "ani.pm" not in page.search_note.text()
+    assert "anipm.pk" not in page.search_note.text()

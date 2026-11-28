@@ -1,6 +1,6 @@
 """The GTK Search page asks TMDB, and only TMDB, for catalogue rows.
 
-ani.pm is a player here: its series, episode and embed reads stay in use after
+anipm.pk is a player here: its series, episode and embed reads stay in use after
 MyAnimeList verification, but its ``search`` is never a catalogue source.  The
 tests replace ``AniPmClient.search`` with a recorder that fails if it is
 reached, then drive the real search worker and grid.
@@ -104,12 +104,12 @@ def window(display, monkeypatch):
 
 @pytest.fixture
 def anipm_search_calls(monkeypatch):
-    """Any ani.pm catalogue search is a failure, recorded for the assertion."""
+    """Any anipm.pk catalogue search is a failure, recorded for the assertion."""
     calls: list[str] = []
 
     def refused(self, query, **_kwargs):
         calls.append(str(query))
-        raise AssertionError("ani.pm must never be searched for catalogue rows")
+        raise AssertionError("anipm.pk must never be searched for catalogue rows")
 
     monkeypatch.setattr(anipm.AniPmClient, "search", refused)
     return calls
@@ -132,13 +132,13 @@ def test_the_search_page_shows_tmdb_rows_and_never_queries_anipm(
     search(window, "matrix")
 
     assert wait_for(lambda: window._search_flow.get_children())
-    assert anipm_search_calls == [], "ani.pm was asked for catalogue rows"
+    assert anipm_search_calls == [], "anipm.pk was asked for catalogue rows"
     children = window._search_flow.get_children()
     assert len(children) == 1
     assert isinstance(children[0], movies_ui.PosterTile)
     status = window._search_status.get_text()
     assert "from TMDB" in status
-    assert "ani.pm" not in status
+    assert "anipm.pk" not in status
 
 
 def test_an_empty_search_result_still_never_queries_anipm(
@@ -151,4 +151,4 @@ def test_an_empty_search_result_still_never_queries_anipm(
     assert wait_for(lambda: "No titles matched" in window._search_status.get_text())
     assert anipm_search_calls == []
     assert window._search_flow.get_children() == []
-    assert "ani.pm" not in window._search_status.get_text()
+    assert "anipm.pk" not in window._search_status.get_text()

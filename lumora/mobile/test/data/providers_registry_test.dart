@@ -58,7 +58,7 @@ void main() {
       expect(provider('cinesrc').name, 'CineSrc');
       expect(provider('rivestream').name, 'Rive');
       expect(provider('framextv').name, 'frameXTV');
-      expect(provider('ani').name, 'ani.pm (anime)');
+      expect(provider('ani').name, 'anipm.pk (anime)');
     });
 
     test('providerById returns null for an unknown id', () {
@@ -166,7 +166,7 @@ void main() {
       );
       expect(
         buildWatchUrl(provider('ani'), anime(), episode: 12).toString(),
-        'https://ani.pm/embed/ani/4242/12/sub',
+        'https://anipm.pk/embed/ani/4242/12/sub',
       );
     });
 

@@ -73,12 +73,12 @@ class AnimeIdentity {
   /// Whether MAL verified the title as anime.
   bool get verified => status == IdentityStatus.anime;
 
-  /// The id ani.pm may receive: an AniList id, never a MAL id.
+  /// The id anipm.pk may receive: an AniList id, never a MAL id.
   int? get playableAnilistId => verified ? anilistId : null;
 }
 
 /// Decides whether a catalogue title is anime, using MyAnimeList as the only
-/// authority, then resolves the AniList id ani.pm plays from.
+/// authority, then resolves the AniList id anipm.pk plays from.
 ///
 /// Matching is exact (`lgl/anime_identity.py` `matches_catalogue`): the
 /// normalised title must equal MAL's primary or one alternative title, the
@@ -238,8 +238,8 @@ class AnimeIdentityService {
       kind: kind,
     );
     // MAL is the authority: a matching entry is anime even when AniList could
-    // not resolve an id. `anilistId` stays null so ani.pm is never handed a
-    // MAL id, and provider_choice only forces ani.pm when an id exists.
+    // not resolve an id. `anilistId` stays null so anipm.pk is never handed a
+    // MAL id, and provider_choice only forces anipm.pk when an id exists.
     return AnimeIdentity(
       status: IdentityStatus.anime,
       malId: match.id,
