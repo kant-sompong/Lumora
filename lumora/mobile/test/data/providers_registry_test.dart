@@ -170,6 +170,46 @@ void main() {
       );
     });
 
+    test('asks the anime route for the chosen audio track', () {
+      expect(
+        buildWatchUrl(
+          provider('ani'),
+          anime(),
+          episode: 12,
+          language: 'dub',
+        ).toString(),
+        'https://anipm.pk/embed/ani/4242/12/dub',
+      );
+      expect(
+        buildWatchUrl(
+          provider('ani'),
+          anime(),
+          episode: 12,
+          language: 'vostfr',
+        ).toString(),
+        'https://anipm.pk/embed/ani/4242/12/vostfr',
+      );
+      // An unknown track falls back to sub instead of reaching the provider.
+      expect(
+        buildWatchUrl(
+          provider('ani'),
+          anime(),
+          episode: 12,
+          language: 'klingon',
+        ).toString(),
+        'https://anipm.pk/embed/ani/4242/12/sub',
+      );
+      // A provider without a language segment is unaffected.
+      expect(
+        buildWatchUrl(
+          provider('cinesrc'),
+          movie(),
+          language: 'dub',
+        ).toString(),
+        'https://cinesrc.st/embed/movie/603',
+      );
+    });
+
     test('rejects a provider that cannot play the kind', () {
       expect(
         () => buildWatchUrl(provider('ani'), movie()),

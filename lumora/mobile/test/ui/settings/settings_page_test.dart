@@ -42,8 +42,9 @@ Future<void> pumpSettings(
   AppSettings settings, {
   ProviderHealthService? health,
   double systemTextScale = 1.0,
+  double height = 2600,
 }) async {
-  tester.view.physicalSize = const Size(420, 2600);
+  tester.view.physicalSize = Size(420, height);
   tester.view.devicePixelRatio = 1.0;
   addTearDown(tester.view.reset);
   await tester.pumpWidget(
@@ -285,6 +286,95 @@ void main() {
     expect(settings.autoProvider, isFalse);
     final reloaded = await AppSettings.load();
     expect(reloaded.autoProvider, isFalse);
+  });
+
+  testWidgets('the manual provider switch mirrors the automatic one', (
+    WidgetTester tester,
+  ) async {
+    final settings = AppSettings(enabledProviderIds: <String>['cinesrc']);
+    await pumpSettings(tester, settings);
+    await tester.tap(find.text('Providers'));
+    await tester.pumpAndSettle();
+
+    final auto = find.byKey(const Key('autoProviderSwitch'));
+    final manual = find.byKey(const Key('manualProviderSwitch'));
+    expect(tester.widget<SwitchListTile>(auto).value, isTrue);
+    expect(tester.widget<SwitchListTile>(manual).value, isFalse);
+    expect(find.text('I pick the provider myself'), findsOneWidget);
+
+    // Switching the manual mode on switches the automatic choice off.
+    await tester.tap(find.descendant(of: manual, matching: find.byType(Switch)));
+    await tester.pumpAndSettle();
+
+    expect(settings.autoProvider, isFalse);
+    expect(tester.widget<SwitchListTile>(auto).value, isFalse);
+    expect(tester.widget<SwitchListTile>(manual).value, isTrue);
+    expect((await AppSettings.load()).autoProvider, isFalse);
+  });
+
+  testWidgets('picking a default provider turns the automatic choice off', (
+    WidgetTester tester,
+  ) async {
+    final settings = AppSettings(
+      enabledProviderIds: <String>['cinesrc', 'rivestream'],
+    );
+    await pumpSettings(tester, settings);
+    await tester.tap(find.text('Providers'));
+    await tester.pumpAndSettle();
+
+    expect(settings.autoProvider, isTrue);
+    await tester.tap(find.byIcon(Icons.radio_button_unchecked).at(1));
+    await tester.pumpAndSettle();
+
+    expect(settings.defaultProviderId, 'rivestream');
+    expect(settings.autoProvider, isFalse);
+    final reloaded = await AppSettings.load();
+    expect(reloaded.defaultProviderId, 'rivestream');
+    expect(reloaded.autoProvider, isFalse);
+  });
+
+  testWidgets('the default audio track is chosen and saved', (
+    WidgetTester tester,
+  ) async {
+    final settings = AppSettings(enabledProviderIds: <String>['cinesrc']);
+    await pumpSettings(tester, settings, height: 3400);
+    await tester.tap(find.text('Providers'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Default audio'), findsOneWidget);
+    expect(
+      find.text('Sub, dub or VOSTFR where the anime provider offers it.'),
+      findsOneWidget,
+    );
+    expect(settings.defaultAudio, 'sub');
+
+    await tester.tap(find.byKey(const Key('defaultAudioField')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('VOSTFR').last);
+    await tester.pumpAndSettle();
+
+    expect(settings.defaultAudio, 'vostfr');
+    expect((await AppSettings.load()).defaultAudio, 'vostfr');
+  });
+
+  testWidgets('the autoplay switch persists', (WidgetTester tester) async {
+    final settings = AppSettings(enabledProviderIds: <String>['cinesrc']);
+    await pumpSettings(tester, settings, height: 3400);
+    await tester.tap(find.text('Providers'));
+    await tester.pumpAndSettle();
+
+    final row = find.byKey(const Key('autoplaySwitch'));
+    expect(tester.widget<SwitchListTile>(row).value, isTrue);
+    expect(
+      find.text('Start playing as soon as an episode or movie opens.'),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.descendant(of: row, matching: find.byType(Switch)));
+    await tester.pumpAndSettle();
+
+    expect(settings.autoplay, isFalse);
+    expect((await AppSettings.load()).autoplay, isFalse);
   });
 
   testWidgets('Check providers shows a dot, a word and a time per provider', (

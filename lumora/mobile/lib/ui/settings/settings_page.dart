@@ -38,7 +38,7 @@ const String tmdbAttribution =
     'This product uses the TMDB API but is not endorsed or certified by TMDB.';
 
 /// The desktop release this mobile build follows.
-const String appVersion = '0.6.28';
+const String appVersion = '0.6.29';
 
 /// `1.0` as `100`, for the UI-size row.
 int uiScalePercent(double scale) => (scale * 100).round();
@@ -737,6 +737,7 @@ class _ProvidersTabState extends State<_ProvidersTab> {
               'reorder; pick one as the default.',
         ),
         SwitchListTile(
+          key: const Key('autoProviderSwitch'),
           value: settings.autoProvider,
           onChanged: (bool value) {
             settings.autoProvider = value;
@@ -745,6 +746,21 @@ class _ProvidersTabState extends State<_ProvidersTab> {
           title: const Text('Choose the fastest provider automatically'),
           subtitle: const Text(
             'Test the providers at launch and use whichever answers quickest.',
+          ),
+        ),
+        // Two views of one setting, so switching one on switches the other off
+        // (`lgl/qt_settings.py` provider modes).
+        SwitchListTile(
+          key: const Key('manualProviderSwitch'),
+          value: !settings.autoProvider,
+          onChanged: (bool value) {
+            settings.autoProvider = !value;
+            unawaited(settings.save());
+          },
+          title: const Text('I pick the provider myself'),
+          subtitle: const Text(
+            'Keeps the provider you selected; picking one yourself also '
+            'switches the automatic choice off.',
           ),
         ),
         Padding(
@@ -811,11 +827,68 @@ class _ProvidersTabState extends State<_ProvidersTab> {
                 unawaited(settings.save());
               },
               onMakeDefault: () {
+                // A manual pick turns the automatic choice off, as on the
+                // desktop.
                 settings.defaultProviderId = provider.id;
+                settings.autoProvider = false;
                 unawaited(settings.save());
               },
             );
           },
+        ),
+        const _SectionHeader(
+          'Playback',
+          'What the player asks for, and how a title starts.',
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: LumoraSpace.md),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text('Default audio', style: theme.textTheme.titleSmall),
+              const SizedBox(height: LumoraSpace.xs),
+              Text(
+                'Sub, dub or VOSTFR where the anime provider offers it.',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: LumoraSpace.sm),
+              DropdownButtonFormField<String>(
+                key: const Key('defaultAudioField'),
+                initialValue: settings.defaultAudio,
+                decoration: const InputDecoration(
+                  border: OutlineInputBorder(),
+                ),
+                items: <DropdownMenuItem<String>>[
+                  for (final language in audioLanguages)
+                    DropdownMenuItem<String>(
+                      value: language,
+                      child: Text(audioLanguageLabels[language] ?? language),
+                    ),
+                ],
+                onChanged: (String? value) {
+                  if (value == null) {
+                    return;
+                  }
+                  settings.defaultAudio = value;
+                  unawaited(settings.save());
+                },
+              ),
+            ],
+          ),
+        ),
+        SwitchListTile(
+          key: const Key('autoplaySwitch'),
+          value: settings.autoplay,
+          onChanged: (bool value) {
+            settings.autoplay = value;
+            unawaited(settings.save());
+          },
+          title: const Text('Autoplay'),
+          subtitle: const Text(
+            'Start playing as soon as an episode or movie opens.',
+          ),
         ),
         Padding(
           padding: const EdgeInsets.fromLTRB(

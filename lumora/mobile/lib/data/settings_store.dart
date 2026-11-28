@@ -20,6 +20,8 @@ class AppSettings extends ChangeNotifier {
     bool compactCards = false,
     bool autoProvider = true,
     double uiScale = 1.0,
+    String defaultAudio = defaultAudioLanguage,
+    bool autoplay = true,
   }) : _tmdbApiKey = tmdbApiKey,
        _malClientId = malClientId.trim(),
        _enabledProviderIds = _sanitize(enabledProviderIds ?? const <String>[]),
@@ -28,7 +30,9 @@ class AppSettings extends ChangeNotifier {
        _accent = accent,
        _compactCards = compactCards,
        _autoProvider = autoProvider,
-       _uiScale = clampUiScale(uiScale);
+       _uiScale = clampUiScale(uiScale),
+       _defaultAudio = cleanAudioLanguage(defaultAudio),
+       _autoplay = autoplay;
 
   /// Keys are the snake_case names agent C's contract fixes.
   static const String keyTmdbApiKey = 'tmdb_api_key';
@@ -40,6 +44,8 @@ class AppSettings extends ChangeNotifier {
   static const String keyCompactCards = 'compact_cards';
   static const String keyAutoProvider = 'auto_provider';
   static const String keyUiScale = 'ui_scale';
+  static const String keyDefaultAudio = 'default_audio';
+  static const String keyAutoplay = 'media_autoplay';
 
   /// The range [uiScale] is kept in (contract v3).
   static const double minUiScale = 0.8;
@@ -58,6 +64,8 @@ class AppSettings extends ChangeNotifier {
   bool _compactCards;
   bool _autoProvider;
   double _uiScale;
+  String _defaultAudio;
+  bool _autoplay;
 
   String get tmdbApiKey => _tmdbApiKey;
 
@@ -92,6 +100,31 @@ class AppSettings extends ChangeNotifier {
       return;
     }
     _autoProvider = value;
+    notifyListeners();
+  }
+
+  /// The audio track anime providers are asked for: `sub`, `dub` or `vostfr`
+  /// (`lgl/qt_settings.py` "Default audio").
+  String get defaultAudio => _defaultAudio;
+
+  set defaultAudio(String value) {
+    final next = cleanAudioLanguage(value);
+    if (_defaultAudio == next) {
+      return;
+    }
+    _defaultAudio = next;
+    notifyListeners();
+  }
+
+  /// Whether opening a title starts it playing (PC setting `media_autoplay`,
+  /// default on). Off leaves the provider's player waiting for a tap.
+  bool get autoplay => _autoplay;
+
+  set autoplay(bool value) {
+    if (_autoplay == value) {
+      return;
+    }
+    _autoplay = value;
     notifyListeners();
   }
 
@@ -231,6 +264,8 @@ class AppSettings extends ChangeNotifier {
     final rawMal = prefs.get(keyMalClientId);
     final rawAuto = prefs.get(keyAutoProvider);
     final rawScale = prefs.get(keyUiScale);
+    final rawAudio = prefs.get(keyDefaultAudio);
+    final rawAutoplay = prefs.get(keyAutoplay);
 
     final themeText = rawTheme is String ? rawTheme : null;
     final shortKey = rawKey is String ? rawKey : '';
@@ -245,6 +280,8 @@ class AppSettings extends ChangeNotifier {
       compactCards: rawCompact is bool ? rawCompact : false,
       autoProvider: rawAuto is bool ? rawAuto : true,
       uiScale: rawScale is num ? rawScale.toDouble() : 1.0,
+      defaultAudio: rawAudio is String ? rawAudio : defaultAudioLanguage,
+      autoplay: rawAutoplay is bool ? rawAutoplay : true,
     );
   }
 
@@ -260,6 +297,8 @@ class AppSettings extends ChangeNotifier {
     await prefs.setBool(keyCompactCards, _compactCards);
     await prefs.setBool(keyAutoProvider, _autoProvider);
     await prefs.setDouble(keyUiScale, _uiScale);
+    await prefs.setString(keyDefaultAudio, _defaultAudio);
+    await prefs.setBool(keyAutoplay, _autoplay);
   }
 
   /// `system` for anything unrecognised, as `lgl/theme.py` does.

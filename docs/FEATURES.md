@@ -152,6 +152,10 @@ be empty until data is available.
   estimated ones and undated episodes shown as unknown rather than guessed
 - Season poster artwork and per-episode previews (still, title, description)
   on TV and anime detail pages, on both desktop and phone
+- The same playback settings on desktop and phone: choose the fastest provider
+  automatically or keep the provider you picked, a default audio track (sub,
+  dub or VOSTFR where the anime provider offers it), and autoplay on or off
+  (`media_autoplay`)
 
 ## Library tools
 
