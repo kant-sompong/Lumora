@@ -631,8 +631,8 @@ class SettingsDialog(QDialog):
         )
         column.addWidget(SettingRow(
             "Anime provider",
-            "Provider used for anime playback. ani.pm plays from an AniList or "
-            "MyAnimeList id and needs no key (https://ani.pm/developers).",
+            "Provider used for anime playback. anipm.pk plays from an AniList or "
+            "MyAnimeList id and needs no key (https://anipm.pk/developers).",
             self._anime_provider,
         ))
 

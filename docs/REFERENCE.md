@@ -37,7 +37,7 @@ Without a TMDB key the Media tab shows a short setup card instead of empty rows.
 | CineLite | ✓ | ✓ | AniList id |
 | frameXTV | ✓ | | TMDB id |
 | Atlantic | ✓ | | TMDB id |
-| ani.pm | | ✓ | AniList or MAL id, no key required; playback only, after MAL verification, and never a catalogue or search source |
+| anipm.pk | | ✓ | AniList or MAL id, no key required; playback only, after MAL verification, and never a catalogue or search source |
 
 ## Keyboard shortcuts
 

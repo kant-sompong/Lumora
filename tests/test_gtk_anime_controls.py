@@ -314,7 +314,7 @@ def row_buttons(title, episodes, available=None):
 def test_the_episode_rows_keep_all_four_track_buttons():
     stub, box = row_buttons(
         ani_title(),
-        [ani_episode(1, {"sub": "https://ani.pm/e/1", "dub": "https://ani.pm/e/2"})],
+        [ani_episode(1, {"sub": "https://anipm.pk/e/1", "dub": "https://anipm.pk/e/2"})],
     )
     names = [
         button.get_label() for button in widgets(box, Gtk.Button)
@@ -326,7 +326,7 @@ def test_the_episode_rows_keep_all_four_track_buttons():
 def test_a_row_button_plays_the_clicked_track():
     stub, box = row_buttons(
         ani_title(),
-        [ani_episode(3, {"sub": "https://ani.pm/e/1", "dub": "https://ani.pm/e/2"})],
+        [ani_episode(3, {"sub": "https://anipm.pk/e/1", "dub": "https://anipm.pk/e/2"})],
     )
     buttons = {button.get_label(): button for button in widgets(box, Gtk.Button)}
     buttons["Dub"].clicked()
@@ -338,7 +338,7 @@ def test_a_row_button_plays_the_clicked_track():
 @needs_display
 def test_an_unavailable_track_button_is_disabled():
     stub, box = row_buttons(
-        ani_title(), [ani_episode(2, {"sub": "https://ani.pm/e/1"})]
+        ani_title(), [ani_episode(2, {"sub": "https://anipm.pk/e/1"})]
     )
     buttons = {button.get_label(): button for button in widgets(box, Gtk.Button)}
     assert buttons["Sub"].get_sensitive() is True

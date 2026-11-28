@@ -8,7 +8,7 @@ import 'settings_store.dart';
 /// default.
 ///
 /// * **Anime** - [MediaItem.kind] is [MediaKind.anime], or [identity] verified
-///   it as anime with an AniList id: `ani` (ani.pm) first when it is enabled,
+///   it as anime with an AniList id: `ani` (anipm.pk) first when it is enabled,
 ///   then the user's order.
 /// * **Automatic** - otherwise, when `autoProvider` is on and health data
 ///   exists: the fastest reachable enabled provider that supports the kind

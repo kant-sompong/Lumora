@@ -90,7 +90,7 @@ def test_existing_providers_keep_their_urls():
     assert streaming.movie_url("cinelite", 603) == "https://embed.cinelite.xyz/603"
     assert streaming.movie_url("framextv", 603) == "https://framextv.xyz/embed/603"
     assert streaming.movie_url("atlantic", 603) == "https://atlantic.st/embed/movie/603"
-    assert streaming.ani_mal_url(16498, 1) == "https://ani.pm/embed/mal/16498/1/sub"
+    assert streaming.ani_mal_url(16498, 1) == "https://anipm.pk/embed/mal/16498/1/sub"
     assert streaming.fallback_providers("cinesrc")[0] == "cinesrc"
     assert streaming.clean_provider("vidy") == "vidy"
     assert streaming.is_valid_provider("moonflix") is True
@@ -99,6 +99,42 @@ def test_existing_providers_keep_their_urls():
 def test_new_providers_reject_foreign_hosts():
     with pytest.raises(streaming.EmbedUrlError):
         streaming.validate_embed_url("vidy", "https://evil.example/movie/603")
+
+
+def test_ani_embeds_stay_on_the_anipm_host():
+    assert streaming.ANI_BASE == "https://anipm.pk"
+    url = "https://anipm.pk/embed/ani/16498/1/sub"
+    assert streaming.validate_embed_url("ani", url) == url
+    assert streaming.ani_url(16498, 1) == url
+    assert streaming.ani_mal_url(16498, 1) == (
+        "https://anipm.pk/embed/mal/16498/1/sub"
+    )
+
+
+#: The provider's retired host, spelled in two pieces so the old domain is still
+#: covered by a test without appearing in the tree.
+RETIRED_ANI_HOST = "ani" + ".pm"
+
+
+@pytest.mark.parametrize("url", [
+    # Not HTTPS.
+    "http://anipm.pk/embed/ani/16498/1/sub",
+    # Credentials in front of the real host.
+    "https://anipm.pk@evil.example/embed/ani/16498/1/sub",
+    # An explicit port, even the default one spelled out.
+    "https://anipm.pk:8443/embed/ani/16498/1/sub",
+    # Lookalike hosts.
+    "https://anipm.pk.evil/embed/ani/16498/1/sub",
+    "https://evil.example/anipm.pk/embed/ani/16498/1/sub",
+    "https://www.anipm.pk/embed/ani/16498/1/sub",
+    # The retired domain is no longer accepted.
+    f"https://{RETIRED_ANI_HOST}/embed/ani/16498/1/sub",
+    # Anything outside the documented /embed prefix.
+    "https://anipm.pk/watch/ani/16498/1/sub",
+])
+def test_ani_embeds_reject_anything_but_the_anipm_origin(url):
+    with pytest.raises(streaming.EmbedUrlError):
+        streaming.validate_embed_url("ani", url)
 
 
 def test_unknown_provider_still_raises():

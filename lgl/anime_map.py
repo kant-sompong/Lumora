@@ -1,6 +1,6 @@
 """Which AniList entry plays the TMDB title on screen.
 
-TMDB is the catalogue and ani.pm is the player, and ani.pm plays by AniList id:
+TMDB is the catalogue and anipm.pk is the player, and anipm.pk plays by AniList id:
 ``/embed/ani/<anilist_id>/<episode>/<sub|dub>``.  This module is the bridge
 between the two, built on the public Fribb/anime-lists mapping list.
 
@@ -397,7 +397,7 @@ def is_anime(
     comes from :func:`load_mapping`, which uses its disk cache, so a repeat
     call is free and a missing network keeps the last good copy.
 
-    The answer only decides whether playback goes to ani.pm: a title with no
+    The answer only decides whether playback goes to anipm.pk: a title with no
     MAL match is never excluded from anything.
 
     ``original_language`` and ``genre_ids`` are still accepted so existing
@@ -456,7 +456,7 @@ def tmdb_to_anilist(
     fetch: Callable[[], list[dict[str, Any]]] | None = None,
     search: Callable[[str], int | None] | None = None,
 ) -> PlayTarget | None:
-    """Where to play TMDB's ``tmdb_id`` (a season and episode) on ani.pm.
+    """Where to play TMDB's ``tmdb_id`` (a season and episode) on anipm.pk.
 
     The mapping list answers first.  When it knows nothing about the title, the
     TMDB *title* is searched on AniList through :func:`streaming.anilist_search`

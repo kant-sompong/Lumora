@@ -12,7 +12,7 @@ This file is a hand-over note for a new session (human or AI). Read it, then [DO
 - The GTK feed column-visibility fix (Agent 1, Slice 1) is already on `main`; see [DONE.md](DONE.md). Do not redo it.
 - Agent 1 is working on **GTK Feed Slice 2** on a separate feature branch. Approved scope: seven poster rows (Continue, Trending, Movies, TV, For You, Hidden Gems, More Like This), plus the three-column block and schedule strip below the existing 430 px hero. Its 32 `feed-*` CSS rules belong in `_CINEMATIC_CSS` in `movies_ui.py`. This work is not yet reviewed, merged, or complete.
 - Agent 2 finished the Qt test-isolation task in PR #55 and is idle. Do not assign it overlapping work without the owner's instruction.
-- Ani.pm playback currently opens a title page rather than an embedded player in the affected path. Developer docs specify an iframe wrapper; implementation is optional and has not started.
+- anipm.pk playback currently opens a title page rather than an embedded player in the affected path. Developer docs specify an iframe wrapper; implementation is optional and has not started.
 - The owner manually reviews and merges PRs. Do not merge or release as part of a documentation update.
 
 

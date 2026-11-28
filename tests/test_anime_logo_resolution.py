@@ -1,6 +1,6 @@
-"""The missing Frieren logo: an ani.pm row must reach TMDB's TV side.
+"""The missing Frieren logo: an anipm.pk row must reach TMDB's TV side.
 
-ani.pm sends a title's episode count as an object (``{"total": 28, "sub": 28,
+anipm.pk sends a title's episode count as an object (``{"total": 28, "sub": 28,
 "dub": 28}``).  Read as a plain number it became zero, the GTK anime page read
 "no episodes" as "a film", and the lookup went to TMDB's *movie* index, where
 a series such as Frieren does not exist - so its logo was never even asked
@@ -19,7 +19,7 @@ from lgl import anipm, tmdb
 
 KEY = "0123456789abcdef0123456789abcdef"
 
-#: The fields ani.pm actually returns for tv/209867, trimmed to the ones read.
+#: The fields anipm.pk actually returns for tv/209867, trimmed to the ones read.
 FRIEREN_ROW = {
     "anilistId": 154587,
     "malId": 52991,
@@ -31,7 +31,7 @@ FRIEREN_ROW = {
     "episodes": {"total": 28, "sub": 28, "dub": 28},
     "genres": ["Adventure", "Drama", "Fantasy"],
     "adult": False,
-    "poster": "https://ani.pm/api/anime/cover?anilistId=154587&malId=52991",
+    "poster": "https://anipm.pk/api/anime/cover?anilistId=154587&malId=52991",
 }
 
 SEARCH = {

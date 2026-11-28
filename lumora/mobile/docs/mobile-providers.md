@@ -17,7 +17,7 @@ it on (`AppSettings.load()` seeds all of them on a first run).
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `id` | `String` | Persisted key; the `lgl/streaming.py` key (`cinesrc`, `ani`, ...) |
-| `name` | `String` | Label from `LABELS` (`CineSrc`, `Rive`, `ani.pm (anime)`, ...) |
+| `name` | `String` | Label from `LABELS` (`CineSrc`, `Rive`, `anipm.pk (anime)`, ...) |
 | `urlTemplate` | `String` | Embed templates, one per kind, joined with `' | '` |
 | `kinds` | `Set<MediaKind>` | Which of `movie`, `tv`, `anime` it can play |
 
@@ -71,7 +71,7 @@ id its route needs is refused, never turned into a URL with `0` or an empty id.
 | `velarium` | `https://velarium.cc/en/watch/movie/{id}` | `https://velarium.cc/en/watch/tv/{id}-{season}-{episode}` | — |
 | `afterdusk` | `https://afterdusk.app/embed/movie/{id}` | `https://afterdusk.app/embed/tv/{id}/{season}/{episode}` | — |
 | `moonflix` | `https://player.moonflix.website/movie/{id}` | `https://player.moonflix.website/tv/{id}/{season}/{episode}` | — |
-| `ani` | — | — | `https://ani.pm/embed/ani/{anilist}/{episode}/sub` |
+| `ani` | — | — | `https://anipm.pk/embed/ani/{anilist}/{episode}/sub` |
 
 ## API
 
