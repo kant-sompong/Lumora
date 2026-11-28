@@ -38,7 +38,7 @@ const String tmdbAttribution =
     'This product uses the TMDB API but is not endorsed or certified by TMDB.';
 
 /// The desktop release this mobile build follows.
-const String appVersion = '0.6.27';
+const String appVersion = '0.6.28';
 
 /// `1.0` as `100`, for the UI-size row.
 int uiScalePercent(double scale) => (scale * 100).round();
