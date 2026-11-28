@@ -42,6 +42,7 @@ class PlayerPage extends StatefulWidget {
     this.season,
     this.episode,
     this.health,
+    this.autoplay = true,
     this.webViewForTest,
     super.key,
   });
@@ -66,6 +67,11 @@ class PlayerPage extends StatefulWidget {
 
   /// Cached health, so the panel can show a dot and a time per provider.
   final ProviderHealthService? health;
+
+  /// Whether the provider's page may start the video by itself. Off holds
+  /// playback until the viewer presses play in the provider's own player
+  /// (Settings → Autoplay).
+  final bool autoplay;
 
   /// Replaces the WebView in widget tests, which have no platform view.
   @visibleForTesting
@@ -202,11 +208,12 @@ class _PlayerPageState extends State<PlayerPage> {
     );
     final platform = controller.platform;
     if (platform is AndroidWebViewController) {
-      // Start playing without a tap, inline, and scroll smoothly. Android's
-      // hardware acceleration is switched on in the manifest
-      // (`android:hardwareAccelerated="true"`); webview_flutter exposes no
-      // per-view switch for it.
-      await platform.setMediaPlaybackRequiresUserGesture(false);
+      // Autoplay starts the video without a tap; with it off the page may only
+      // start media after the viewer touches play. Inline playback and smooth
+      // scrolling stay on, and Android's hardware acceleration is switched on
+      // in the manifest (`android:hardwareAccelerated="true"`);
+      // webview_flutter exposes no per-view switch for it.
+      await platform.setMediaPlaybackRequiresUserGesture(!widget.autoplay);
       await platform.setOverScrollMode(WebViewOverScrollMode.never);
       await platform.setCustomWidgetCallbacks(
         onShowCustomWidget: _showFullscreenVideo,

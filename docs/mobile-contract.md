@@ -53,4 +53,17 @@ lib/data/episode_calendar.dart (A): `EpisodeCalendarService({required AppSetting
   Rules (same as lgl/episode_calendar.py): AniList gives exact times (confirmed, no key); TMDB gives a day only (`dateOnly`, confirmed). An undated episode is listed as "Air date unknown" (at most 2 per season) unless at least two confirmed dates share a 5-10 day median cadence with no wild gap; then at most 3 next episodes are projected and each says Estimated. Never guess past the 90-day horizon. Dedupe by (normalised series, season, episode); a TMDB series whose normalised title matches an AniList title is dropped in AniList's favour. Search is capped at 3 series per provider and is separate from MediaSearchPage's TMDB-only search.
 lib/ui/calendar/calendar_page.dart (B): `CalendarPage({EpisodeSearch? search})`, opened from the Movies & TV app bar (tooltip "Episode calendar"); field + results grouped by series, with Confirmed/Estimated badges, dates and provider error notes.
 
+## Contract v5 (additive) — playback settings on the phone
+
+Desktop source of truth: lgl/qt_settings.py (the two provider modes, "Default audio", "Autoplay"), lgl/streaming.py (`LANGUAGES['ani']`, `LANGUAGE_LABELS`, `DEFAULT_LANGUAGE`, `clean_language`), lgl/provider_health.py (`AUTO_KEY`).
+
+AppSettings (lib/data/settings_store.dart), additive, persisted snake_case, defaults in []:
+  String defaultAudio ['sub'] key default_audio -- one of `sub`, `dub`, `vostfr` (`audioLanguages`); anything else reads back as `sub` (`cleanAudioLanguage`).
+  bool autoplay [true] key media_autoplay -- the desktop's own setting name, so the two apps mean the same thing.
+
+lib/data/providers_registry.dart (A): `audioLanguages`, `audioLanguageLabels`, `defaultAudioLanguage`, `String cleanAudioLanguage(Object?)`. The `ani` template is `https://anipm.pk/embed/ani/{anilist}/{episode}/{language}`, and `{language}` is a fifth placeholder. `buildWatchUrl(..., String language = defaultAudioLanguage)` substitutes it with `cleanAudioLanguage(language)`; providers without the segment ignore it.
+lib/nav.dart (C): every target is built with `language: settings.defaultAudio`, and `PlayerPage` receives `autoplay: settings.autoplay`.
+lib/ui/player/player_page.dart (C): `bool autoplay = true`. On Android it sets `setMediaPlaybackRequiresUserGesture(!autoplay)`, so autoplay off leaves the provider's player waiting for a tap instead of starting the video by itself; playback, fullscreen and the provider list are unchanged.
+lib/ui/settings/settings_page.dart (C): the two provider modes are one setting -- "Choose the fastest provider automatically" (`autoProvider`) and "I pick the provider myself" (`!autoProvider`), and picking a default provider with the radio switches the automatic choice off, as on the desktop. A Playback section holds "Default audio" (Sub/Dub/VOSTFR, key `defaultAudioField`) and "Autoplay" (key `autoplaySwitch`). Switch keys: `autoProviderSwitch`, `manualProviderSwitch`.
+
 lib/app.dart (C): one Provider<ProviderHealthService> at the root so Settings and the player share one instance; MaterialApp.builder applies uiScale to TEXT and DENSITY only (TextScaler.linear(media.textScaler.scale(1) * scale) and VisualDensity((scale - 1) * 4)). Media widgets (lib/ui/media) already scale poster width, shelf height and gaps from AppSettings.uiScale themselves, so uiScale must not be applied to layout anywhere else: no Transform.scale or MediaQuery size override in the builder. Neither side reads the other's scale.

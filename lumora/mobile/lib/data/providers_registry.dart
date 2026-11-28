@@ -113,25 +113,51 @@ const List<StreamProvider> allProviders = <StreamProvider>[
         'https://player.moonflix.website/tv/{id}/{season}/{episode}',
     kinds: <MediaKind>{MediaKind.movie, MediaKind.tv},
   ),
-  // anipm.pk (https://anipm.pk/developers) is anime-only and keyed by AniList id.
+  // anipm.pk (https://anipm.pk/developers) is anime-only and keyed by AniList
+  // id; the last path segment is the audio track (`lgl/streaming.py` ani_url).
   StreamProvider(
     id: 'ani',
     name: 'anipm.pk (anime)',
-    urlTemplate: 'https://anipm.pk/embed/ani/{anilist}/{episode}/sub',
+    urlTemplate: 'https://anipm.pk/embed/ani/{anilist}/{episode}/{language}',
     kinds: <MediaKind>{MediaKind.anime},
   ),
 ];
 
-/// Separator between the per-kind templates of one provider.
-const String templateSeparator = ' | ';
+/// The audio tracks a provider may be asked for (`lgl/streaming.py`
+/// `LANGUAGES['ani']`), in the desktop's order.
+const List<String> audioLanguages = <String>['sub', 'dub', 'vostfr'];
 
-/// The placeholders a template may contain.
+/// How each track is written on screen (`lgl/streaming.py`
+/// `LANGUAGE_LABELS`).
+const Map<String, String> audioLanguageLabels = <String, String>{
+  'sub': 'Sub',
+  'dub': 'Dub',
+  'vostfr': 'VOSTFR',
+};
+
+/// What the player asks for unless the user picks another track
+/// (`lgl/streaming.py` `DEFAULT_LANGUAGE`).
+const String defaultAudioLanguage = 'sub';
+
+/// Clamps a stored or requested track to one the players accept, as
+/// `lgl/streaming.py` `clean_language` does.
+String cleanAudioLanguage(Object? value) {
+  final text = value is String ? value.trim().toLowerCase() : '';
+  return audioLanguages.contains(text) ? text : defaultAudioLanguage;
+}
+
 const Set<String> templateTokens = <String>{
   '{id}',
   '{anilist}',
   '{season}',
   '{episode}',
+  '{language}',
 };
+
+/// Separator between the per-kind templates of one provider.
+const String templateSeparator = ' | ';
+
+
 
 /// Looks up a provider by its persisted id, or null when it is unknown.
 ///
@@ -182,7 +208,10 @@ String? templateFor(StreamProvider provider, MediaKind kind) {
 ///
 /// * movies use `tmdbId` and the movie segment,
 /// * TV uses `tmdbId` with [season] and [episode],
-/// * anime uses `anilistId` and [episode].
+/// * anime uses `anilistId`, [episode] and [language].
+///
+/// [language] is `sub`, `dub` or `vostfr`; anything else falls back to
+/// [defaultAudioLanguage]. Only providers with a `{language}` segment use it.
 ///
 /// Throws [ArgumentError] when the provider cannot play the item's kind, when
 /// season/episode is below 1, or when the title has no id the selected route
@@ -193,6 +222,7 @@ Uri buildWatchUrl(
   MediaItem item, {
   int season = 1,
   int episode = 1,
+  String language = defaultAudioLanguage,
 }) {
   final template = templateFor(provider, item.kind);
   if (template == null) {
@@ -223,7 +253,8 @@ Uri buildWatchUrl(
       .replaceAll('{id}', id.toString())
       .replaceAll('{anilist}', id.toString())
       .replaceAll('{season}', season.toString())
-      .replaceAll('{episode}', episode.toString());
+      .replaceAll('{episode}', episode.toString())
+      .replaceAll('{language}', cleanAudioLanguage(language));
 
   // A template that still holds a placeholder is a registry bug; refuse it
   // rather than load a broken player.

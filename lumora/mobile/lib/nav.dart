@@ -124,6 +124,7 @@ List<PlaybackTarget> playbackTargets(
         plan.item,
         season: season,
         episode: episode,
+        language: settings.defaultAudio,
       );
     } on ArgumentError {
       continue;
@@ -233,6 +234,7 @@ Future<void> openPlayer(
         season: isMovie ? null : season,
         episode: isMovie ? null : episode,
         health: health,
+        autoplay: settings.autoplay,
       ),
     ),
   );

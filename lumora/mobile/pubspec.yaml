@@ -1,7 +1,7 @@
 name: lumora_mobile
 description: Lumora for phones - the Movies & TV tab, shrunk to a phone.
 publish_to: "none"
-version: 0.6.28+2
+version: 0.6.29+3
 
 environment:
   sdk: ^3.9.0

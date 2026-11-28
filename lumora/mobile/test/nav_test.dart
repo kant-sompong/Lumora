@@ -246,6 +246,29 @@ void main() {
       ]);
     });
 
+    test('anime asks the provider for the chosen audio track', () {
+      final settings = AppSettings(
+        enabledProviderIds: <String>['ani'],
+        defaultAudio: 'dub',
+      );
+      final targets = playbackTargets(
+        PlaybackPlan(item: anime()),
+        settings,
+        episode: 4,
+      );
+      expect(
+        targets.single.url.toString(),
+        'https://anipm.pk/embed/ani/4242/4/dub',
+      );
+      // sub is what a fresh install asks for.
+      final fresh = playbackTargets(
+        PlaybackPlan(item: anime()),
+        AppSettings(enabledProviderIds: <String>['ani']),
+        episode: 4,
+      );
+      expect(fresh.single.url.toString(), 'https://anipm.pk/embed/ani/4242/4/sub');
+    });
+
     test('a verified identity routes a TMDB film to anipm.pk', () {
       final settings = AppSettings(
         enabledProviderIds: <String>['cinesrc', 'ani'],

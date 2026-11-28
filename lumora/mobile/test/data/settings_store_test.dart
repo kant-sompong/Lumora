@@ -21,6 +21,8 @@ void main() {
     expect(settings.malClientId, '');
     expect(settings.autoProvider, isTrue);
     expect(settings.uiScale, 1.0);
+    expect(settings.defaultAudio, 'sub');
+    expect(settings.autoplay, isTrue);
   });
 
   test('drops unknown and duplicate provider ids but keeps the order', () {
@@ -113,6 +115,8 @@ void main() {
       themeMode: ThemeMode.light,
       accent: const Color(0xFF0F9D8F),
       compactCards: true,
+      defaultAudio: 'dub',
+      autoplay: false,
     );
     await settings.save();
 
@@ -123,6 +127,8 @@ void main() {
     expect(reloaded.themeMode, ThemeMode.light);
     expect(reloaded.accent.toARGB32(), 0xFF0F9D8F);
     expect(reloaded.compactCards, isTrue);
+    expect(reloaded.defaultAudio, 'dub');
+    expect(reloaded.autoplay, isFalse);
   });
 
   test('load seeds every provider in PC order on a first run', () async {
@@ -204,12 +210,34 @@ void main() {
       AppSettings.keyMalClientId: 7,
       AppSettings.keyAutoProvider: 'yes',
       AppSettings.keyUiScale: 'big',
+      AppSettings.keyDefaultAudio: 3,
+      AppSettings.keyAutoplay: 'no',
     });
 
     final settings = await AppSettings.load();
     expect(settings.malClientId, '');
     expect(settings.autoProvider, isTrue);
     expect(settings.uiScale, 1.0);
+    expect(settings.defaultAudio, 'sub');
+    expect(settings.autoplay, isTrue);
+  });
+
+  test('the audio track saves and loads, and junk falls back to sub', () async {
+    final settings = AppSettings(defaultAudio: 'vostfr', autoplay: false);
+    await settings.save();
+
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getString(AppSettings.keyDefaultAudio), 'vostfr');
+    expect(prefs.getBool(AppSettings.keyAutoplay), isFalse);
+
+    final reloaded = await AppSettings.load();
+    expect(reloaded.defaultAudio, 'vostfr');
+    expect(reloaded.autoplay, isFalse);
+
+    // Only the tracks the players accept are kept.
+    reloaded.defaultAudio = 'klingon';
+    expect(reloaded.defaultAudio, 'sub');
+    expect(AppSettings(defaultAudio: 'DUB').defaultAudio, 'dub');
   });
 
   test('an out-of-range stored scale is clamped on load', () async {

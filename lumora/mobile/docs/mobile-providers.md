@@ -40,7 +40,7 @@ movieTemplate | tvTemplate | animeTemplate
 
 ### Placeholders
 
-Only these four tokens exist. Anything else is a bug, and a template that still
+Only these five tokens exist. Anything else is a bug, and a template that still
 holds a token after substitution makes `buildWatchUrl` throw.
 
 | Token | Replaced with | Source |
@@ -49,6 +49,7 @@ holds a token after substitution makes `buildWatchUrl` throw.
 | `{anilist}` | the AniList id | `MediaItem.anilistId` |
 | `{season}` | the season number (1-based) | `buildWatchUrl(..., season:)` |
 | `{episode}` | the episode number (1-based) | `buildWatchUrl(..., episode:)` |
+| `{language}` | `sub`, `dub` or `vostfr` | `buildWatchUrl(..., language:)`, from Settings → Default audio (anything else becomes `sub`) |
 
 Which id a route uses is decided by the segment, not by the provider: a segment
 containing `{anilist}` is keyed by `MediaItem.anilistId`, every other segment by
@@ -71,7 +72,7 @@ id its route needs is refused, never turned into a URL with `0` or an empty id.
 | `velarium` | `https://velarium.cc/en/watch/movie/{id}` | `https://velarium.cc/en/watch/tv/{id}-{season}-{episode}` | — |
 | `afterdusk` | `https://afterdusk.app/embed/movie/{id}` | `https://afterdusk.app/embed/tv/{id}/{season}/{episode}` | — |
 | `moonflix` | `https://player.moonflix.website/movie/{id}` | `https://player.moonflix.website/tv/{id}/{season}/{episode}` | — |
-| `ani` | — | — | `https://anipm.pk/embed/ani/{anilist}/{episode}/sub` |
+| `ani` | — | — | `https://anipm.pk/embed/ani/{anilist}/{episode}/{language}` |
 
 ## API
 
