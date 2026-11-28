@@ -25,7 +25,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from . import platform_support
+from . import embed_frame, platform_support
 from .media_tabs import format_position, with_start
 from .qt_widgets import label
 
@@ -445,8 +445,14 @@ class EmbeddedPlayer(QWidget):
         self._ensure_view()
         if self.view is not None:
             self.pages.setCurrentWidget(self.view)
+            # anipm.pk redirects an embed opened as a page, so it is framed
+            # instead; every other provider keeps its direct load.
+            framed = embed_frame.frame_html_for(self._url)
+            setter = getattr(self.view, "setHtml", None)
             loader = getattr(self.view, "setUrl", None)
-            if callable(loader):
+            if framed is not None and callable(setter):
+                setter(framed, QUrl(embed_frame.EMBED_FRAME_BASE))
+            elif callable(loader):
                 loader(QUrl(self._url))
         else:
             self.pages.setCurrentWidget(self.fallback)

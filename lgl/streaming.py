@@ -24,10 +24,11 @@ Embed formats, as published by each provider:
   (https://www.rivestream.app/embed/docs).  It documents no sandbox
   requirement and no dub parameter.
 
-This desktop app loads the embed page directly in a ``WebKit2.WebView`` rather
-than wrapping it in an ``<iframe>``, so no sandbox attribute exists at runtime.
-:func:`iframe_sandbox` records the documented policy so a future HTML wrapper
-applies it per provider instead of guessing.
+The desktop players load an embed page directly in their web view, except the
+anime provider: anipm.pk redirects an embed that is not framed, so it plays inside
+the small wrapper document built by :mod:`lgl.embed_frame`.  No sandbox
+attribute exists at runtime in either case: :func:`iframe_sandbox` records the
+documented policy per provider instead of guessing.
 """
 
 from __future__ import annotations
