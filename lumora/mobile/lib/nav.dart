@@ -65,7 +65,7 @@ class PlaybackPlan {
 
 /// Resolves [item] to something playable.
 ///
-/// A verified anime match with an AniList id is retyped so ani.pm can play it.
+/// A verified anime match with an AniList id is retyped so anipm.pk can play it.
 /// Everything else — unverified, not anime, a refused or missing lookup — is
 /// returned untouched: a title is never hidden or blocked because of this.
 Future<PlaybackPlan> planPlayback(

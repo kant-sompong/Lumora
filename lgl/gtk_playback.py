@@ -8,13 +8,13 @@ Identity comes from the shared core, Agent A's :mod:`lgl.anime_identity`:
 
 both take the frontend's settings object so the MAL client id can be loaded.
 ``identity.verified`` says whether the MAL mapping list confirms the title, and
-``identity.playable_anilist_id`` is the AniList entry that plays on ani.pm.
+``identity.playable_anilist_id`` is the AniList entry that plays on anipm.pk.
 
 The rule, identical for every Watch entry point:
 
-* **verified** anime plays on ani.pm first - not the provider selected for
+* **verified** anime plays on anipm.pk first - not the provider selected for
   movies and TV, and not a saved anime-provider preference, which only orders
-  the chain kept behind ani.pm for a manual switch.  The AniList id is the
+  the chain kept behind anipm.pk for a manual switch.  The AniList id is the
   identity's ``playable_anilist_id``, never a MAL id, and a verified title
   whose AniList entry is missing or ambiguous is an error (:data:`UNRESOLVED` /
   :data:`AMBIGUOUS`), never a silent fall back to another provider;
@@ -25,7 +25,7 @@ The rule, identical for every Watch entry point:
 
 No heuristic verifies anything, and there is no path that establishes anime
 identity without the shared MAL verification API: only ``identity.verified``
-routes a play to ani.pm.  When the module is absent, nothing is verified and
+routes a play to anipm.pk.  When the module is absent, nothing is verified and
 plays stay with the selected provider.
 
 Once identity is verified, the *episode* is mapped by the shared mapping layer,
@@ -58,12 +58,12 @@ MODE_ERROR = "error"
 #: anime is never quietly handed to another provider.
 UNRESOLVED = (
     "This title is confirmed anime, but its AniList entry could not be "
-    "resolved, so ani.pm cannot play it. Pick another provider yourself to "
+    "resolved, so anipm.pk cannot play it. Pick another provider yourself to "
     "watch it there; Lumora will not switch on its own."
 )
 AMBIGUOUS = (
     "This title is confirmed anime, but it matches more than one AniList "
-    "entry, so ani.pm cannot choose one safely. Pick another provider "
+    "entry, so anipm.pk cannot choose one safely. Pick another provider "
     "yourself to watch it there; Lumora will not switch on its own."
 )
 
@@ -72,7 +72,7 @@ AMBIGUOUS = (
 class PlaybackRoute:
     """Where one playback request goes, and why.
 
-    ``mode`` is :data:`MODE_ANI` for forced ani.pm playback (with the AniList
+    ``mode`` is :data:`MODE_ANI` for forced anipm.pk playback (with the AniList
     id and the episode of that entry), :data:`MODE_ERROR` for a verified title
     that cannot be played there (``message`` says so), or
     :data:`MODE_NORMAL` for the user's selected provider.
@@ -122,7 +122,7 @@ def decide_playback(
 
     A lookup that fails or cannot answer is **unverified**: the selected
     provider keeps the play.  Only ``identity.verified`` sends a play to
-    ani.pm.  A resolution failure (``identity.resolution_failed``) is an error
+    anipm.pk.  A resolution failure (``identity.resolution_failed``) is an error
     with no fallback.
     """
     kind = "tv" if str(tmdb_kind).lower() == "tv" else "movie"
@@ -173,13 +173,13 @@ def decide_anime(
 ) -> PlaybackRoute:
     """The route for an anime-page title, verified by the shared MAL API.
 
-    Anime detail pages (MAL and ani.pm/AniList) carry no TMDB id, so the
+    Anime detail pages (MAL and anipm.pk/AniList) carry no TMDB id, so the
     identity is asked with what the page holds: ``title``, ``mal_id`` and
     ``anilist_id`` (only the ids that are known).  An AniList id alone never
     bypasses MAL verification - it is another input to the same identity call.
 
     The three-way answer is the same as :func:`decide_playback`: verified with
-    one AniList entry plays on ani.pm, unverified (including a lookup that
+    one AniList entry plays on anipm.pk, unverified (including a lookup that
     fails) keeps the selected provider, and a verified title without a usable
     AniList entry is an error.
     """

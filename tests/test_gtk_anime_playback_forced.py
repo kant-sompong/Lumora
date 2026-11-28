@@ -1,4 +1,4 @@
-"""GTK playback windows: verified anime plays on ani.pm and nowhere else.
+"""GTK playback windows: verified anime plays on anipm.pk and nowhere else.
 
 Every test drives the real :class:`lgl.movies_ui.MoviesWindow` play entry
 points and the real ``lgl.anime_identity`` core; only the MAL and AniList
@@ -201,7 +201,7 @@ def window(monkeypatch):
         {
             "network_timeout": 5,
             "streaming_provider": "cinesrc",
-            # No anime provider is saved: ani.pm is the default for anime, and
+            # No anime provider is saved: anipm.pk is the default for anime, and
             # the tests that check an explicit pick set it themselves.
             "anime_dub": False,
         }
@@ -274,7 +274,7 @@ def test_the_selected_normal_provider_cannot_change_that(window, monkeypatch):
 
 
 def test_the_saved_anime_provider_never_preempts_ani_pm(window, monkeypatch):
-    """A saved anime pick only orders the chain behind ani.pm."""
+    """A saved anime pick only orders the chain behind anipm.pk."""
     window._settings.set("anime_streaming_provider", "toflix")
     captured = play_movie(window, monkeypatch)
     attempts = captured.players[0]["attempts"]
@@ -356,14 +356,14 @@ def test_an_ani_pm_url_failure_is_an_error_with_an_explicit_choice(
     window, monkeypatch
 ):
     def broken(*_args, **_kwargs):
-        raise streaming.EmbedUrlError("ani.pm has no route for this entry")
+        raise streaming.EmbedUrlError("anipm.pk has no route for this entry")
 
     monkeypatch.setattr(streaming, "ani_url", broken)
     captured = play_movie(window, monkeypatch)
 
-    assert captured.players == [], "ani.pm's failure played somewhere else"
+    assert captured.players == [], "anipm.pk's failure played somewhere else"
     message = captured.messages[0][1]
-    assert "ani.pm could not play this title" in message
+    assert "anipm.pk could not play this title" in message
     assert "Pick another provider" in message
     # Offered, never used automatically: an explicit click plays them.
     alternatives = captured.message_options[0]["alternatives"]
@@ -553,7 +553,7 @@ def test_resume_survives_a_second_episode_play(window, monkeypatch):
     assert window._playing_episode == (1, 2)
 
 
-# -- anime detail pages: MAL and ani.pm/AniList ----------------------------
+# -- anime detail pages: MAL and anipm.pk/AniList ----------------------------
 
 
 def mal_item(**kwargs):
@@ -613,7 +613,7 @@ def test_an_anilist_page_alone_does_not_bypass_mal_verification(window, monkeypa
 
 
 def test_an_ani_pm_build_failure_offers_another_provider(window, monkeypatch):
-    """A resolved ani.pm play that cannot be built leaves the choice explicit."""
+    """A resolved anipm.pk play that cannot be built leaves the choice explicit."""
     install_core(monkeypatch)
     called: list = []
     monkeypatch.setattr(
@@ -621,7 +621,7 @@ def test_an_ani_pm_build_failure_offers_another_provider(window, monkeypatch):
     )
 
     def broken(*_args, **_kwargs):
-        raise streaming.EmbedUrlError("ani.pm has no route for this entry")
+        raise streaming.EmbedUrlError("anipm.pk has no route for this entry")
 
     monkeypatch.setattr(anipm, "playback_url", broken)
     item = mal_item()
@@ -675,7 +675,7 @@ def test_a_verified_movies_session_switches_and_restores_the_mapped_episode(
         "a session switch overwrote the saved anime preference"
     )
     assert streaming.ANI_PROVIDER in window._provider_choices(), (
-        "ani.pm was no longer offered, so the session could not switch back"
+        "anipm.pk was no longer offered, so the session could not switch back"
     )
 
     window._choose_provider(streaming.ANI_PROVIDER)
@@ -790,13 +790,13 @@ def hard_episode(number=3, **embeds):
 def test_a_hard_track_plays_the_api_embed(window, monkeypatch):
     install_core(monkeypatch)
     window._current_ani_episodes = [
-        hard_episode(3, dubHard="https://ani.pm/embed/hard-dub"),
+        hard_episode(3, dubHard="https://anipm.pk/embed/hard-dub"),
     ]
     window._on_ani_episode_play(None, ani_page(), 3, "dubHard")
     assert wait_for(lambda: window.captured.players or window.captured.messages)
     assert window.captured.messages == []
     player = window.captured.players[0]
-    assert player["url"] == "https://ani.pm/embed/hard-dub"
+    assert player["url"] == "https://anipm.pk/embed/hard-dub"
     assert player["provider"] == streaming.ANI_PROVIDER
     # Not substituted for the ordinary track.
     assert not player["url"].endswith("/sub")
@@ -806,7 +806,7 @@ def test_a_hard_track_plays_the_api_embed(window, monkeypatch):
 def test_a_missing_hard_track_is_a_clear_error_not_a_substitution(window, monkeypatch):
     install_core(monkeypatch)
     window._current_ani_episodes = [
-        hard_episode(3, sub="https://ani.pm/embed/sub", dub="https://ani.pm/embed/dub"),
+        hard_episode(3, sub="https://anipm.pk/embed/sub", dub="https://anipm.pk/embed/dub"),
     ]
     window._on_ani_episode_play(None, ani_page(), 3, "subHard")
     assert wait_for(lambda: window.captured.messages or window.captured.players)

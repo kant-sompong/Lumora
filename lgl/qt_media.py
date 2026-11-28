@@ -255,7 +255,7 @@ def anime_source_document(document: object) -> tuple[str, tuple[int, ...]]:
 
 
 def which_part_titles(client: object, candidates: Sequence[object]) -> list[str]:
-    """The ani.pm title of each candidate, blank when it cannot be named.
+    """The anipm.pk title of each candidate, blank when it cannot be named.
 
     Runs off the UI thread (it is a network call per id); a failure for one
     entry leaves that row as ``Part N`` instead of dropping the choice.
@@ -919,7 +919,7 @@ class _VerifiedPlayback:
     tmdb_episode: object | None = None
     api_embed: str = ""
     via_tmdb: bool = False
-    #: The provider this session is actually playing on, ani.pm to start with.
+    #: The provider this session is actually playing on, anipm.pk to start with.
     provider: str = streaming.ANI_PROVIDER
 
 
@@ -959,7 +959,7 @@ class MediaPage(QWidget):
         self._tmdb_items: list[Card] = []
         self._anime_items: list[Card] = []
         self._detail_card: Card | None = None
-        #: A verified anime is playing on ani.pm: no provider switching now.
+        #: A verified anime is playing on anipm.pk: no provider switching now.
         self._forced_anime_playback = False
         self._provider_tip_before_forced = ""
         #: Bumped by every Watch request; an older identity answer is dropped.
@@ -2968,7 +2968,7 @@ class MediaPage(QWidget):
         return context if isinstance(context, _VerifiedPlayback) else None
 
     def _anime_providers(self) -> tuple[str, ...]:
-        """ani.pm plus every provider that documents a route for anime."""
+        """anipm.pk plus every provider that documents a route for anime."""
         return tuple(
             key for key in streaming.ANIME_PROVIDERS
             if key == streaming.ANI_PROVIDER or streaming.has_anime_route(key)
@@ -3192,7 +3192,7 @@ class MediaPage(QWidget):
         return streaming.clean_provider(self.settings.get("streaming_provider", default))
 
     def _anime_provider_choice(self) -> str:
-        """The anime provider the owner picked, or ani.pm when they have not.
+        """The anime provider the owner picked, or anipm.pk when they have not.
 
         Deliberately not :meth:`_anime_provider`, which falls back to the
         movies provider: that fallback must never move a verified anime.
@@ -3313,7 +3313,7 @@ class MediaPage(QWidget):
         """Ask the shared identity where this TMDB title plays, then play there.
 
         The shared module's answer alone decides the provider: a verified anime
-        always plays on ani.pm, whatever provider is selected or saved, and a
+        always plays on anipm.pk, whatever provider is selected or saved, and a
         verified anime whose AniList entry could not be resolved is an error -
         never another provider and never a title search.  ``anime_map`` is kept
         for season-aware episode mapping only; it never establishes identity.
@@ -3387,10 +3387,10 @@ class MediaPage(QWidget):
     def _play_on_ani(self, card: Card, anilist_id: object, episode_number: object,
                      season: int | None, episode: object | None,
                      api_embed: str = "") -> None:
-        """Play a verified anime from a TMDB card on ani.pm, always first.
+        """Play a verified anime from a TMDB card on anipm.pk, always first.
 
         This is the TMDB catalogue route for a MAL-verified anime, so the saved
-        anime provider never preempts ani.pm here either.  The verified session
+        anime provider never preempts anipm.pk here either.  The verified session
         is recorded with the AniList episode that plays, so picking another
         provider replays this title at this episode for the current session
         only (see :meth:`_switch_verified_session`).
@@ -3433,7 +3433,7 @@ class MediaPage(QWidget):
             self.play_embedded(url, card.title)
         except Exception as exc:  # noqa: BLE001 - no player is not a fallback
             self._end_forced_anime_session()
-            self._note_error(f"ani.pm could not be opened: {exc}")
+            self._note_error(f"anipm.pk could not be opened: {exc}")
             return
         self._refresh_next_episode()
 
@@ -3474,7 +3474,7 @@ class MediaPage(QWidget):
 
         The shared identity is asked on a worker, with the same Watch token as
         the other entry points: a superseded answer is dropped.  A MAL-verified
-        anime always plays its AniList entry on ani.pm; a resolution failure is
+        anime always plays its AniList entry on anipm.pk; a resolution failure is
         an error and never a reason to use the selected provider, and the page's
         AniList id is never replaced by the MAL id.
         """
@@ -3647,7 +3647,7 @@ class MediaPage(QWidget):
                 self._note_error(
                     f"{streaming.LABELS.get(provider, provider)} has no anime "
                     "route for this title. Pick ToFlix, CineLite or Vidy, or "
-                    "ani.pm, in the provider menu."
+                    "anipm.pk, in the provider menu."
                 )
                 return
         except (streaming.EmbedUrlError, ValueError) as exc:
@@ -3660,17 +3660,17 @@ class MediaPage(QWidget):
         self._refresh_next_episode()
 
     def _play_forced_anime(self, card: Card, route, api_embed: str = "") -> None:
-        """Play a MAL-verified anime on ani.pm first, whatever is saved.
+        """Play a MAL-verified anime on anipm.pk first, whatever is saved.
 
-        ani.pm is the first provider for verified anime; the saved anime
+        anipm.pk is the first provider for verified anime; the saved anime
         preference never preempts it, it only decides what a manual switch
         offers first.  The provider menu is never switched off, and picking
         another anime provider replays this title there for the current
         session only (see :meth:`_switch_verified_session`).  A missing AniList
         id is still an error, not a reason to search for the title elsewhere -
-        and the MAL id is never handed to ani.pm in its place.
+        and the MAL id is never handed to anipm.pk in its place.
 
-        ``api_embed`` is the embed URL ani.pm's API returned for this exact
+        ``api_embed`` is the embed URL anipm.pk's API returned for this exact
         episode and track, when one is available.  A hard track has no other
         route: without its embed it raises and is reported, never swapped for
         Sub or Dub.
@@ -3702,15 +3702,15 @@ class MediaPage(QWidget):
             self.play_embedded(url, card.title)
         except Exception as exc:  # noqa: BLE001 - no player is not a fallback
             self._end_forced_anime_session()
-            self._note_error(f"ani.pm could not be opened: {exc}")
+            self._note_error(f"anipm.pk could not be opened: {exc}")
             return
         self._refresh_next_episode()
 
     def _play_forced_anilist(self, title: str, anilist_id: int,
                              api_embed: str = "") -> None:
-        """An ani.pm play with no TMDB card: the search's AniList match.
+        """An anipm.pk play with no TMDB card: the search's AniList match.
 
-        A MAL-verified match is a verified anime like any other, so ani.pm
+        A MAL-verified match is a verified anime like any other, so anipm.pk
         starts it whatever anime provider is saved.  The session is recorded
         without a card, so a provider pick still replays this match for the
         current session only (see :meth:`_switch_verified_session`).
@@ -3738,14 +3738,14 @@ class MediaPage(QWidget):
             self.play_embedded(url, title)
         except Exception as exc:  # noqa: BLE001 - no player is not a fallback
             self._end_forced_anime_session()
-            self._note_error(f"ani.pm could not be opened: {exc}")
+            self._note_error(f"anipm.pk could not be opened: {exc}")
             return
         self._refresh_next_episode()
 
     def _begin_forced_anime_session(self) -> None:
         """Note that a verified anime is playing; the provider menu stays usable.
 
-        The menu used to be switched off here.  It is not any more: ani.pm is
+        The menu used to be switched off here.  It is not any more: anipm.pk is
         the first provider for a verified anime, not the only one the owner may
         use, so picking another one has to work during playback too.
         """
@@ -3781,7 +3781,7 @@ class MediaPage(QWidget):
             return True
         if context.card is None:
             if self._play_anilist_provider(context.title, context.anilist_id):
-                # Still the same verified session, so picking ani.pm goes back.
+                # Still the same verified session, so picking anipm.pk goes back.
                 self._verified_context = replace(context, provider=key)
                 self._begin_forced_anime_session()
             return True

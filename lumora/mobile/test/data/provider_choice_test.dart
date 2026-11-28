@@ -50,7 +50,7 @@ void main() {
     SharedPreferences.setMockInitialValues(<String, Object>{});
   });
 
-  test('anime plays on ani.pm first when it is enabled', () {
+  test('anime plays on anipm.pk first when it is enabled', () {
     final settings = AppSettings(
       enabledProviderIds: <String>['cinesrc', 'toflix', 'ani'],
     );
@@ -61,7 +61,7 @@ void main() {
     );
   });
 
-  test('a disabled ani.pm leaves the user order, with no anime-only extras', () {
+  test('a disabled anipm.pk leaves the user order, with no anime-only extras', () {
     final settings = AppSettings(
       enabledProviderIds: <String>['cinesrc', 'toflix'],
     );

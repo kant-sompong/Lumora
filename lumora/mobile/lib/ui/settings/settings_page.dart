@@ -654,7 +654,7 @@ class _ProvidersTabState extends State<_ProvidersTab> {
           'MyAnimeList',
           'Anime titles, airing dates and episode counts. Only the public read '
               'API is used, authenticated with your Client ID. It also tells the '
-              'player when a TMDB title is anime, so ani.pm can play it.',
+              'player when a TMDB title is anime, so anipm.pk can play it.',
         ),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: LumoraSpace.md),
@@ -913,10 +913,14 @@ class _ProviderTile extends StatelessWidget {
                     children: <Widget>[
                       HealthDot(health: health),
                       const SizedBox(width: LumoraSpace.xs),
-                      Text(
-                        healthText,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
+                      Flexible(
+                        child: Text(
+                          healthText,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
                         ),
                       ),
                     ],

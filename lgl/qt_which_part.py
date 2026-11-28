@@ -4,7 +4,7 @@ The mapping list cannot always tell one entry from another: a show split into
 cour seasons, a compilation film, a remake.  Rather than guess, the play path
 asks.  The dialog is an ordinary sheet - the same surface, padding, gap and
 default-button rules as every other dialog, via ``style_dialog`` - and it only
-names the choices it was given: an id whose ani.pm title has not arrived yet is
+names the choices it was given: an id whose anipm.pk title has not arrived yet is
 listed as "Part 1", "Part 2" and so on.
 """
 
@@ -17,7 +17,7 @@ from PySide6.QtWidgets import QDialog, QLabel, QPushButton, QVBoxLayout, QWidget
 
 from .qt_widgets import style_dialog
 
-#: What a candidate is called before, or instead of, its ani.pm title.
+#: What a candidate is called before, or instead of, its anipm.pk title.
 PART_FALLBACK = "Part {number}"
 
 
@@ -51,10 +51,10 @@ class WhichPartDialog(QDialog):
         heading.setObjectName("pageTitle")
         column.addWidget(heading)
         note = QLabel(
-            ("“" + show_title + "” matches more than one entry on ani.pm. "
+            ("“" + show_title + "” matches more than one entry on anipm.pk. "
              "Choose the one this episode belongs to.")
             if str(show_title or "").strip()
-            else "This title matches more than one entry on ani.pm. Choose one."
+            else "This title matches more than one entry on anipm.pk. Choose one."
         )
         note.setObjectName("detailNote")
         note.setWordWrap(True)
@@ -85,7 +85,7 @@ class WhichPartDialog(QDialog):
         ]
 
     def set_titles(self, titles: Sequence[str]) -> None:
-        """Fill in the entries ani.pm named, in candidate order.
+        """Fill in the entries anipm.pk named, in candidate order.
 
         Called on the UI thread once the lookups come back; a missing or empty
         title keeps that row's ``Part N`` fallback instead of inventing one.

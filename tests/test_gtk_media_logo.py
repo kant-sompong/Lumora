@@ -238,7 +238,7 @@ def test_an_anime_film_looks_on_the_movie_side(monkeypatch):
 
 @needs_display
 def test_an_untyped_anime_is_asked_for_on_the_tv_side(monkeypatch):
-    """ani.pm can send a row without an episode count; it is not a film."""
+    """anipm.pk can send a row without an episode count; it is not a film."""
 
     asked = []
 

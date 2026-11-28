@@ -1,7 +1,7 @@
 """Streaming-provider adapters for the Movies & TV window.
 
 CineSrc, Rive, frameXTV and Atlantic map a TMDB id (and season/episode for TV)
-to a playable embed URL.  ani.pm (https://ani.pm/developers) is the anime-only
+to a playable embed URL.  anipm.pk (https://anipm.pk/developers) is the anime-only
 provider: it plays by AniList **or** MyAnimeList id and needs no key.  The
 active providers are chosen by the user and stored in settings under
 ``streaming_provider`` and ``anime_streaming_provider``.
@@ -58,16 +58,16 @@ PROVIDERS: tuple[str, ...] = (
     "afterdusk",
     "moonflix",
 )
-#: Providers that can play anime.  ani.pm uses an AniList/MAL id instead of
+#: Providers that can play anime.  anipm.pk uses an AniList/MAL id instead of
 #: TMDB, so it is listed separately.
 ANIME_PROVIDERS: tuple[str, ...] = (*PROVIDERS, "ani")
 DEFAULT_PROVIDER = "cinesrc"
 DEFAULT_ANIME_PROVIDER = "ani"
-#: ani.pm's player API (https://ani.pm/developers) takes an AniList id,
+#: anipm.pk's player API (https://anipm.pk/developers) takes an AniList id,
 #: e.g. ``/embed/ani/<anilist_id>/<episode>/<sub|dub>``, and a MAL id at
 #: ``/embed/mal/<mal_id>/<episode>/<sub|dub|vostfr>``.
 ANI_PROVIDER = "ani"
-ANI_BASE = "https://ani.pm"
+ANI_BASE = "https://anipm.pk"
 
 #: Human-readable labels for the selector.
 LABELS: dict[str, str] = {
@@ -77,7 +77,7 @@ LABELS: dict[str, str] = {
     "cinelite": "CineLite",
     "framextv": "frameXTV",
     "atlantic": "Atlantic",
-    "ani": "ani.pm (anime)",
+    "ani": "anipm.pk (anime)",
     "vidy": "Vidy",
     "chillflix": "Chillflix",
     "vidcore": "VidCore",
@@ -89,7 +89,7 @@ LABELS: dict[str, str] = {
 #: Providers whose anime route is keyed by an **AniList** id.
 ANILIST_ANIME_PROVIDERS: tuple[str, ...] = ("toflix", "cinelite", "vidy")
 
-#: Audio/subtitle paths each provider's embed accepts.  Only ani.pm documents
+#: Audio/subtitle paths each provider's embed accepts.  Only anipm.pk documents
 #: an audio-track parameter; the TMDB providers pick their own source, and the
 #: two whose docs say nothing about audio are offered sub only rather than
 #: pretending a dub flag exists.
@@ -125,7 +125,7 @@ class ProviderSpec:
     """One provider's playback contract.
 
     ``iframe_sandbox`` is ``None`` when the provider must not be sandboxed
-    (ani.pm documents this) or when sandboxing has not been verified; a string
+    (anipm.pk documents this) or when sandboxing has not been verified; a string
     holds the exact attribute value a wrapper may use.
     ``relaxed_web_security`` is True only for players that were already known
     to need it; setting it globally would weaken every provider.
@@ -172,7 +172,7 @@ SPECS: dict[str, ProviderSpec] = {
         relaxed_web_security=True,
     ),
     "ani": ProviderSpec(
-        key="ani", label="ani.pm", host="ani.pm",
+        key="ani", label="anipm.pk", host="anipm.pk",
         languages=LANGUAGES["ani"], iframe_sandbox=None,
     ),
     # https://www.vidy.st/#docs - /movie/{tmdb}, /tv/{tmdb}/{s}/{e} and an
@@ -316,8 +316,8 @@ def ensure_language(provider: str, value: object) -> str:
 def validate_embed_url(provider: str, url: object) -> str:
     """Accept only this provider's HTTPS embed URL, exactly.
 
-    Rejects other schemes, userinfo tricks (``https://ani.pm@evil``), explicit
-    ports, lookalike hosts (``ani.pm.evil``) and paths outside the provider's
+    Rejects other schemes, userinfo tricks (``https://anipm.pk@evil``), explicit
+    ports, lookalike hosts (``anipm.pk.evil``) and paths outside the provider's
     ``/embed`` prefix.  Query strings are allowed: Rive and CineSrc carry the
     id, season and episode in the query.
     """
@@ -399,7 +399,7 @@ def movie_url(provider: str, tmdb_id: object, *, title: str = "", dub: bool = Fa
     if provider == "moonflix":
         return f"https://player.moonflix.website/movie/{tmdb_id}"
     if provider == ANI_PROVIDER:
-        raise ValueError("ani.pm is an anime provider; use ani_url() instead.")
+        raise ValueError("anipm.pk is an anime provider; use ani_url() instead.")
     return f"https://framextv.xyz/embed/{tmdb_id}"
 
 
@@ -435,7 +435,7 @@ def episode_url(provider: str, tmdb_id: object, season: object, episode: object,
     if provider == "moonflix":
         return f"https://player.moonflix.website/tv/{tmdb_id}/{season}/{episode}"
     if provider == ANI_PROVIDER:
-        raise ValueError("ani.pm is an anime provider; use ani_url() instead.")
+        raise ValueError("anipm.pk is an anime provider; use ani_url() instead.")
     return f"https://framextv.xyz/embed/{tmdb_id}/{season}/{episode}"
 
 
@@ -488,7 +488,7 @@ def ani_url(
     anilist_id: object, episode: object = 1, *, language: object = None,
     dub: object = None,
 ) -> str:
-    """ani.pm embed URL from an **AniList** id (never a MAL or TMDB id)."""
+    """anipm.pk embed URL from an **AniList** id (never a MAL or TMDB id)."""
     anilist_id = _positive(anilist_id, "anilist_id")
     episode = _positive(episode, "episode")
     lang = _ani_language(language, dub)
@@ -499,7 +499,7 @@ def ani_mal_url(
     mal_id: object, episode: object = 1, *, language: object = None,
     dub: object = None,
 ) -> str:
-    """ani.pm embed URL from a **MyAnimeList** id.
+    """anipm.pk embed URL from a **MyAnimeList** id.
 
     This is the route anime tiles use: the app already holds the MAL id, so an
     AniList lookup is not needed and the two identifiers stay separate.

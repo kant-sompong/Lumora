@@ -1,11 +1,11 @@
-"""ani.pm reads for playback: title metadata, series, episodes and embeds.
+"""anipm.pk reads for playback: title metadata, series, episodes and embeds.
 
 No Lumora surface searches this catalogue or shows its rows as results:
 ``AniPmClient.search`` stays for the documented API and tests, but neither
-``lgl/movies_ui.py`` nor ``lgl/qt_media.py`` calls it.  ani.pm is a player,
+``lgl/movies_ui.py`` nor ``lgl/qt_media.py`` calls it.  anipm.pk is a player,
 reached only after MyAnimeList verification.
 
-ani.pm (https://ani.pm/developers) is an anime catalogue and player that keys
+anipm.pk (https://anipm.pk/developers) is an anime catalogue and player that keys
 playback by AniList **or** MyAnimeList id and needs no API key for catalogue
 requests.  This module is deliberately *metadata only*: it never scrapes
 streams, never rehosts content and never builds a URL the provider did not
@@ -15,7 +15,7 @@ otherwise constructed from validated ids with the documented route shape
 
 Identifiers stay separate everywhere: ``AniTitle.anilist_id`` and
 ``AniTitle.mal_id`` are distinct fields and are never substituted for one
-another.  An ani.pm page slug is neither an AniList nor a MAL id and is kept
+another.  An anipm.pk page slug is neither an AniList nor a MAL id and is kept
 only as opaque text.
 
 The exact JSON layout can vary between API revisions, so every parser here is
@@ -38,7 +38,7 @@ from typing import Any, Callable, Mapping, Sequence
 
 from . import streaming
 
-API_BASE = "https://ani.pm/api/partner/v1"
+API_BASE = "https://anipm.pk/api/partner/v1"
 USER_AGENT = "Lumora (personal desktop client)"
 DEFAULT_TIMEOUT = 20.0
 MAX_BODY_BYTES = 4 * 1024 * 1024
@@ -49,7 +49,7 @@ MAX_PAGE = 10_000
 #: asked for more, so stale listings cannot live forever in memory.
 MAX_CACHE_SECONDS = 600.0
 
-#: The four availability flags ani.pm publishes per title/episode.  ``sub`` and
+#: The four availability flags anipm.pk publishes per title/episode.  ``sub`` and
 #: ``dub`` can also be *constructed* from validated ids when the API returns no
 #: embed URL (``/embed/ani/<anilist>/<episode>/<sub|dub>`` is the documented
 #: route); the hard-sub variants only exist when the API hands us an embed URL,
@@ -70,10 +70,10 @@ Fetch = Callable[[str, Mapping[str, Any], Mapping[str, str]], Any]
 
 
 class AniPmError(Exception):
-    """An ani.pm read failed, in a way the UI can explain.
+    """An anipm.pk read failed, in a way the UI can explain.
 
     ``kind`` is ``"rate-limited"``, ``"not-found"``, ``"server"``, ``"network"``
-    or ``"invalid-response"``.  ani.pm needs no key, so there is no auth kind.
+    or ``"invalid-response"``.  anipm.pk needs no key, so there is no auth kind.
     """
 
     def __init__(self, message: str, *, kind: str = "network",
@@ -92,9 +92,9 @@ class AniPmError(Exception):
 
 @dataclass(frozen=True)
 class AniTitle:
-    """One catalogue row or title page from ani.pm.
+    """One catalogue row or title page from anipm.pk.
 
-    ``anilist_id`` is the primary key ani.pm documents for its AniList route;
+    ``anilist_id`` is the primary key anipm.pk documents for its AniList route;
     ``mal_id`` is kept separately and may be 0 when the API does not map one.
     ``slug`` is an opaque page slug - never an id.
     """
@@ -162,7 +162,7 @@ class AniEpisode:
     """One episode, with the embed URLs the API actually returned.
 
     ``embeds`` maps a language key (from :data:`LANGUAGES`) to a validated
-    https embed URL on the pinned ani.pm origin; ``default_embed`` is a
+    https embed URL on the pinned anipm.pk origin; ``default_embed`` is a
     language-less ``embed`` string the API returned for the episode.  Embeds
     that failed origin validation were dropped at parse time.
     """
@@ -180,7 +180,7 @@ class AniEpisode:
         key = _language_key(language)
         if key is None:
             raise streaming.EmbedUrlError(
-                f"ani.pm has no track called {language!r}; "
+                f"anipm.pk has no track called {language!r}; "
                 f"available tracks: {', '.join(LANGUAGES)}."
             )
         return str(self.embeds.get(key, "") or self.default_embed or "")
@@ -227,7 +227,7 @@ class AniSeries:
 def language_key(value: object) -> str | None:
     """The canonical track key (``sub``/``dub``/``subHard``/``dubHard``).
 
-    Returns ``None`` for anything that is not a known ani.pm track, so
+    Returns ``None`` for anything that is not a known anipm.pk track, so
     callers never pass an invented language onward.
     """
     return _language_key(value)
@@ -259,7 +259,7 @@ def _as_int(value: object) -> int:
 
 
 def _episode_total(value: object) -> int:
-    """How many episodes a title has, from either shape ani.pm sends.
+    """How many episodes a title has, from either shape anipm.pk sends.
 
     Catalogue rows and title pages send ``"episodes": {"total": 28,
     "sub": 28, "dub": 28}``, while older rows and the other sources send a
@@ -469,10 +469,10 @@ def _parse_episode(raw: Any) -> AniEpisode | None:
 
 
 def _validated_embed(value: object) -> str:
-    """The embed URL when it passes the pinned ani.pm origin check, else ``""``.
+    """The embed URL when it passes the pinned anipm.pk origin check, else ``""``.
 
     Untrusted API content never reaches the player unvalidated: anything that
-    is not an https ani.pm ``/embed`` URL is dropped here.
+    is not an https anipm.pk ``/embed`` URL is dropped here.
     """
     text = str(value or "").strip()
     if not text:
@@ -561,24 +561,24 @@ def _http_json(url: str, *, timeout: float) -> tuple[Any, float]:
         status = int(exc.code)
         kind = {404: "not-found", 429: "rate-limited"}.get(status, "server")
         raise AniPmError(
-            f"ani.pm answered HTTP {status}" + (f": {detail}" if detail else "."),
+            f"anipm.pk answered HTTP {status}" + (f": {detail}" if detail else "."),
             kind=kind,
             status=status,
         ) from None
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
         raise AniPmError(
-            f"Could not reach ani.pm: {getattr(exc, 'reason', exc)}",
+            f"Could not reach anipm.pk: {getattr(exc, 'reason', exc)}",
             kind="network",
         ) from None
     if len(body) > MAX_BODY_BYTES:
         raise AniPmError(
-            "ani.pm returned more data than expected.", kind="invalid-response"
+            "anipm.pk returned more data than expected.", kind="invalid-response"
         )
     try:
         return json.loads(body.decode("utf-8", "replace")), max_age
     except ValueError:
         raise AniPmError(
-            "ani.pm returned invalid JSON.", kind="invalid-response"
+            "anipm.pk returned invalid JSON.", kind="invalid-response"
         ) from None
 
 
@@ -586,7 +586,7 @@ def _http_json(url: str, *, timeout: float) -> tuple[Any, float]:
 
 
 class AniPmClient:
-    """The ani.pm reads this app needs.  No key, no account.
+    """The anipm.pk reads this app needs.  No key, no account.
 
     The UI uses :meth:`series`, :meth:`episodes` and :meth:`title` for verified
     anime; :meth:`search` is not wired to any catalogue or search surface.
@@ -623,7 +623,7 @@ class AniPmClient:
             data, max_age = _http_json(url, timeout=self.timeout)
         if not isinstance(data, (Mapping, list)):
             raise AniPmError(
-                "ani.pm returned an unexpected document.", kind="invalid-response"
+                "anipm.pk returned an unexpected document.", kind="invalid-response"
             )
         if max_age > 0:
             self._cache[url] = (now + min(max_age, MAX_CACHE_SECONDS), data)
@@ -660,7 +660,7 @@ class AniPmClient:
         title = _first_title(payload)
         if title is None:
             raise AniPmError(
-                f"ani.pm has no title with AniList id {identifier}.",
+                f"anipm.pk has no title with AniList id {identifier}.",
                 kind="not-found",
             )
         return title
@@ -676,7 +676,7 @@ class AniPmClient:
         title = _first_title(payload)
         if title is None:
             raise AniPmError(
-                f"ani.pm has no title with MAL id {identifier}.", kind="not-found"
+                f"anipm.pk has no title with MAL id {identifier}.", kind="not-found"
             )
         return title
 
@@ -686,7 +686,7 @@ class AniPmClient:
         payload = self._get(f"/series/{identifier}")
         if not isinstance(payload, Mapping):
             raise AniPmError(
-                "ani.pm returned an unexpected series document.",
+                "anipm.pk returned an unexpected series document.",
                 kind="invalid-response",
             )
         raw = payload
@@ -696,7 +696,7 @@ class AniPmClient:
         base = _parse_title(raw)
         if base is None:
             raise AniPmError(
-                f"ani.pm returned no series for AniList id {identifier}.",
+                f"anipm.pk returned no series for AniList id {identifier}.",
                 kind="not-found",
             )
         available = _availability(_dig(raw, "available", "availability", "languages"))
@@ -780,12 +780,12 @@ def playback_url(
     language: object,
     api_embed: object = None,
 ) -> str:
-    """The ani.pm embed URL for one episode and track.
+    """The anipm.pk embed URL for one episode and track.
 
     The API's own ``embed`` URL wins when one was returned and passes the
     origin check.  Otherwise the documented route is constructed from the
     **AniList** id, the episode number and a supported language - only for
-    ``sub`` and ``dub``, because ani.pm documents no hard-sub route to
+    ``sub`` and ``dub``, because anipm.pk documents no hard-sub route to
     construct.  Anything else raises instead of guessing.
     """
     identifier = _positive(anilist_id, "anilist_id")
@@ -796,7 +796,7 @@ def playback_url(
     key = _language_key(language)
     if key is None or key not in CONSTRUCTABLE_LANGUAGES:
         raise streaming.EmbedUrlError(
-            f"ani.pm gave no embed URL and no route is documented for "
+            f"anipm.pk gave no embed URL and no route is documented for "
             f"{LANGUAGE_LABELS.get(str(language), str(language or 'that track'))}; "
             "only Sub and Dub can be built from ids."
         )

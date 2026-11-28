@@ -10589,8 +10589,8 @@ class SettingsDialog(Gtk.Dialog):
         self._media_anime_provider.set_size_request(180, -1)
         box.pack_start(self._switch_row(
             "Anime provider",
-            "Provider used for anime playback. ani.pm plays from an AniList "
-            "or MyAnimeList id and needs no key (https://ani.pm/developers).",
+            "Provider used for anime playback. anipm.pk plays from an AniList "
+            "or MyAnimeList id and needs no key (https://anipm.pk/developers).",
             self._media_anime_provider,
         ), False, False, 0)
 

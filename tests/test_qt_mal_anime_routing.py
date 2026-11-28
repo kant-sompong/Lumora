@@ -1,4 +1,4 @@
-"""Forced ani.pm routing for MAL-verified anime, in the Qt frontend.
+"""Forced anipm.pk routing for MAL-verified anime, in the Qt frontend.
 
 Identity is answered by the shared anime core; here it is replaced with a stub
 so these tests are about routing, not about the mapping table.  Everything runs
@@ -56,7 +56,7 @@ UNVERIFIED = qt_anime_routing.Identity(
     is_anime=True, verified=False, reason="heuristic"
 )
 NOT_ANIME = qt_anime_routing.Identity(is_anime=False, verified=False)
-ANIME_URL = "https://ani.pm/embed/ani/16498/1/sub"
+ANIME_URL = "https://anipm.pk/embed/ani/16498/1/sub"
 
 NO_ANILIST = qt_anime_routing.Identity(
     is_anime=True, verified=True, playable_anilist_id=0,
@@ -263,7 +263,7 @@ def test_the_real_core_verifies_a_mal_card():
     assert identity.verified is True
     assert identity.resolution_failed is False
     assert identity.playable_anilist_id == 16498
-    assert identity.anilist_id == 16498, "the id ani.pm gets is an AniList id"
+    assert identity.anilist_id == 16498, "the id anipm.pk gets is an AniList id"
 
 
 def test_the_real_core_without_a_playable_resolution_is_a_resolution_failure():
@@ -358,7 +358,7 @@ def test_a_missing_mal_client_id_keeps_the_selected_provider(app, monkeypatch, t
     harness = Harness(app, {"anime_streaming_provider": "ani"}, tmp_path)
     harness.page._play_anime(ANIME)
     settle(app, lambda: harness.loaded or harness.toast_text)
-    assert harness.loaded == ["https://ani.pm/embed/mal/21/1/sub"], (
+    assert harness.loaded == ["https://anipm.pk/embed/mal/21/1/sub"], (
         "no MAL key means no verification, so the anime provider plays as before"
     )
     assert harness.page.provider_button.isEnabled() is True
@@ -377,7 +377,7 @@ def test_a_shared_answer_without_an_anilist_id_is_never_forced():
 
 def test_the_embed_url_is_built_from_an_anilist_id_only():
     url = qt_anime_routing.embed_url(16498, 1, language="sub")
-    assert url == "https://ani.pm/embed/ani/16498/1/sub"
+    assert url == "https://anipm.pk/embed/ani/16498/1/sub"
     assert "/embed/mal/" not in url
 
 
@@ -389,11 +389,11 @@ def test_a_verified_anime_plays_on_ani_pm(app, monkeypatch, tmp_path):
     harness = Harness(app, tmp_path=tmp_path)
     harness.page._play_anime(ANIME)
     settle(app, lambda: harness.loaded or harness.toast_text)
-    assert harness.loaded == ["https://ani.pm/embed/ani/16498/1/sub"]
+    assert harness.loaded == ["https://anipm.pk/embed/ani/16498/1/sub"]
 
 
 def test_a_saved_anime_provider_never_preempts_ani_pm(app, monkeypatch, tmp_path):
-    """ani.pm is the first provider whatever anime preference is saved."""
+    """anipm.pk is the first provider whatever anime preference is saved."""
     use_identity(monkeypatch, VERIFIED)
     harness = Harness(
         app,
@@ -466,7 +466,7 @@ def test_the_selected_provider_does_not_affect_verified_anime(app, monkeypatch, 
     harness.page._choose_provider("framextv")
     harness.page._play_anime(ANIME)
     settle(app, lambda: harness.loaded or harness.toast_text)
-    assert harness.loaded == ["https://ani.pm/embed/ani/16498/1/sub"]
+    assert harness.loaded == ["https://anipm.pk/embed/ani/16498/1/sub"]
 
 
 def test_a_verified_anime_never_gets_the_mal_route(app, monkeypatch, tmp_path):
@@ -480,7 +480,7 @@ def test_a_verified_anime_never_gets_the_mal_route(app, monkeypatch, tmp_path):
 
 
 def test_the_provider_can_be_changed_while_verified_anime_plays(app, monkeypatch, tmp_path):
-    """ani.pm is the first provider for verified anime, not a lock on the menu."""
+    """anipm.pk is the first provider for verified anime, not a lock on the menu."""
     use_identity(monkeypatch, VERIFIED)
     harness = Harness(app, {"anime_streaming_provider": "toflix"}, tmp_path)
     harness.page._play_anime(ANIME)
@@ -550,7 +550,7 @@ def test_a_failing_shared_lookup_does_not_force_ani_pm(app, monkeypatch, tmp_pat
     harness = Harness(app, tmp_path=tmp_path)
     harness.page._play_anime(ANIME)
     settle(app, lambda: harness.loaded or harness.toast_text)
-    assert harness.loaded == ["https://ani.pm/embed/mal/21/1/sub"]
+    assert harness.loaded == ["https://anipm.pk/embed/mal/21/1/sub"]
 
 
 # -- the page: unverified and non-anime -----------------------------------
@@ -561,7 +561,7 @@ def test_an_unverified_anime_keeps_the_selected_provider(app, monkeypatch, tmp_p
     harness = Harness(app, {"anime_streaming_provider": "ani"}, tmp_path)
     harness.page._play_anime(ANIME)
     settle(app, lambda: harness.loaded or harness.toast_text)
-    assert harness.loaded == ["https://ani.pm/embed/mal/21/1/sub"]
+    assert harness.loaded == ["https://anipm.pk/embed/mal/21/1/sub"]
     assert harness.page.provider_button.isEnabled() is True
 
 
@@ -698,7 +698,7 @@ def test_a_verified_anilist_match_starts_on_ani_pm_whatever_is_saved(
     assert harness.loaded == [ANIME_URL]
     assert harness.settings.get("anime_streaming_provider") == "toflix"
 
-    # A pick is session-only, and picking ani.pm goes back to the match.
+    # A pick is session-only, and picking anipm.pk goes back to the match.
     harness.page._choose_provider("toflix")
     pump(app)
     assert len(harness.loaded) == 2
@@ -777,7 +777,7 @@ def test_an_unverified_anilist_page_uses_the_selected_normal_provider(
     assert harness.loaded and harness.loaded[-1].startswith("https://cinesrc")
     assert "603" in harness.loaded[-1]
     assert all(
-        "ani.pm" not in url and "toflix" not in url for url in harness.loaded
+        "anipm.pk" not in url and "toflix" not in url for url in harness.loaded
     ), "the selected provider was bypassed"
     assert harness.page.provider_button.isEnabled() is True
 
@@ -856,7 +856,7 @@ def test_a_verified_anilist_page_never_searches_tmdb(app, monkeypatch, tmp_path)
     harness.page._anilist_match = ("One Piece", 999)
     harness.page._play_anilist_match()
     settle(app, lambda: harness.loaded)
-    assert harness.loaded == ["https://ani.pm/embed/ani/16498/1/sub"]
+    assert harness.loaded == ["https://anipm.pk/embed/ani/16498/1/sub"]
     assert tmdb.queries == [], "verified anime must not go through TMDB"
 
 
@@ -875,10 +875,10 @@ def test_an_anilist_resolution_failure_never_searches_tmdb(
     assert "AniList" in harness.toast_text
 
 
-# -- ani.pm tracks, including the API-only hard tracks --------------------
+# -- anipm.pk tracks, including the API-only hard tracks --------------------
 
-HARD_SUB = "https://ani.pm/embed/ani/16498/1/subHard?api=1"
-HARD_DUB = "https://ani.pm/embed/ani/16498/1/dubHard?api=1"
+HARD_SUB = "https://anipm.pk/embed/ani/16498/1/subHard?api=1"
+HARD_DUB = "https://anipm.pk/embed/ani/16498/1/dubHard?api=1"
 
 
 def a_verified_route() -> qt_anime_routing.Route:
@@ -935,7 +935,7 @@ def test_a_hard_track_with_a_foreign_embed_is_an_error(app, tmp_path):
     )
     pump(app)
     assert harness.loaded == [], "an unvalidated embed must not play"
-    assert "ani.pm" in harness.toast_text
+    assert "anipm.pk" in harness.toast_text
 
 
 def test_ordinary_sub_and_dub_keep_the_constructed_route(
@@ -943,8 +943,8 @@ def test_ordinary_sub_and_dub_keep_the_constructed_route(
 ):
     use_identity(monkeypatch, VERIFIED)
     for language, expected in (
-        ("sub", "https://ani.pm/embed/ani/16498/1/sub"),
-        ("dub", "https://ani.pm/embed/ani/16498/1/dub"),
+        ("sub", "https://anipm.pk/embed/ani/16498/1/sub"),
+        ("dub", "https://anipm.pk/embed/ani/16498/1/dub"),
     ):
         harness = Harness(app, {"anime_language": language}, tmp_path)
         harness.page._play_anime(ANIME)
@@ -989,7 +989,7 @@ def test_a_mal_verified_anime_plays_ani_pm_without_a_tmdb_client(app, monkeypatc
         pump(app)
         if harness.loaded:
             break
-    assert harness.loaded == ["https://ani.pm/embed/ani/16498/1/sub"]
+    assert harness.loaded == ["https://anipm.pk/embed/ani/16498/1/sub"]
     assert all("cinesrc" not in url for url in harness.loaded)
 
 
@@ -1008,8 +1008,8 @@ def test_a_verified_tmdb_card_starts_on_ani_pm_with_its_mapped_episode(
     episode = Episode(season=2, number=5, title="The Wolf and the Lion")
     harness.page._play_tmdb(TV, 2, episode)
     settle(app, lambda: harness.loaded or harness.toast_text)
-    assert harness.loaded == ["https://ani.pm/embed/ani/16498/12/sub"], (
-        "the saved anime provider preempted ani.pm, or the mapped episode was lost"
+    assert harness.loaded == ["https://anipm.pk/embed/ani/16498/12/sub"], (
+        "the saved anime provider preempted anipm.pk, or the mapped episode was lost"
     )
     assert harness.page._playing_episode == (2, 5)
 
@@ -1026,7 +1026,7 @@ def test_a_verified_tmdb_card_starts_on_ani_pm_with_its_mapped_episode(
     # Switching back restores the anime and its mapped episode.
     harness.page._choose_provider(streaming.ANI_PROVIDER)
     pump(app)
-    assert harness.loaded[-1] == "https://ani.pm/embed/ani/16498/12/sub"
+    assert harness.loaded[-1] == "https://anipm.pk/embed/ani/16498/12/sub"
     assert harness.page._playing_episode == (2, 5)
 
 
@@ -1045,7 +1045,7 @@ def test_a_verified_movies_session_offers_ani_pm_and_only_anime_providers(
     harness.page._section = "movies"
     harness.page._play_tmdb(TV, 2, Episode(season=2, number=5, title="The Wolf and the Lion"))
     settle(app, lambda: harness.loaded)
-    assert harness.loaded == ["https://ani.pm/embed/ani/16498/12/sub"]
+    assert harness.loaded == ["https://anipm.pk/embed/ani/16498/12/sub"]
 
     offered = harness.page._menu_providers()
     assert streaming.ANI_PROVIDER in offered
@@ -1061,7 +1061,7 @@ def test_a_verified_movies_session_offers_ani_pm_and_only_anime_providers(
 def test_a_verified_movies_session_switches_from_the_menu_and_back(
     app, monkeypatch, tmp_path
 ):
-    """ani.pm → ToFlix → ani.pm from the real menu, mapped episode restored."""
+    """anipm.pk → ToFlix → anipm.pk from the real menu, mapped episode restored."""
     use_identity(monkeypatch, VERIFIED)
     monkeypatch.setattr(
         anime_map, "tmdb_to_anilist",
@@ -1073,7 +1073,7 @@ def test_a_verified_movies_session_switches_from_the_menu_and_back(
     harness.page._section = "movies"
     harness.page._play_tmdb(TV, 2, Episode(season=2, number=5, title="The Wolf and the Lion"))
     settle(app, lambda: harness.loaded)
-    ani_url = "https://ani.pm/embed/ani/16498/12/sub"
+    ani_url = "https://anipm.pk/embed/ani/16498/12/sub"
     assert harness.loaded == [ani_url]
     assert harness.page._active_provider() == streaming.ANI_PROVIDER
     assert harness.page.provider_button.text().startswith(
@@ -1101,7 +1101,7 @@ def test_a_verified_movies_session_switches_from_the_menu_and_back(
         "a session switch overwrote the saved anime preference"
     )
     assert streaming.ANI_PROVIDER in harness.page._menu_providers(), (
-        "ani.pm was no longer offered, so the session could not switch back"
+        "anipm.pk was no longer offered, so the session could not switch back"
     )
 
     pick(streaming.ANI_PROVIDER)
@@ -1238,7 +1238,7 @@ def test_an_older_anime_lookup_cannot_play_after_a_newer_request(app, monkeypatc
     settle(app, lambda: harness.loaded)
     gate.set()
     pump(app, 0.4)
-    assert harness.loaded == ["https://ani.pm/embed/ani/777/1/sub"], (
+    assert harness.loaded == ["https://anipm.pk/embed/ani/777/1/sub"], (
         "the superseded answer started playback"
     )
 
@@ -1293,7 +1293,7 @@ def test_a_stale_tmdb_lookup_cannot_play_after_a_newer_request(app, monkeypatch,
     settle(app, lambda: harness.loaded)
     gate.set()
     pump(app, 0.4)
-    assert harness.loaded == ["https://ani.pm/embed/ani/21/1/sub"], (
+    assert harness.loaded == ["https://anipm.pk/embed/ani/21/1/sub"], (
         "the superseded TMDB answer started playback"
     )
 
@@ -1308,5 +1308,5 @@ def test_a_raising_identity_lookup_keeps_the_provider(app, monkeypatch, tmp_path
     harness = Harness(app, {"anime_streaming_provider": "ani"}, tmp_path)
     harness.page._play_anime(ANIME)
     settle(app, lambda: harness.loaded or harness.toast_text)
-    assert harness.loaded == ["https://ani.pm/embed/mal/21/1/sub"]
+    assert harness.loaded == ["https://anipm.pk/embed/mal/21/1/sub"]
     assert "could not be checked" in harness.toast_text
