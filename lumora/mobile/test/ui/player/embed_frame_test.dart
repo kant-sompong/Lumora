@@ -2,14 +2,14 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lumora_mobile/ui/player/embed_frame.dart';
 
 Uri aniBuild([String path = '/embed/ani/21/3/sub']) =>
-    Uri.parse('https://ani.pm$path');
+    Uri.parse('https://anipm.pk$path');
 
 void main() {
   group('buildEmbedFrameHtml', () {
     test('frames the embed full screen', () {
       final html = buildEmbedFrameHtml(aniBuild());
       expect(html, startsWith('<!doctype html>'));
-      expect(html, contains('<iframe src="https://ani.pm/embed/ani/21/3/sub"'));
+      expect(html, contains('<iframe src="https://anipm.pk/embed/ani/21/3/sub"'));
       expect(html, contains('allowfullscreen'));
       expect(html, contains('position:fixed;inset:0;width:100%;height:100%'));
       expect(html, endsWith('</body></html>'));
@@ -34,7 +34,7 @@ void main() {
       // `Uri` percent-encodes quotes and tags; a query's `&` still has to be
       // escaped by the builder itself.
       final html = buildEmbedFrameHtml(
-        Uri.parse('https://ani.pm/embed/ani/1/1/sub?a=1&b=2'),
+        Uri.parse('https://anipm.pk/embed/ani/1/1/sub?a=1&b=2'),
       );
       expect(html, contains('?a=1&amp;b=2'));
       expect(html, isNot(contains('&b=2"')));
@@ -78,7 +78,7 @@ void main() {
         isFalse,
       );
       expect(
-        isEmbedFrameDocumentUrl('https://ani.pm/embed/ani/1/1/sub'),
+        isEmbedFrameDocumentUrl('https://anipm.pk/embed/ani/1/1/sub'),
         isFalse,
       );
       expect(
@@ -94,6 +94,6 @@ void main() {
     expect(base.scheme, 'https');
     expect(embedFrameBaseUrl, endsWith('/'));
     expect(embedFrameBaseUrl, isNot(contains('lumora.local')));
-    expect(embedFrameBaseUrl, isNot(contains('ani.pm')));
+    expect(embedFrameBaseUrl, isNot(contains('anipm.pk')));
   });
 }

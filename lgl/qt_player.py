@@ -445,7 +445,7 @@ class EmbeddedPlayer(QWidget):
         self._ensure_view()
         if self.view is not None:
             self.pages.setCurrentWidget(self.view)
-            # ani.pm redirects an embed opened as a page, so it is framed
+            # anipm.pk redirects an embed opened as a page, so it is framed
             # instead; every other provider keeps its direct load.
             framed = embed_frame.frame_html_for(self._url)
             setter = getattr(self.view, "setHtml", None)

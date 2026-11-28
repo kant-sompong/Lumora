@@ -25,7 +25,7 @@ Embed formats, as published by each provider:
   requirement and no dub parameter.
 
 The desktop players load an embed page directly in their web view, except the
-anime provider: ani.pm redirects an embed that is not framed, so it plays inside
+anime provider: anipm.pk redirects an embed that is not framed, so it plays inside
 the small wrapper document built by :mod:`lgl.embed_frame`.  No sandbox
 attribute exists at runtime in either case: :func:`iframe_sandbox` records the
 documented policy per provider instead of guessing.

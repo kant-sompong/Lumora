@@ -1,6 +1,6 @@
 """The anime embed is framed, and only the anime embed.
 
-ani.pm documents that an embed opened as a page redirects to the title page
+anipm.pk documents that an embed opened as a page redirects to the title page
 instead of playing, so the desktop players load a tiny wrapper document with
 the embed in a full-screen iframe.  These tests pin the wrapper's contract:
 the URL is escaped, the allow list is the documented one, there is no sandbox
@@ -11,8 +11,8 @@ from __future__ import annotations
 
 from lgl import embed_frame, streaming
 
-ANI = "https://ani.pm/embed/ani/21/3/sub"
-ANI_MAL = "https://ani.pm/embed/mal/5114/1/dub"
+ANI = "https://anipm.pk/embed/ani/21/3/sub"
+ANI_MAL = "https://anipm.pk/embed/mal/5114/1/dub"
 
 
 def test_the_wrapper_frames_the_embed_full_screen() -> None:
@@ -38,7 +38,7 @@ def test_the_wrapper_has_no_sandbox_attribute() -> None:
 
 def test_the_embed_url_cannot_break_out_of_the_attribute() -> None:
     html = embed_frame.build_embed_frame_html(
-        'https://ani.pm/embed/ani/1/1/sub"><script>alert(1)</script>&x=\'y\''
+        'https://anipm.pk/embed/ani/1/1/sub"><script>alert(1)</script>&x=\'y\''
     )
     assert "<script>" not in html
     assert '"><script>' not in html
@@ -65,11 +65,19 @@ def test_only_ani_embeds_are_framed() -> None:
 
 def test_the_ani_host_check_still_decides() -> None:
     # A lookalike host, plain HTTP and another path never reach the wrapper.
-    assert embed_frame.frame_html_for("https://ani.pm.evil/embed/ani/1/1/sub") is None
-    assert embed_frame.frame_html_for("http://ani.pm/embed/ani/1/1/sub") is None
-    assert embed_frame.frame_html_for("https://ani.pm/watch/ani/1/1/sub") is None
+    assert embed_frame.frame_html_for("https://anipm.pk.evil/embed/ani/1/1/sub") is None
+    assert embed_frame.frame_html_for("http://anipm.pk/embed/ani/1/1/sub") is None
+    assert embed_frame.frame_html_for("https://anipm.pk/watch/ani/1/1/sub") is None
     assert embed_frame.frame_html_for("") is None
     assert embed_frame.frame_html_for(None) is None
+
+
+def test_the_retired_domain_is_not_framed() -> None:
+    # The provider moved to anipm.pk; an embed URL on the old domain no longer
+    # passes the host check, so it must keep the direct load.
+    retired = "https://" + "ani" + ".pm"
+    assert embed_frame.frame_html_for(f"{retired}/embed/ani/1/1/sub") is None
+    assert embed_frame.frame_html_for(f"{retired}/embed/mal/1/1/sub") is None
 
 
 def test_the_base_is_a_real_https_origin_of_its_own() -> None:

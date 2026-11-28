@@ -1,13 +1,13 @@
 """The small HTML page that frames an anime embed.
 
-ani.pm's developer docs say an embed must always be framed: opened as a page it
+anipm.pk's developer docs say an embed must always be framed: opened as a page it
 redirects to the title page instead of playing.  The GTK and Qt players
 therefore load this wrapper, with the embed in a full-screen ``<iframe>``,
 instead of loading the embed URL as the top-level document.
 
 Only the anime provider is framed: every other provider plays correctly when
 loaded directly, and its navigation policy stays exactly as it was.  The
-wrapper carries no ``sandbox`` attribute - ani.pm documents that a sandboxed
+wrapper carries no ``sandbox`` attribute - anipm.pk documents that a sandboxed
 frame breaks its player.
 
 The document is given :data:`EMBED_FRAME_BASE` as its base URI so it has a
@@ -24,7 +24,7 @@ from . import streaming
 #: must not be the provider's own origin (see the module docstring).
 EMBED_FRAME_BASE = "https://player.lumora.app/"
 
-#: What the framed player is allowed to do, as ani.pm documents it.
+#: What the framed player is allowed to do, as anipm.pk documents it.
 EMBED_FRAME_ALLOW = (
     "autoplay; fullscreen; picture-in-picture; encrypted-media; "
     "screen-wake-lock"
